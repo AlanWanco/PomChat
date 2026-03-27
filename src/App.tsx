@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { mockData } from './mockData';
+import { demoConfig as mockData } from './projects/demo/config';
 import './App.css';
 
 interface Speaker {
@@ -41,8 +41,8 @@ function App() {
 
   return (
     <div className="w-full min-h-screen bg-gray-900 flex justify-center items-center p-4 font-sans text-white">
-      {/* Phone container mockup (1080x1920 scaled down) */}
-      <div className="relative w-full max-w-[400px] h-[800px] bg-gray-950 rounded-[40px] shadow-2xl border-8 border-gray-800 overflow-hidden flex flex-col">
+      {/* Desktop container mockup (1920x1080 scaled down) */}
+      <div className="relative w-full max-w-[1280px] h-[720px] bg-gray-950 rounded-[20px] shadow-2xl border-4 border-gray-800 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-gray-800/80 backdrop-blur-md p-4 pt-12 text-center shadow-md z-10 sticky top-0">
           <h1 className="text-xl font-bold">{mockData.projectTitle}</h1>
