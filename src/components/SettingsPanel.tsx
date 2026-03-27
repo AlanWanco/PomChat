@@ -1,15 +1,23 @@
 import { useState } from 'react';
-import { Settings, Image as ImageIcon, Type, Users, Save, Moon, Sun, Trash2, Plus, X } from 'lucide-react';
+import { Settings, Image as ImageIcon, Type, Users, Save, Moon, Sun, Trash2, Plus, X, ArrowLeftRight } from 'lucide-react';
 
 interface SettingsPanelProps {
   config: any;
   onConfigChange: (newConfig: any) => void;
   isDarkMode: boolean;
   onThemeChange: (isDark: boolean) => void;
+  settingsPosition: 'left' | 'right';
+  onPositionChange: (pos: 'left' | 'right') => void;
   onClose: () => void;
+  onSave: () => void;
 }
 
-export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChange, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ 
+  config, onConfigChange, 
+  isDarkMode, onThemeChange, 
+  settingsPosition, onPositionChange,
+  onClose, onSave 
+}: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<'global' | 'project'>('project');
 
   const updateConfig = (key: string, value: any) => {
@@ -25,15 +33,13 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
 
   const handleAddSpeaker = () => {
     const keys = Object.keys(config.speakers);
-    const nextId = String.fromCharCode(65 + keys.length); // A, B, C...
-    
+    const nextId = String.fromCharCode(65 + keys.length);
     let newId = nextId;
     let counter = 1;
     while(config.speakers[newId]) {
       newId = `${nextId}${counter}`;
       counter++;
     }
-
     const newSpeakers = { 
       ...config.speakers, 
       [newId]: { 
@@ -59,14 +65,13 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
   const cardBgClass = isDarkMode ? "bg-gray-800/50 border-gray-800" : "bg-gray-50 border-gray-200";
 
   return (
-    <div className={`w-80 flex flex-col h-full overflow-hidden shadow-xl border-l transition-colors duration-300 ${bgClass}`}>
-      {/* Header */}
-      <div className={`p-4 border-b flex items-center justify-between ${headerClass}`}>
-        <h2 className="font-bold flex items-center gap-2">
+    <div className={`h-full flex flex-col overflow-hidden ${bgClass}`}>
+      <div className={`p-4 border-b flex items-center justify-between shrink-0 ${headerClass}`}>
+        <h2 className="font-bold flex items-center gap-2 text-sm">
           <Settings size={16} /> 设置面板
         </h2>
         <div className="flex items-center gap-2">
-          <button className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-200'}`} title="保存配置">
+          <button onClick={onSave} className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-gray-800 text-blue-400' : 'hover:bg-gray-200 text-blue-600'}`} title="保存到本地">
             <Save size={16} />
           </button>
           <button onClick={onClose} className={`p-1.5 rounded-md transition-colors ${isDarkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-200'}`} title="关闭面板">
@@ -75,8 +80,7 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className={`flex border-b ${isDarkMode ? 'bg-gray-950/50 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+      <div className={`flex border-b shrink-0 ${isDarkMode ? 'bg-gray-950/50 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
         <button
           className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'global' ? (isDarkMode ? 'text-white border-b-2 border-blue-500' : 'text-gray-900 border-b-2 border-blue-500') : (isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700')}`}
           onClick={() => setActiveTab('global')}
@@ -91,7 +95,6 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
         </button>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
         {activeTab === 'global' ? (
           <div className="space-y-6">
@@ -112,6 +115,25 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
                 </button>
               </div>
             </div>
+            
+            <div className="space-y-2">
+              <label className="block text-xs font-medium uppercase tracking-wider opacity-70">设置面板位置</label>
+              <div className={`flex rounded-lg p-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                <button 
+                  onClick={() => onPositionChange('left')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm transition-colors ${settingsPosition === 'left' ? (isDarkMode ? 'bg-gray-700 text-white shadow-sm' : 'bg-white text-blue-600 shadow-sm') : 'text-gray-500'}`}
+                >
+                  <ArrowLeftRight size={14} /> 居左
+                </button>
+                <button 
+                  onClick={() => onPositionChange('right')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm transition-colors ${settingsPosition === 'right' ? (isDarkMode ? 'bg-gray-700 text-white shadow-sm' : 'bg-white text-blue-600 shadow-sm') : 'text-gray-500'}`}
+                >
+                  <ArrowLeftRight size={14} /> 居右
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="block text-xs font-medium uppercase tracking-wider opacity-70">默认配置目录</label>
               <input 
@@ -123,7 +145,6 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Project Info */}
             <div className="space-y-3">
               <label className={`flex items-center gap-2 text-sm font-medium border-b pb-1 ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
                 <Type size={14} /> 基础信息
@@ -139,7 +160,6 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
               </div>
             </div>
 
-            {/* Background */}
             <div className="space-y-3">
               <label className={`flex items-center gap-2 text-sm font-medium border-b pb-1 ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
                 <ImageIcon size={14} /> 背景设置
@@ -168,7 +188,6 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
               </div>
             </div>
 
-            {/* Speakers */}
             <div className="space-y-3">
               <div className={`flex items-center justify-between border-b pb-1 ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
                 <label className="flex items-center gap-2 text-sm font-medium">
@@ -203,7 +222,6 @@ export function SettingsPanel({ config, onConfigChange, isDarkMode, onThemeChang
                           onClick={() => handleRemoveSpeaker(key)}
                           disabled={Object.keys(config.speakers).length <= 1}
                           className={`p-1 rounded ${Object.keys(config.speakers).length <= 1 ? 'opacity-30 cursor-not-allowed' : 'text-red-500 hover:bg-red-500/10'}`}
-                          title={Object.keys(config.speakers).length <= 1 ? "至少保留一个角色" : "删除角色"}
                         >
                           <Trash2 size={14} />
                         </button>
