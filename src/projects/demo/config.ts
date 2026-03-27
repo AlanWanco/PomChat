@@ -10,8 +10,18 @@ export const demoConfig = {
     blur: 8 // px
   },
   speakers: {
-    "A": { name: "主播A", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=A", side: "left", theme: "dark" },
-    "B": { name: "嘉宾B", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=B", side: "right", theme: "light" }
+    "A": { 
+      name: "主播A", 
+      avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=A", 
+      side: "left", 
+      style: { bgColor: "#2563eb", textColor: "#ffffff", borderRadius: 32 }
+    },
+    "B": { 
+      name: "嘉宾B", 
+      avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=B", 
+      side: "right", 
+      style: { bgColor: "#f3f4f6", textColor: "#111827", borderRadius: 32 }
+    }
   },
   content: [
     // This will eventually be replaced by the parsed ASS file data
