@@ -5,6 +5,10 @@ export const demoConfig = {
   dimensions: { width: 1920, height: 1080 },
   audioPath: "/projects/demo/assets/test_audio.aac",
   assPath: "/projects/demo/assets/ass_test.ass",
+  background: {
+    image: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1920&q=80",
+    blur: 8 // px
+  },
   speakers: {
     "A": { name: "主播A", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=A", side: "left", theme: "dark" },
     "B": { name: "嘉宾B", avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=B", side: "right", theme: "light" }
