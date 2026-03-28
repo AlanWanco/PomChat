@@ -10,6 +10,7 @@ interface MenuBarProps {
   secondaryThemeColor: string;
   projectPath: string | null;
   assPath?: string;
+  shouldHideSidePanels?: boolean;
   projectName: string;
   onNewProject: () => void;
   onOpenProject: () => void;
@@ -32,6 +33,7 @@ export function MenuBar({
   secondaryThemeColor,
   projectPath,
   assPath,
+  shouldHideSidePanels,
   onNewProject,
   onOpenProject,
   onSaveProject,
@@ -204,7 +206,7 @@ export function MenuBar({
       </div>
 
       {/* Center Display - Project Path */}
-      {(assPath || projectPath) && (
+      {!shouldHideSidePanels && (assPath || projectPath) && (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[40%] px-4 pointer-events-none">
           <div 
             className="text-xs truncate text-center"

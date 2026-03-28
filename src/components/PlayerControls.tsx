@@ -350,7 +350,7 @@ export function PlayerControls({
                 if (e.key === 'Enter') commitTimeJump();
                 if (e.key === 'Escape') setTimeInputMode(false);
               }}
-              className={`text-lg font-mono font-medium tracking-wider min-w-[6rem] px-3 py-1 text-center rounded-full focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`w-[130px] text-lg font-mono font-medium tracking-wider px-2 py-1 text-center rounded-full focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
               autoFocus
             />
@@ -361,7 +361,7 @@ export function PlayerControls({
                 setTimeInputValue(formatTime(currentTime));
                 setTimeInputMode(true);
               }}
-              className={`text-lg font-mono font-medium tracking-wider inline-flex min-w-[6rem] px-3 py-1 justify-center rounded-full ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`w-[130px] text-lg font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
               title="Double click to jump (supports 00:00:00.00)"
             >

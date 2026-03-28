@@ -330,6 +330,16 @@ function App() {
   const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers);
   const canvasWidth = config.dimensions?.width || 1920;
   const canvasHeight = config.dimensions?.height || 1080;
+    useEffect(() => {
+    const preventDefault = (e: Event) => e.preventDefault();
+    window.addEventListener('dragover', preventDefault, false);
+    window.addEventListener('drop', preventDefault, false);
+    return () => {
+      window.removeEventListener('dragover', preventDefault);
+      window.removeEventListener('drop', preventDefault);
+    };
+  }, []);
+
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -1363,15 +1373,19 @@ const [previewScale, setPreviewScale] = useState(1);
     return currentTime >= appearanceTime && currentTime <= item.end;
   });
   const handleAppDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.stopPropagation();
     e.preventDefault();
     if (!window.electron) return;
+    e.dataTransfer.dropEffect = 'copy';
     setIsDragOver(true);
   };
   const handleAppDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.stopPropagation();
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragOver(false);
   };
   const handleAppDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.stopPropagation();
     e.preventDefault();
     setIsDragOver(false);
     const droppedFiles = Array.from(e.dataTransfer.files || []);
@@ -1448,6 +1462,7 @@ const [previewScale, setPreviewScale] = useState(1);
     >
       
       <MenuBar 
+        shouldHideSidePanels={shouldHideSidePanels}
         isDarkMode={isDarkMode}
         projectPath={projectPath}
         assPath={config.assPath}
