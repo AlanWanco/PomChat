@@ -7,6 +7,7 @@ interface Window {
     getExportPaths: (options: any) => Promise<{ runtimeDir: string; quickSavePath: string; suggestedPath: string }>;
     showOpenDialog: (options: any) => Promise<any>;
     showSaveDialog: (options: any) => Promise<any>;
+    getDroppedFilePath: (file: File) => string;
     readFile: (filePath: string) => Promise<string>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
     captureRectToClipboard: (rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;

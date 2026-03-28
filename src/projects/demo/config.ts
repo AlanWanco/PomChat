@@ -5,7 +5,7 @@ export const demoConfig = {
   dimensions: { width: 1920, height: 1080 },
   chatLayout: {
     paddingTop: 48,
-    paddingBottom: 30, // 底部留白，控制新气泡出现的高度
+    paddingBottom: 80, // 底部留白，控制新气泡出现的高度
     paddingX: 48,
     paddingLeft: 48,
     paddingRight: 48,

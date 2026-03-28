@@ -149,7 +149,7 @@ export function SettingsPanel({
         name: `${t('speakers.add')} ${newId}`, 
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${newId}`, 
         side: "left", 
-        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 18, fontFamily: 'system-ui', fontSize: 18, fontWeight: 'normal' }
+        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 7, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal' }
       } 
     };
     updateConfig('speakers', newSpeakers);
@@ -461,7 +461,7 @@ export function SettingsPanel({
                   <span className="text-xs opacity-70">{t('project.bottomPosition')}</span>
                   <input 
                     type="number" 
-                    value={config.chatLayout?.paddingBottom ?? 30}
+                    value={config.chatLayout?.paddingBottom ?? 80}
                     onChange={(e) => updateChatLayout('paddingBottom', parseInt(e.target.value))}
                     className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`} 
                     style={inputSurfaceStyle}

@@ -52,7 +52,7 @@ const DEFAULT_BUBBLE_STYLE = {
 
 const DEFAULT_CHAT_LAYOUT = {
   paddingTop: 48,
-  paddingBottom: 30,
+  paddingBottom: 80,
   paddingX: 48,
   paddingLeft: 48,
   paddingRight: 48,
@@ -184,6 +184,33 @@ const createBlankProjectConfig = (projectTitle: string) => ({
   }
 });
 
+const sanitizeProjectOverrides = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const overrides: Record<string, unknown> = {};
+
+  if (typeof candidate.audioPath === 'string') {
+    overrides.audioPath = candidate.audioPath;
+  }
+
+  if (typeof candidate.assPath === 'string') {
+    overrides.assPath = candidate.assPath;
+  }
+
+  if (Array.isArray(candidate.content)) {
+    overrides.content = candidate.content;
+  }
+
+  if (candidate.speakers && typeof candidate.speakers === 'object' && !Array.isArray(candidate.speakers)) {
+    overrides.speakers = candidate.speakers;
+  }
+
+  return overrides;
+};
+
 function SnapshotBubble({
   canvasRef,
   backgroundSrc,
@@ -296,7 +323,13 @@ function App() {
   
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(THEME_KEY) !== 'light');
   const [themeColorState, setThemeColorState] = useState(() => localStorage.getItem(THEME_COLOR_KEY) || '');
-  const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => localStorage.getItem(SECONDARY_THEME_COLOR_KEY) || '#f472b6');
+  const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => {
+    const saved = localStorage.getItem(SECONDARY_THEME_COLOR_KEY);
+    if (!saved || saved === '#01b7ee') {
+      return '#f472b6';
+    }
+    return saved;
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
   
@@ -1151,10 +1184,11 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleNewProject = async (initialOverrides?: any) => {
+    const safeOverrides = sanitizeProjectOverrides(initialOverrides);
     if (!window.electron) {
       // Web mode fallback
       setProjectPath('web-demo');
-      const cleanConfig = { ...createBlankProjectConfig(t('app.newProject')), ...(initialOverrides || {}) };
+      const cleanConfig = { ...createBlankProjectConfig(t('app.newProject')), ...safeOverrides };
       setConfig(cleanConfig);
       setShowSettings(true);
       return;
@@ -1168,7 +1202,7 @@ const [previewScale, setPreviewScale] = useState(1);
       });
       
       if (!result.canceled && result.filePath) {
-        const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...(initialOverrides || {}) };
+        const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...safeOverrides };
         await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
         setProjectPath(result.filePath);
         setRecentProject(result.filePath);
@@ -1422,14 +1456,18 @@ const [previewScale, setPreviewScale] = useState(1);
     
     if (!window.electron) return;
     const droppedFiles = Array.from(e.dataTransfer.files || []);
-    const firstPath = (droppedFiles[0] as any)?.path;
-    
+    const firstFile = droppedFiles[0];
+    const firstPath = firstFile ? window.electron.getDroppedFilePath(firstFile) : '';
+
     if (firstPath) {
       // Delay opening native dialogs to let OS drag-and-drop state machine finish
       setTimeout(() => {
         void importFileByPath(firstPath, projectPath);
       }, 100);
+      return;
     }
+
+    showToast(t('app.dropUnsupported'));
   };
 
   if (!projectPath) {
@@ -1676,10 +1714,10 @@ const [previewScale, setPreviewScale] = useState(1);
               {/* Chat Stream */}
               <div 
                 ref={scrollRef}
-                className="relative z-20 flex-1 overflow-y-auto flex flex-col scroll-smooth custom-scrollbar"
+                className="preview-scroll-hidden relative z-20 flex-1 overflow-y-auto flex flex-col scroll-smooth"
                 style={{
                   paddingTop: `${(config.chatLayout?.paddingTop ?? 48) * Math.max(0.35, previewScale)}px`,
-                  paddingBottom: `${(config.chatLayout?.paddingBottom ?? 30) * Math.max(0.35, previewScale)}px`,
+                  paddingBottom: `${(config.chatLayout?.paddingBottom ?? 80) * Math.max(0.35, previewScale)}px`,
                   paddingLeft: `${(config.chatLayout?.paddingLeft ?? config.chatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`,
                   paddingRight: `${(config.chatLayout?.paddingRight ?? config.chatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`
                 }}

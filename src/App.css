@@ -9,3 +9,14 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+.preview-scroll-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.preview-scroll-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
