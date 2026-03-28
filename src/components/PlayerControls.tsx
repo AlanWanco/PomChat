@@ -1,8 +1,10 @@
-import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2 } from 'lucide-react';
+import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2, ChevronsLeft, ChevronsRight, Clock3 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { ZoomIn, ZoomOut } from 'lucide-react';
+import { translate, type Language } from '../i18n';
+import { createThemeTokens, rgba } from '../theme';
 
 interface PlayerControlsProps {
   audioPath: string;
@@ -18,6 +20,14 @@ interface PlayerControlsProps {
   onLoopChange: (loop: boolean) => void;
   onRateChange: (rate: number) => void;
   isDarkMode: boolean;
+  language: Language;
+  themeColor: string;
+  secondaryThemeColor: string;
+  exportRangeStart: number;
+  exportRangeEnd: number;
+  defaultExportStart: number;
+  defaultExportEnd: number;
+  onExportRangeChange: (range: { start?: number; end?: number }) => void;
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   onEditingSubChange?: (start: number, end: number) => void;
 }
@@ -36,10 +46,23 @@ export function PlayerControls({
   onLoopChange,
   onRateChange,
   isDarkMode,
+  language,
+  themeColor,
+  secondaryThemeColor,
+  exportRangeStart,
+  exportRangeEnd,
+  defaultExportStart,
+  defaultExportEnd,
+  onExportRangeChange,
   editingSub,
   onEditingSubChange
 }: PlayerControlsProps) {
+  const t = (key: string) => translate(language, key);
+  const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [regionTooltip, setRegionTooltip] = useState<{ start: number; end: number } | null>(null);
+  const [timeInputMode, setTimeInputMode] = useState(false);
+  const [timeInputValue, setTimeInputValue] = useState('');
   const speedMenuRef = useRef<HTMLDivElement>(null);
   
   const waveformRef = useRef<HTMLDivElement>(null);
@@ -49,16 +72,51 @@ export function PlayerControls({
   const [volume, setVolume] = useState(0.8);
   const [zoomLevel, setZoomLevel] = useState(50);
   const [minZoom, setMinZoom] = useState(10);
+  const [isWaveformReady, setIsWaveformReady] = useState(false);
+
+  const parseFlexibleTime = (value: string) => {
+    const input = value.trim();
+    if (!input) return null;
+
+    if (/^\d+(\.\d+)?$/.test(input)) {
+      const seconds = Number(input);
+      return Number.isFinite(seconds) ? seconds : null;
+    }
+
+    const parts = input.split(':').map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2 || parts.length > 3) return null;
+
+    const numericParts = parts.map((part) => Number(part));
+    if (numericParts.some((part) => !Number.isFinite(part) || part < 0)) return null;
+
+    if (parts.length === 2) {
+      const [minutes, seconds] = numericParts;
+      return minutes * 60 + seconds;
+    }
+
+    const [hours, minutes, seconds] = numericParts;
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+
+  const commitTimeJump = () => {
+    const next = parseFlexibleTime(timeInputValue);
+    if (next !== null && Number.isFinite(next) && next >= 0 && next <= duration) {
+      onSeek(next);
+    }
+    setTimeInputMode(false);
+  };
 
   // Initialize WaveSurfer
   useEffect(() => {
     if (!waveformRef.current) return;
     if (!audioRef?.current) return;
 
+    setIsWaveformReady(false);
+
     wavesurfer.current = WaveSurfer.create({
       container: waveformRef.current,
-      waveColor: isDarkMode ? '#4b5563' : '#cbd5e1',
-      progressColor: '#3b82f6',
+      waveColor: rgba(secondaryThemeColor, isDarkMode ? 0.55 : 0.35),
+      progressColor: secondaryThemeColor,
       cursorColor: isDarkMode ? '#ffffff' : '#111827',
       barWidth: 2,
       barGap: 1,
@@ -66,7 +124,7 @@ export function PlayerControls({
       height: 48,
       normalize: true,
       media: audioRef.current,
-      minPxPerSec: zoomLevel,
+      minPxPerSec: 50,
     });
 
     // Inject custom scrollbar styles into WaveSurfer's shadow wrapper
@@ -74,20 +132,53 @@ export function PlayerControls({
       if (!waveformRef.current) return;
       const host = waveformRef.current.firstElementChild;
       if (host && host.shadowRoot) {
-        if (host.shadowRoot.querySelector('#ws-custom-scrollbar')) return;
-        const style = document.createElement('style');
-        style.id = 'ws-custom-scrollbar';
-        style.textContent = `
-          ::-webkit-scrollbar { height: 6px; }
-          ::-webkit-scrollbar-track { background: transparent; }
-          ::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.4); border-radius: 10px; }
-          ::-webkit-scrollbar-thumb:hover { background: rgba(150, 150, 150, 0.6); }
-        `;
-        host.shadowRoot.appendChild(style);
+        if (!host.shadowRoot.querySelector('#ws-custom-scrollbar')) {
+          const style = document.createElement('style');
+          style.id = 'ws-custom-scrollbar';
+          style.textContent = `
+            ::-webkit-scrollbar { height: 6px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: ${rgba(secondaryThemeColor, 0.45)}; border-radius: 10px; }
+            ::-webkit-scrollbar-thumb:hover { background: ${rgba(secondaryThemeColor, 0.65)}; }
+          `;
+          host.shadowRoot.appendChild(style);
+        }
+
+        if (!host.shadowRoot.querySelector('#ws-region-style')) {
+          const regionStyle = document.createElement('style');
+          regionStyle.id = 'ws-region-style';
+          regionStyle.textContent = `
+            .region {
+              border: 1px solid ${themeColor} !important;
+              box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2), 0 0 0 1px rgba(0,0,0,0.08);
+            }
+            .region::before,
+            .region::after {
+              content: '';
+              position: absolute;
+              top: 50%;
+              transform: translateY(-50%);
+              width: 12px;
+              height: 34px;
+              border-radius: 999px;
+              background: linear-gradient(180deg, rgba(255,255,255,0.98), ${themeColor}44);
+              border: 1px solid ${themeColor};
+              box-shadow: 0 2px 10px rgba(0,0,0,0.22);
+              z-index: 5;
+              pointer-events: none;
+            }
+            .region::before { left: -7px; }
+            .region::after { right: -7px; }
+          `;
+          host.shadowRoot.appendChild(regionStyle);
+        }
       }
     };
 
-    wavesurfer.current.on('ready', injectScrollbarStyle);
+    wavesurfer.current.on('ready', () => {
+      setIsWaveformReady(true);
+      injectScrollbarStyle();
+    });
     // Fallback if ready fired too fast
     setTimeout(injectScrollbarStyle, 100);
     setTimeout(injectScrollbarStyle, 500);
@@ -120,9 +211,16 @@ export function PlayerControls({
     });
 
     return () => {
+      setIsWaveformReady(false);
       wavesurfer.current?.destroy();
     };
-  }, [audioPath, isDarkMode, onSeek, audioRef]);
+  }, [audioPath, isDarkMode, onSeek, audioRef, themeColor, secondaryThemeColor]);
+
+  useEffect(() => {
+    if (wavesurfer.current && isWaveformReady) {
+      wavesurfer.current.zoom(zoomLevel);
+    }
+  }, [isWaveformReady, zoomLevel]);
 
   // Handle Waveform Zoom via scroll
   useEffect(() => {
@@ -130,7 +228,7 @@ export function PlayerControls({
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
-      if (!wavesurfer.current) return;
+      if (!wavesurfer.current || !isWaveformReady) return;
       e.preventDefault();
       
       const currentZoom = wavesurfer.current.options.minPxPerSec || 50;
@@ -143,7 +241,7 @@ export function PlayerControls({
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [minZoom]);
+  }, [isWaveformReady, minZoom]);
 
   // Update WaveSurfer playback rate
   useEffect(() => {
@@ -168,10 +266,12 @@ export function PlayerControls({
       const region = wsRegions.current.addRegion({
         start: editingSub.start,
         end: editingSub.end,
-        color: 'rgba(59, 130, 246, 0.3)', // blue-500 with opacity
+        color: `${secondaryThemeColor}33`,
         drag: true,
         resize: true,
       });
+
+      setRegionTooltip({ start: editingSub.start, end: editingSub.end });
 
       const handleUpdate = () => {
         if (onEditingSubChange) {
@@ -179,12 +279,25 @@ export function PlayerControls({
         }
       };
 
-      region.on('update-end', handleUpdate);
+      const handleRegionUpdating = () => {
+        setRegionTooltip({ start: region.start, end: region.end });
+      };
+
+      const handleRegionDone = () => {
+        setRegionTooltip({ start: region.start, end: region.end });
+        handleUpdate();
+      };
+
+      region.on('update', handleRegionUpdating);
+      region.on('update-end', handleRegionDone);
       return () => {
-        region.un('update-end', handleUpdate);
+        setRegionTooltip(null);
+        region.un('update', handleRegionUpdating);
+        region.un('update-end', handleRegionDone);
       };
     }
-  }, [editingSub?.id]); // Re-run when editing target changes
+    setRegionTooltip(null);
+  }, [editingSub?.id, themeColor, secondaryThemeColor, isDarkMode, zoomLevel]);
 
   // Removed manual Sync effect since WaveSurfer syncs via the media element automatically.
   // We still format time based on App's currentTime state for the UI string.
@@ -209,41 +322,137 @@ export function PlayerControls({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const bgClass = isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   const textClass = isDarkMode ? "text-gray-400" : "text-gray-600";
 
   return (
-    <div className={`h-32 ${bgClass} border-t flex flex-col px-6 py-2 shrink-0 z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] transition-colors duration-300`}>
+    <div className="h-32 border-t flex flex-col px-6 py-2 shrink-0 z-20 transition-colors duration-300" style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
       {/* Waveform Track */}
-      <div className="w-full mb-2 cursor-pointer" ref={waveformRef} title="点击波形跳转进度" />
+      <div className="relative w-full mb-2">
+        <div className="w-full cursor-pointer" ref={waveformRef} title={t('player.waveformTitle')} />
+        {regionTooltip && (
+          <div className={`absolute top-1 right-2 px-2 py-1 rounded-md text-[10px] font-mono z-20 pointer-events-none ${isDarkMode ? 'bg-gray-950/95' : 'bg-white/95 shadow-sm'}`} style={{ color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55` }}>
+            {formatTime(regionTooltip.start)} - {formatTime(regionTooltip.end)}
+          </div>
+        )}
+      </div>
 
       {/* Controls Row */}
-      <div className="flex items-center justify-between pb-2">
-        <div className="flex items-center gap-4 w-1/3">
-          <span className={`text-xl font-mono font-medium tracking-wider w-24 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            {formatTime(currentTime)}
-          </span>
+      <div className="flex items-center justify-between gap-4 pb-2 min-w-0">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          {timeInputMode ? (
+            <input
+              type="number"
+              min="0"
+              max={duration || undefined}
+              step="0.1"
+              value={timeInputValue}
+              onChange={(e) => setTimeInputValue(e.target.value)}
+              onBlur={commitTimeJump}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTimeJump();
+                if (e.key === 'Escape') setTimeInputMode(false);
+              }}
+              className={`text-xl font-mono font-medium tracking-wider min-w-[7rem] px-2 py-1 rounded-md focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
+              autoFocus
+            />
+          ) : (
+            <button
+              type="button"
+              onDoubleClick={() => {
+                setTimeInputValue(formatTime(currentTime));
+                setTimeInputMode(true);
+              }}
+              className={`text-xl font-mono font-medium tracking-wider inline-flex min-w-[7rem] px-2 py-1 rounded-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
+              title="Double click to jump (supports 00:00:00.00)"
+            >
+              {formatTime(currentTime)}
+            </button>
+          )}
           <span className={`text-xs font-mono ${textClass}`}>/ {formatTime(duration)}</span>
         </div>
 
-        <div className="flex items-center gap-3 w-1/3 justify-center">
+        <div className="flex items-center gap-3 justify-center shrink-0">
+          <div className="hidden xl:flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ backgroundColor: `${secondaryThemeColor}10`, border: `1px solid ${secondaryThemeColor}22`, boxShadow: `0 4px 14px ${secondaryThemeColor}10` }}>
+            <button
+              type="button"
+              onClick={() => onExportRangeChange({ start: defaultExportStart })}
+              className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 hover:shadow-md hover:text-white"
+              style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                e.currentTarget.style.color = secondaryThemeColor;
+                e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+              }}
+              title={t('export.useEarliest')}
+            >
+              <ChevronsLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onExportRangeChange({ start: currentTime })}
+              className="rounded-full p-1.5 transition-all duration-200 hover:scale-105"
+              style={{ backgroundColor: `${secondaryThemeColor}14`, color: uiTheme.text, boxShadow: `0 0 0 0 transparent` }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                e.currentTarget.style.color = uiTheme.text;
+                e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+              }}
+              title={t('export.setCurrent')}
+            >
+              <Clock3 size={14} />
+            </button>
+            <div className="px-1 text-[11px] font-mono tabular-nums" style={{ color: secondaryThemeColor }}>{formatTime(exportRangeStart)}</div>
+          </div>
           <button 
             onClick={onReset}
-            className={`p-2 rounded-full transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-            title="重新开始"
+            className={`p-2 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = `${secondaryThemeColor}22`;
+              e.currentTarget.style.color = '#ffffff';
+              e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}22`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = '';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+            title={t('player.restart')}
           >
             <RotateCcw size={18} />
           </button>
           <button 
             onClick={onPlayPause}
-            className={`w-12 h-12 flex items-center justify-center rounded-full transition-transform hover:scale-105 ${isPlaying ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'}`}
+            className={`w-12 h-12 min-w-12 min-h-12 aspect-square shrink-0 flex items-center justify-center rounded-full transition-transform hover:scale-105 text-white shadow-lg`}
+            style={isPlaying ? { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` } : { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` }}
           >
             {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1" />}
           </button>
           <button 
-            className={`p-2 rounded-full transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-            title="停止"
+            className={`p-2 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = `${secondaryThemeColor}22`;
+              e.currentTarget.style.color = '#ffffff';
+              e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}22`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = '';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+            title={t('player.stop')}
             onClick={() => {
               if (isPlaying) onPlayPause();
               onReset();
@@ -251,14 +460,56 @@ export function PlayerControls({
           >
             <SquareSquare size={18} />
           </button>
+          <div className="hidden xl:flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ backgroundColor: `${secondaryThemeColor}10`, border: `1px solid ${secondaryThemeColor}22`, boxShadow: `0 4px 14px ${secondaryThemeColor}10` }}>
+            <div className="px-1 text-[11px] font-mono tabular-nums" style={{ color: secondaryThemeColor }}>{formatTime(exportRangeEnd)}</div>
+            <button
+              type="button"
+              onClick={() => onExportRangeChange({ end: currentTime })}
+              className="rounded-full p-1.5 transition-all duration-200 hover:scale-105"
+              style={{ backgroundColor: `${secondaryThemeColor}14`, color: uiTheme.text, boxShadow: `0 0 0 0 transparent` }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                e.currentTarget.style.color = uiTheme.text;
+                e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+              }}
+              title={t('export.setCurrent')}
+            >
+              <Clock3 size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onExportRangeChange({ end: defaultExportEnd })}
+              className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 hover:text-white"
+              style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                e.currentTarget.style.color = secondaryThemeColor;
+                e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+              }}
+              title={t('export.useLatest')}
+            >
+              <ChevronsRight size={14} />
+            </button>
+          </div>
         </div>
 
-        <div className={`flex items-center justify-end gap-4 w-1/3 ${textClass}`}>
+        <div className={`flex items-center justify-end gap-4 flex-1 min-w-0 ${textClass}`}>
           
           <button 
             onClick={() => onLoopChange(!loop)}
-            className={`p-1.5 rounded transition-colors ${loop ? 'text-blue-500 bg-blue-500/10' : (isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100')}`}
-            title="循环播放"
+            className={`p-1.5 rounded transition-colors ${loop ? '' : (isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100')}`}
+            style={loop ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}18` } : undefined}
+            title={t('player.loop')}
           >
             <Repeat size={16} />
           </button>
@@ -273,7 +524,7 @@ export function PlayerControls({
             </button>
             
             {showSpeedMenu && (
-              <div className={`absolute bottom-full right-0 mb-2 flex flex-col border rounded shadow-xl overflow-hidden z-50 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="absolute bottom-full right-0 mb-2 flex flex-col border rounded shadow-xl overflow-hidden z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
                 {rates.map(r => (
                   <button 
                     key={r}
@@ -281,11 +532,12 @@ export function PlayerControls({
                       onRateChange(r);
                       setShowSpeedMenu(false);
                     }}
-                    className={`px-4 py-2 text-xs font-mono text-left transition-colors ${
-                      playbackRate === r 
-                        ? (isDarkMode ? 'text-blue-400 bg-gray-900' : 'text-blue-600 bg-gray-50') 
-                        : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100')
-                    }`}
+                     className={`px-4 py-2 text-xs font-mono text-left transition-colors ${
+                       playbackRate === r 
+                         ? '' 
+                         : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100')
+                     }`}
+                    style={playbackRate === r ? { color: themeColor, backgroundColor: `${secondaryThemeColor}18` } : undefined}
                   >
                     {r.toFixed(1)}x
                   </button>
@@ -294,11 +546,10 @@ export function PlayerControls({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 bg-black/5 p-1 rounded-full">
+          <div className="flex items-center gap-1.5 p-1 rounded-full" style={{ backgroundColor: `${secondaryThemeColor}12`, border: `1px solid ${secondaryThemeColor}22`, boxShadow: `0 2px 10px ${secondaryThemeColor}14` }}>
             <ZoomOut size={14} className="opacity-50 cursor-pointer hover:opacity-100" onClick={() => {
               const z = Math.max(minZoom, zoomLevel * 0.8);
               setZoomLevel(z);
-              wavesurfer.current?.zoom(z);
             }} />
             <input 
               type="range" min={minZoom} max="1000" 
@@ -306,14 +557,12 @@ export function PlayerControls({
               onChange={e => {
                 const z = Number(e.target.value);
                 setZoomLevel(z);
-                wavesurfer.current?.zoom(z);
               }}
-              className={`w-16 h-1 ${isDarkMode ? 'accent-gray-400' : 'accent-gray-600'}`} 
+              className="w-16 h-1" style={{ accentColor: secondaryThemeColor }}
             />
             <ZoomIn size={14} className="opacity-50 cursor-pointer hover:opacity-100" onClick={() => {
               const z = Math.min(1000, zoomLevel * 1.2);
               setZoomLevel(z);
-              wavesurfer.current?.zoom(z);
             }} />
           </div>
 
@@ -324,7 +573,7 @@ export function PlayerControls({
               min="0" max="1" step="0.01" 
               value={volume}
               onChange={e => setVolume(parseFloat(e.target.value))}
-              className={`w-16 h-1 ${isDarkMode ? 'accent-gray-400' : 'accent-gray-600'}`} 
+              className="w-16 h-1" style={{ accentColor: secondaryThemeColor }}
             />
           </div>
         </div>

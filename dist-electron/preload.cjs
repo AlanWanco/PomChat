@@ -7,15 +7,15 @@ var { contextBridge: e, ipcRenderer: t } = (/* @__PURE__ */ ((e) => typeof requi
 e.exposeInMainWorld("electron", {
 	ping: () => t.invoke("ping"),
 	exportVideo: (e) => t.invoke("export-video", e),
+	getExportPaths: (e) => t.invoke("get-export-paths", e),
 	showOpenDialog: (e) => t.invoke("show-open-dialog", e),
 	showSaveDialog: (e) => t.invoke("show-save-dialog", e),
 	readFile: (e) => t.invoke("read-file", e),
 	writeFile: (e, n) => t.invoke("write-file", e, n),
+	captureRectToClipboard: (e) => t.invoke("capture-rect-to-clipboard", e),
 	onExportProgress: (e) => {
-		t.on("export-progress", (t, n) => e(n));
-	},
-	removeExportProgressListener: () => {
-		t.removeAllListeners("export-progress");
+		let n = (t, n) => e(n);
+		return t.on("export-progress", n), () => t.removeListener("export-progress", n);
 	}
 });
 //#endregion

@@ -16,11 +16,11 @@ body {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--podchat-scrollbar-thumb, rgba(255, 255, 255, 0.22));
   border-radius: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--podchat-scrollbar-thumb-hover, rgba(255, 255, 255, 0.36));
 }
 
 /* Fallback for global scrollbars including shadow roots if possible */
@@ -32,11 +32,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(150, 150, 150, 0.3);
+  background: var(--podchat-scrollbar-thumb, rgba(150, 150, 150, 0.42));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(150, 150, 150, 0.5);
+  background: var(--podchat-scrollbar-thumb-hover, rgba(150, 150, 150, 0.62));
 }
 
 @theme {
@@ -50,5 +50,84 @@ body {
       opacity: 1;
       transform: translateY(0) scale(1);
     }
+  }
+}
+
+.podchat-bubble-enter-fade {
+  animation-name: podchat-bubble-fade;
+}
+
+.podchat-bubble-enter-rise {
+  animation-name: podchat-bubble-rise;
+}
+
+.podchat-bubble-enter-pop {
+  animation-name: podchat-bubble-pop;
+}
+
+.podchat-bubble-enter-slide {
+  animation-name: podchat-bubble-slide;
+}
+
+.podchat-bubble-enter-blur {
+  animation-name: podchat-bubble-blur;
+}
+
+@keyframes podchat-bubble-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes podchat-bubble-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--podchat-enter-y, 18px)) scale(var(--podchat-enter-scale, 0.92));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes podchat-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes podchat-bubble-slide {
+  from {
+    opacity: 0;
+    transform: translateX(var(--podchat-enter-x, 18px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes podchat-bubble-blur {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
   }
 }

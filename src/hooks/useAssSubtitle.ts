@@ -10,7 +10,17 @@ export interface SubtitleItem {
   actor: string;
   text: string;
   speakerId: string;
+  sourceLineIndex: number;
 }
+
+const extractDialogueLineIndexes = (content: string) => {
+  return content
+    .split(/\r?\n/)
+    .map((line, index) => (line.startsWith('Dialogue:') ? index : -1))
+    .filter((index) => index !== -1);
+};
+
+const normalizeSubtitleText = (value: string) => value.replace(/\\N/g, '\n').trim();
 
 export function useAssSubtitle(assPath: string, speakerConfig: any) {
   const [subtitles, setSubtitles] = useState<SubtitleItem[]>([]);
@@ -18,48 +28,58 @@ export function useAssSubtitle(assPath: string, speakerConfig: any) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!assPath) return;
+    if (!assPath || !window.electron) return;
     
     setLoading(true);
-    fetch(assPath)
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to load ASS file');
-        return res.text();
-      })
-      .then(text => {
+    window.electron.readFile(assPath)
+      .then((text: string) => {
         const parsed = parse(text);
         const dialogues = parsed.events.dialogue;
+        const dialogueLineIndexes = extractDialogueLineIndexes(text);
         
-        const mapActorToSpeaker = (actorName: string) => {
+        const mapActorToSpeaker = (actorName: string, styleName: string) => {
           const keys = Object.keys(speakerConfig);
           for (const key of keys) {
             if (speakerConfig[key].name === actorName) return key;
           }
+          for (const key of keys) {
+            if (speakerConfig[key].name === styleName) return key;
+          }
           return keys[0] || 'A';
         };
 
-        const items: SubtitleItem[] = dialogues.map((d: any, index: number) => ({
-          id: `sub-${index}`,
-          start: d.Start,
-          end: d.End,
-          duration: Number((d.End - d.Start).toFixed(2)),
-          style: d.Style,
-          actor: d.Name || d.Style,
-          text: d.Text.combined.replace(/\\N/g, '\n'),
-          speakerId: mapActorToSpeaker(d.Name)
-        }));
+        const items: SubtitleItem[] = dialogues.reduce((result: SubtitleItem[], d: any, index: number) => {
+          const text = normalizeSubtitleText(d.Text.combined);
+          if (!text) {
+            return result;
+          }
+
+          result.push({
+            id: `sub-${dialogueLineIndexes[index] ?? index}`,
+            start: d.Start,
+            end: d.End,
+            duration: Number((d.End - d.Start).toFixed(2)),
+            style: d.Style,
+            actor: d.Name || d.Style,
+            text,
+            speakerId: mapActorToSpeaker(d.Name, d.Style),
+            sourceLineIndex: dialogueLineIndexes[index] ?? index
+          });
+
+          return result;
+        }, []);
 
         setSubtitles(items);
         setError(null);
       })
-      .catch(err => {
+      .catch((err: any) => {
         console.error(err);
         setError(err.message);
       })
       .finally(() => {
         setLoading(false);
       });
-  }, [assPath, speakerConfig]);
+  }, [assPath]);
 
   return { subtitles, setSubtitles, loading, error };
 }

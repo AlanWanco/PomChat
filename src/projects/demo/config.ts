@@ -6,13 +6,23 @@ export const demoConfig = {
   chatLayout: {
     paddingTop: 48,
     paddingBottom: 120, // 底部留白，控制新气泡出现的高度
-    paddingX: 48
+    paddingX: 48,
+    paddingLeft: 48,
+    paddingRight: 48,
+    bubbleScale: 1,
+    avatarSize: 64,
+    speakerNameSize: 14,
+    animationStyle: "rise",
+    animationDuration: 0.45
   },
   audioPath: "/projects/demo/assets/test_audio.aac",
   assPath: "/projects/demo/assets/ass_test.ass",
   background: {
     image: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1920&q=80",
     blur: 8 // px
+  },
+  ui: {
+    themeColor: "#9ca4b8"
   },
   speakers: {
     "A": { 
@@ -22,17 +32,19 @@ export const demoConfig = {
       style: { 
         bgColor: "#2563eb", 
         textColor: "#ffffff", 
-        borderRadius: 32,
+        borderRadius: 28,
         opacity: 0.9,
-        blur: 4,
         borderWidth: 0,
+        avatarBorderColor: "#ffffff",
         borderColor: "#ffffff",
         borderOpacity: 1.0,
-        margin: 16,
-        paddingX: 24,
-        paddingY: 16,
+        margin: 14,
+        paddingX: 20,
+        paddingY: 12,
+        shadowSize: 18,
+        nameColor: "#ffffff",
         fontFamily: "system-ui",
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: "normal",
         scale: 1.0
       }
@@ -44,19 +56,46 @@ export const demoConfig = {
       style: { 
         bgColor: "#f3f4f6", 
         textColor: "#111827", 
-        borderRadius: 32,
+        borderRadius: 28,
         opacity: 0.9,
-        blur: 4,
         borderWidth: 0,
+        avatarBorderColor: "#ffffff",
         borderColor: "#ffffff",
         borderOpacity: 1.0,
-        margin: 16,
-        paddingX: 24,
-        paddingY: 16,
+        margin: 14,
+        paddingX: 20,
+        paddingY: 12,
+        shadowSize: 18,
+        nameColor: "#ffffff",
         fontFamily: "system-ui",
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: "normal",
         scale: 1.0
+      }
+    },
+    "ANNOTATION": {
+      name: "注释",
+      avatar: "",
+      side: "center",
+      type: "annotation",
+      style: {
+        bgColor: "#111827",
+        textColor: "#ffffff",
+        borderRadius: 999,
+        opacity: 0.9,
+        borderWidth: 0,
+        avatarBorderColor: "#ffffff",
+        borderColor: "#ffffff",
+        borderOpacity: 1,
+        margin: 12,
+        paddingX: 18,
+        paddingY: 10,
+        shadowSize: 12,
+        maxWidth: 720,
+        fontFamily: "system-ui",
+        fontSize: 16,
+        fontWeight: "normal",
+        annotationPosition: "bottom"
       }
     }
   },
