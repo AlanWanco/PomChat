@@ -20,15 +20,15 @@
 - WaveSurfer.js
 - ass-compiler
 
-## 当前能力
+## 核心功能
 
-- 项目配置保存 / 打开
-- ASS 导入与角色映射
-- 无 ASS 时，首次添加单条字幕会在项目配置同目录自动创建同名 `.ass`
-- 字幕时间轴编辑、删除、排序、说话人切换
-- 预览区横竖屏尺寸切换
-- 主题色 / 次主题色驱动的大部分编辑器界面
-- 记住播放位置并在下次打开时恢复
+- **项目配置**：保存/打开项目配置，支持全局缓存恢复
+- **ASS 字幕**：导入 ASS 文件、清理空白行、单条编辑、按时间排序
+- **字幕管理**：时间轴编辑、删除、排序、说话人切换、自动创建同名 `.ass`
+- **预览**：实时音频驱动的聊天气泡动画预览、横竖屏切换
+- **导出**：基于 Remotion 的视频导出，支持自定义导出范围
+- **角色配置**：气泡样式、字体、颜色、阴影、动画参数个性化
+- **播放控制**：记住播放位置、调整播放速度、循环播放
 
 ## 开发启动
 
@@ -52,21 +52,19 @@ npm run build
 
 ## 说明
 
-- 当前 `npm run dev` 主要用于 Vite 开发调试
-- Electron 入口位于 `electron/main.ts`
-- Demo 项目配置位于 `src/projects/demo/config.ts`
-- 主题色、次主题色、界面主题等属于全局偏好，不跟项目配置绑定
+- `electron/main.ts`：Electron 主进程入口
+- `electron/remotion-worker.cjs`：后台视频渲染进程
+- 主题色、次主题色、界面主题为全局偏好，不跟项目配置绑定
 
 ## 主要目录
 
-- `src/App.tsx`：主流程、项目加载、预览、字幕持久化
-- `src/components/`：设置面板、字幕列表、播放器、欢迎页、菜单栏等
+- `src/App.tsx`：主应用流程、项目加载、预览渲染、字幕持久化
+- `src/components/`：编辑面板、字幕列表、播放器、导出对话框等
+- `src/remotion/`：Remotion 视频导出组件和类型定义
 - `src/hooks/useAssSubtitle.ts`：ASS 解析与字幕数据生成
-- `src/projects/demo/`：内置 Demo 配置与资源路径
-- `electron/`：Electron 主进程与 preload
+- `electron/`：Electron 主进程、预加载脚本、后台 Remotion 工作进程
 
 ## 已知现状
 
 - 开发环境下仍会看到部分 Vite / Electron 警告日志
 - Electron 安全相关配置仍偏开发态，后续可再收紧
-- 部分 UI 主题化仍在持续打磨中
