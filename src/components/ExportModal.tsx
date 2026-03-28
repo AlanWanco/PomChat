@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download, FolderOpen, Sparkles, Timer, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
+import { Tooltip } from './ui/Tooltip';
 
 interface ExportProgressState {
   progress: number;
@@ -375,7 +376,7 @@ export function ExportModal({
                       custom: ''
                     };
                     return (
-                      <div key={template} className="group relative">
+                      <Tooltip key={template} content={filenameExamples[template]} placement="top" width={220} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={rgba(secondaryThemeColor, 0.24)} textColor={uiTheme.text} className="block">
                         <button
                           type="button"
                           onClick={() => onFilenameTemplateChange?.(template)}
@@ -389,12 +390,7 @@ export function ExportModal({
                         >
                           {t(`export.filenameTemplate${template.charAt(0).toUpperCase()}${template.slice(1)}`)}
                         </button>
-                        {filenameExamples[template] && (
-                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50 w-max px-3 py-2 text-xs rounded-lg whitespace-nowrap" style={{ backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, border: `1px solid ${rgba(secondaryThemeColor, 0.24)}`, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
-                            {filenameExamples[template]}
-                          </div>
-                        )}
-                      </div>
+                      </Tooltip>
                     );
                   })}
                 </div>

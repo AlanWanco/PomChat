@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
+import { Tooltip } from './ui/Tooltip';
 
 interface SubtitlePanelProps {
   subtitles: SubtitleItem[];
@@ -157,12 +158,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           <FileText size={16} />
           <span className="inline-flex items-center gap-1">
             {t('subtitle.title')}
-            <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
-              ?
-              <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
-                {t('subtitle.titleTip')}
-              </span>
-            </span>
+            <Tooltip content={t('subtitle.titleTip')} placement="bottom" width={288} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+              <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+            </Tooltip>
           </span>
           <button type="button" onClick={() => setSearchOpen((v) => !v)} title={t('subtitle.search')}>
             <Search size={14} style={{ color: secondaryThemeColor }} />
