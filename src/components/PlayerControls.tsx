@@ -1,4 +1,4 @@
-import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2, Clock3, SkipBack, SkipForward, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2, Clock3, SkipBack, SkipForward, ArrowRight, ArrowLeft, ArrowDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
@@ -518,19 +518,43 @@ export function PlayerControls({
                 autoFocus
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setExportStartInputValue(formatTime(exportRangeStart));
-                  setExportStartInputMode(true);
-                }}
-                className="px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
-                style={{ color: secondaryThemeColor }}
-                title={t('export.start')}
-              >
-                {formatTime(exportRangeStart)}
-              </button>
-            )}
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSeek(exportRangeStart)}
+                  className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 relative group"
+                  style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                    e.currentTarget.style.color = '#ffffff';
+                    e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                    e.currentTarget.style.color = secondaryThemeColor;
+                    e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+                  }}
+                  title={t('player.seekExportStart')}
+                >
+                  <ArrowDown size={14} />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                    {t('player.seekExportStart')}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportStartInputValue(formatTime(exportRangeStart));
+                    setExportStartInputMode(true);
+                  }}
+                  className="px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
+                  style={{ color: secondaryThemeColor }}
+                  title={t('export.start')}
+                >
+                  {formatTime(exportRangeStart)}
+                </button>
+              </>
+             )}
           </div>
           <button 
             onClick={onReset}
@@ -591,18 +615,42 @@ export function PlayerControls({
                 autoFocus
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setExportEndInputValue(formatTime(exportRangeEnd));
-                  setExportEndInputMode(true);
-                }}
-                className="px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
-                style={{ color: secondaryThemeColor }}
-                title={t('export.end')}
-              >
-                {formatTime(exportRangeEnd)}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportEndInputValue(formatTime(exportRangeEnd));
+                    setExportEndInputMode(true);
+                  }}
+                  className="px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
+                  style={{ color: secondaryThemeColor }}
+                  title={t('export.end')}
+                >
+                  {formatTime(exportRangeEnd)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSeek(exportRangeEnd)}
+                  className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 relative group"
+                  style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                    e.currentTarget.style.color = '#ffffff';
+                    e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}33`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`;
+                    e.currentTarget.style.color = secondaryThemeColor;
+                    e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+                  }}
+                  title={t('player.seekExportEnd')}
+                >
+                  <ArrowDown size={14} />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                    {t('player.seekExportEnd')}
+                  </div>
+                </button>
+              </>
              )}
             <button
               type="button"

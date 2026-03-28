@@ -4,7 +4,7 @@ PomChat Studio is a desktop-first chat video editor for turning local audio, ASS
 
 It is not meant to be a general-purpose video editor. Instead, it focuses on a specific workflow: import audio and subtitles, assign speakers, tune bubble and layout styles, preview the result in real time, and export a finished chat-style video.
 
-Chinese README: `README.md`
+[Chinese README](https://github.com/AlanWanco/PomChat/blob/main/README.md)
 
 ## What It Is Good For
 
@@ -121,6 +121,17 @@ Packaged files are written to:
 
 - `release/`
 
+## Export Performance Notes
+
+Export is currently still mainly CPU-based, and GPU-accelerated export has not been adapted yet.
+
+As a rough reference on a `Mac mini M4` without GPU acceleration:
+
+- `30 FPS`: around `0.6x`
+- `60 FPS`: around `1x`
+
+Actual speed still depends on subtitle density, background assets, animation usage, resolution, disk speed, and current system load.
+
 ## GitHub Actions
 
 The repository already includes both automatic Electron builds and a manual GitHub Release workflow.
@@ -172,3 +183,10 @@ On Windows, the workflow produces both:
 - You may still see some Vite or Electron warnings in development mode
 - Some Electron settings are still development-oriented and may be tightened later
 - If the app name or local config directory changes, old local preferences are not migrated automatically
+
+## Todo
+
+- Add GPU-accelerated export support, such as hardware encoder paths like macOS `VideoToolbox`
+- Add information text blocks that can be placed at the top, left, right, or bottom for program title, update time, and similar context
+- Add support for inserting a single image either inside the message flow or as a freely positioned element
+- Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases

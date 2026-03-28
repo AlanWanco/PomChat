@@ -222,12 +222,34 @@ export function SettingsPanel({
     ['#f8c9c4', t('themeColor.pinkGold')]
   ] as const;
 
+  const toColorPickerValue = (value: string) => {
+    const trimmed = value.trim();
+    if (/^#([0-9A-Fa-f]{8})$/.test(trimmed)) {
+      return trimmed.slice(0, 7).toUpperCase();
+    }
+    if (/^#([0-9A-Fa-f]{6})$/.test(trimmed)) {
+      return trimmed.toUpperCase();
+    }
+    if (/^#([0-9A-Fa-f]{3})$/.test(trimmed)) {
+      const hex = trimmed.slice(1).toUpperCase();
+      return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
+    }
+    return '#FFFFFF';
+  };
+
   const renderColorInput = (value: string, onChange: (value: string) => void) => (
     <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
       <input
         type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        value={toColorPickerValue(value)}
+        onChange={(e) => {
+          const nextHex = e.target.value.toUpperCase();
+          if (/^#([0-9A-Fa-f]{8})$/.test(value)) {
+            onChange(`${nextHex}${value.slice(7).toUpperCase()}`);
+            return;
+          }
+          onChange(nextHex);
+        }}
         className="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-md shadow-sm"
       />
       <input
@@ -236,11 +258,11 @@ export function SettingsPanel({
         onChange={(e) => onChange(e.target.value)}
         onBlur={(e) => {
           const next = e.target.value.trim();
-          if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(next)) {
+          if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(next)) {
             onChange(next.toUpperCase());
           }
         }}
-        placeholder="#RRGGBB"
+        placeholder="#RRGGBB / #RRGGBBAA"
         className={`w-full rounded border px-2 py-1 text-[11px] font-mono focus:outline-none ${inputClass}`}
       />
     </div>
@@ -446,7 +468,7 @@ export function SettingsPanel({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5 col-span-2">
-                  <span className="text-xs opacity-70">{t('project.fps')}</span>
+                  <span className="text-xs opacity-70 inline-flex items-center gap-1 cursor-help" title={t('project.fpsTip')}>{t('project.fps')}</span>
                   <input
                     type="number"
                     value={config.fps || 60}
@@ -630,7 +652,7 @@ export function SettingsPanel({
                 <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('project.animationStyle')}</span>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <span className="text-xs opacity-70">{t('project.animationStyle')}</span>
+                    <span className="text-xs opacity-70 inline-flex items-center gap-1 cursor-help" title={t('project.animationStyleTip')}>{t('project.animationStyle')}</span>
                     <select
                       value={config.chatLayout?.animationStyle || 'rise'}
                       onChange={(e) => updateChatLayout('animationStyle', e.target.value)}
@@ -975,15 +997,9 @@ export function SettingsPanel({
                     <div className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('speakers.typography')}</span>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
+                        <div className="space-y-1 col-span-2">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                           {renderFontFamilyFields(speaker.style?.fontFamily, (value) => updateSpeakerStyle(key, 'fontFamily', value))}
-                          <div
-                            className="text-[10px] opacity-55 leading-relaxed"
-                            title={t('speakers.fontHelpTitle')}
-                          >
-                            {t('speakers.fontHelp')}
-                          </div>
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
@@ -1220,7 +1236,7 @@ export function SettingsPanel({
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
+                      <div className="space-y-1 col-span-2">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                         {renderFontFamilyFields(annotation.style?.fontFamily, (value) => updateSpeakerStyle('ANNOTATION', 'fontFamily', value))}
                       </div>

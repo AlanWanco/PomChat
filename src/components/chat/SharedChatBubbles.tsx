@@ -45,7 +45,7 @@ export interface SharedChatLayout {
   timestampFontFamily?: string;
   timestampSize?: number;
   timestampColor?: string;
-  animationStyle?: 'none' | 'rise';
+  animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
   animationDuration?: number;
 }
 
@@ -70,18 +70,49 @@ const formatTimestamp = (seconds: number) => {
   return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+
 const easeOutBack = (t: number): number => {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return t === 0 ? 0 : t === 1 ? 1 : c3 * t * t * t - c1 * t * t;
 };
 
-const getBubbleAnimationStyle = (progress: number, side: SharedChatSpeaker['side']) => {
-  const eased = easeOutBack(clamp(progress, 0, 1));
-  const translateX = side === 'left' ? -18 * (1 - eased) : side === 'right' ? 18 * (1 - eased) : 0;
-  const translateY = 18 * (1 - eased);
-  const scale = 0.92 + 0.08 * eased;
-  return `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
+const getBubbleMotionState = (progress: number, style: SharedChatLayout['animationStyle'], side: SharedChatSpeaker['side']) => {
+  const clamped = clamp(progress, 0, 1);
+  const base = easeOutCubic(clamped);
+
+  switch (style) {
+    case 'fade':
+      return { opacity: clamped, transform: undefined, filter: undefined };
+    case 'rise':
+      return {
+        opacity: clamped,
+        transform: `translate3d(0, ${18 * (1 - base)}px, 0)`,
+        filter: undefined
+      };
+    case 'pop': {
+      const eased = easeOutBack(clamped);
+      const scale = 0.82 + 0.18 * eased;
+      return { opacity: clamped, transform: `scale(${scale})`, filter: undefined };
+    }
+    case 'slide': {
+      const direction = side === 'left' ? -1 : side === 'right' ? 1 : 0;
+      return {
+        opacity: clamped,
+        transform: `translate3d(${direction * 18 * (1 - base)}px, 0, 0)`,
+        filter: undefined
+      };
+    }
+    case 'blur':
+      return {
+        opacity: clamped,
+        transform: `translate3d(0, ${10 * (1 - base)}px, 0)`,
+        filter: `blur(${10 * (1 - base)}px)`
+      };
+    default:
+      return { opacity: 1, transform: undefined, filter: undefined };
+  }
 };
 
 const formatBubbleShadow = (shadowSize: number) => {
@@ -105,7 +136,6 @@ interface ChatMessageBubbleProps {
   canvasWidth: number;
   layoutScale: number;
   chatLayout?: SharedChatLayout;
-  enableBuiltInMotion?: boolean;
   fallbackAvatarBorderColor?: string;
   renderAvatar?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
   renderBubble: (args: BubbleRenderArgs) => React.ReactNode;
@@ -118,7 +148,6 @@ export function ChatMessageBubble({
   canvasWidth,
   layoutScale,
   chatLayout,
-  enableBuiltInMotion = true,
   fallbackAvatarBorderColor = '#ffffff',
   renderAvatar,
   renderBubble
@@ -131,6 +160,9 @@ export function ChatMessageBubble({
   const currentProgress = animationStyle === 'none' || animationDuration <= 0
     ? 1
     : clamp((currentTime - item.start + animationDuration) / animationDuration, 0, 1);
+  const motionState = animationStyle === 'none'
+    ? { opacity: 1, transform: undefined, filter: undefined }
+    : getBubbleMotionState(currentProgress, animationStyle, speaker.side);
 
   const fallbackBg = speaker.theme === 'dark' ? '#2563eb' : '#ffffff';
   const fallbackText = speaker.theme === 'dark' ? '#ffffff' : '#111827';
@@ -168,8 +200,9 @@ export function ChatMessageBubble({
         width: '100%',
         justifyContent: isLeft ? 'flex-start' : 'flex-end',
         marginBottom: `${margin}px`,
-        transform: !enableBuiltInMotion || animationStyle === 'none' ? undefined : getBubbleAnimationStyle(currentProgress, speaker.side),
-        opacity: enableBuiltInMotion ? currentProgress : 1
+        transform: motionState.transform,
+        opacity: motionState.opacity,
+        filter: motionState.filter
       }}
     >
       <div

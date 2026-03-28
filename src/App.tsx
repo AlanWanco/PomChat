@@ -372,6 +372,7 @@ function App() {
   const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
   const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
   const [customFilename, setCustomFilename] = useState('');
+  const [persistedCustomFilename, setPersistedCustomFilename] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const portraitAutoCollapseRef = useRef<{ subtitle: boolean; settings: boolean } | null>(null);
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
@@ -1150,7 +1151,16 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const nextCustomFilename = typeof config.customFilename === 'string' ? config.customFilename : '';
     setCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
+    setPersistedCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
   }, [config.exportQuality, config.filenameTemplate, config.customFilename]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setPersistedCustomFilename((prev) => (prev === customFilename ? prev : customFilename));
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [customFilename]);
 
   useEffect(() => {
     setConfig((prev: any) => {
@@ -1159,7 +1169,7 @@ const [previewScale, setPreviewScale] = useState(1);
         prev.exportRange?.end === exportRange.end;
       const sameQuality = prev.exportQuality === exportQuality;
       const sameTemplate = prev.filenameTemplate === filenameTemplate;
-      const sameCustomFilename = prev.customFilename === customFilename;
+      const sameCustomFilename = prev.customFilename === persistedCustomFilename;
 
       if (sameExportRange && sameQuality && sameTemplate && sameCustomFilename) {
         return prev;
@@ -1170,10 +1180,10 @@ const [previewScale, setPreviewScale] = useState(1);
         exportRange,
         exportQuality,
         filenameTemplate,
-        customFilename
+        customFilename: persistedCustomFilename
       };
     });
-  }, [exportRange, exportQuality, filenameTemplate, customFilename]);
+  }, [exportRange, exportQuality, filenameTemplate, persistedCustomFilename]);
 
   useEffect(() => {
     if (!window.electron) {
@@ -1953,7 +1963,6 @@ const [previewScale, setPreviewScale] = useState(1);
                         canvasWidth={canvasWidth}
                         layoutScale={previewScale}
                         chatLayout={config.chatLayout}
-                        enableBuiltInMotion={false}
                         fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
                         renderAvatar={({ src, alt, style }) => (
                           <img
