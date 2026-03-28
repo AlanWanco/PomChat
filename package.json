@@ -49,6 +49,7 @@
     "appId": "com.alanwanco.podchat",
     "productName": "PodChat",
     "directories": {
+      "buildResources": "build",
       "output": "release"
     },
     "files": [
@@ -57,6 +58,7 @@
       "package.json"
     ],
     "mac": {
+      "icon": "build/icons/icon.icns",
       "category": "public.app-category.video",
       "target": [
         "zip",
@@ -64,12 +66,14 @@
       ]
     },
     "win": {
+      "icon": "build/icons/icon.ico",
       "target": [
         "nsis",
         "zip"
       ]
     },
     "linux": {
+      "icon": "build/icons",
       "target": [
         "AppImage",
         "tar.gz"
