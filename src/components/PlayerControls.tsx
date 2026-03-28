@@ -353,7 +353,7 @@ export function PlayerControls({
                 if (e.key === 'Enter') commitTimeJump();
                 if (e.key === 'Escape') setTimeInputMode(false);
               }}
-              className={`text-xl font-mono font-medium tracking-wider min-w-[7rem] px-2 py-1 rounded-md focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`text-3xl font-mono font-medium tracking-wider min-w-[10rem] px-2 py-1 rounded-md focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
               autoFocus
             />
@@ -364,14 +364,14 @@ export function PlayerControls({
                 setTimeInputValue(formatTime(currentTime));
                 setTimeInputMode(true);
               }}
-              className={`text-xl font-mono font-medium tracking-wider inline-flex min-w-[7rem] px-2 py-1 rounded-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`text-3xl font-mono font-medium tracking-wider inline-flex min-w-[10rem] px-2 py-1 rounded-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
               title="Double click to jump (supports 00:00:00.00)"
             >
               {formatTime(currentTime)}
             </button>
           )}
-          <span className={`text-xs font-mono ${textClass}`}>/ {formatTime(duration)}</span>
+          <span className={`text-lg font-mono ${textClass}`}>/ {formatTime(duration)}</span>
         </div>
 
         <div className="flex items-center gap-3 justify-center shrink-0">

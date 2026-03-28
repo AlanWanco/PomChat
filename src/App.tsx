@@ -44,23 +44,23 @@ const DEFAULT_BUBBLE_STYLE = {
   margin: 14,
   paddingX: 20,
   paddingY: 12,
-  shadowSize: 18,
+  shadowSize: 7,
   fontFamily: 'system-ui',
-  fontSize: 18,
+  fontSize: 30,
   fontWeight: 'normal'
 };
 
 const DEFAULT_CHAT_LAYOUT = {
   paddingTop: 48,
-  paddingBottom: 120,
+  paddingBottom: 30,
   paddingX: 48,
   paddingLeft: 48,
   paddingRight: 48,
-  bubbleScale: 1,
-  avatarSize: 64,
-  speakerNameSize: 14,
+  bubbleScale: 1.5,
+  avatarSize: 80,
+  speakerNameSize: 22,
   animationStyle: 'rise',
-  animationDuration: 0.45
+  animationDuration: 0.25
 };
 
 const LEGACY_DEMO_PATH_PREFIXES = ['src/projects/demo/', 'projects/demo/'];
@@ -85,8 +85,12 @@ const sanitizeImportedAssContent = (content: string) => {
 };
 
 const normalizeDemoAssetPath = (path: unknown, fallback: string) => {
-  if (typeof path !== 'string' || !path.trim()) {
+  if (typeof path !== 'string') {
     return fallback;
+  }
+
+  if (!path.trim()) {
+    return '';
   }
 
   const normalizedPath = path.replace(/\\/g, '/').trim();
@@ -145,6 +149,40 @@ const sanitizeProjectConfig = (parsed: any) => {
     assPath: normalizeDemoAssetPath(merged.assPath, initialConfig.assPath)
   };
 };
+
+const createBlankProjectConfig = (projectTitle: string) => ({
+  ...initialConfig,
+  projectId: `project-${Date.now()}`,
+  projectTitle,
+  audioPath: '',
+  assPath: '',
+  content: [],
+  speakers: {
+    A: {
+      name: '默认角色',
+      avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
+      side: 'left',
+      style: { ...DEFAULT_BUBBLE_STYLE }
+    },
+    ANNOTATION: {
+      name: '注释',
+      avatar: '',
+      side: 'center',
+      type: 'annotation',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#111827',
+        textColor: '#ffffff',
+        borderRadius: 999,
+        paddingX: 18,
+        paddingY: 10,
+        maxWidth: 720,
+        fontSize: 24,
+        annotationPosition: 'bottom'
+      }
+    }
+  }
+});
 
 function SnapshotBubble({
   canvasRef,
@@ -1114,7 +1152,7 @@ function App() {
     if (!window.electron) {
       // Web mode fallback
       setProjectPath('web-demo');
-      const cleanConfig = { ...initialConfig, projectTitle: t('app.newProject'), audioPath: '', assPath: '', content: [] };
+      const cleanConfig = createBlankProjectConfig(t('app.newProject'));
       setConfig(cleanConfig);
       setShowSettings(true);
       return;
@@ -1128,21 +1166,7 @@ function App() {
       });
       
       if (!result.canceled && result.filePath) {
-        const defaultSpeaker = {
-          name: "默认角色",
-          avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=A",
-          side: "left",
-          style: { ...DEFAULT_BUBBLE_STYLE }
-        };
-
-        const newConfig = { 
-          ...initialConfig, 
-          projectTitle: t('app.newProject'),
-          audioPath: '',
-          assPath: '',
-          content: [],
-          speakers: { "A": defaultSpeaker }
-        };
+        const newConfig = createBlankProjectConfig(t('app.newProject'));
         await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
         setProjectPath(result.filePath);
         setRecentProject(result.filePath);
@@ -1333,7 +1357,7 @@ function App() {
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type !== 'annotation') return false;
     const animationStyle = config.chatLayout?.animationStyle || 'rise';
-    const animationDuration = config.chatLayout?.animationDuration ?? 0.45;
+    const animationDuration = config.chatLayout?.animationDuration ?? 0.25;
     const appearanceTime = Math.max(0, item.start - (animationStyle === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime && currentTime <= item.end;
   });
@@ -1601,7 +1625,7 @@ function App() {
                 className="relative z-20 flex-1 overflow-y-auto flex flex-col scroll-smooth custom-scrollbar"
                 style={{
                   paddingTop: `${(config.chatLayout?.paddingTop ?? 48) * Math.max(0.35, previewScale)}px`,
-                  paddingBottom: `${(config.chatLayout?.paddingBottom ?? 120) * Math.max(0.35, previewScale)}px`,
+                  paddingBottom: `${(config.chatLayout?.paddingBottom ?? 30) * Math.max(0.35, previewScale)}px`,
                   paddingLeft: `${(config.chatLayout?.paddingLeft ?? config.chatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`,
                   paddingRight: `${(config.chatLayout?.paddingRight ?? config.chatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`
                 }}
@@ -1614,7 +1638,7 @@ function App() {
                     if (!speaker || speaker.type === 'annotation') return null;
 
                     const animationStyle = config.chatLayout?.animationStyle || 'rise';
-                    const animationDuration = config.chatLayout?.animationDuration ?? 0.45;
+                    const animationDuration = config.chatLayout?.animationDuration ?? 0.25;
                     const animationLeadTime = animationStyle === 'none' ? 0 : animationDuration;
                     const appearanceTime = Math.max(0, item.start - animationLeadTime);
                     const isVisible = currentTime >= appearanceTime;
@@ -1638,13 +1662,13 @@ function App() {
                     const margin = speaker.style?.margin ?? 14;
                     const paddingX = speaker.style?.paddingX ?? 20;
                     const paddingY = speaker.style?.paddingY ?? 12;
-                    const shadowSize = speaker.style?.shadowSize ?? 18;
+                    const shadowSize = speaker.style?.shadowSize ?? 7;
                     
                     const fontFamily = speaker.style?.fontFamily || "system-ui";
-                    const fontSize = speaker.style?.fontSize ?? 18;
+                    const fontSize = speaker.style?.fontSize ?? 30;
                     const fontWeight = speaker.style?.fontWeight || "normal";
                     const nameColor = speaker.style?.nameColor || '#ffffff';
-                    const bubbleScale = config.chatLayout?.bubbleScale ?? 1;
+                    const bubbleScale = config.chatLayout?.bubbleScale ?? 1.5;
                     const effectiveScale = Math.max(0.35, previewScale) * bubbleScale;
                     const scaledRadius = radius * effectiveScale;
                     const scaledMargin = margin * effectiveScale;
@@ -1653,11 +1677,11 @@ function App() {
                     const scaledShadowSize = shadowSize * effectiveScale;
                     const scaledFontSize = fontSize * effectiveScale;
                     const scaledBlur = blur * effectiveScale;
-                    const avatarSize = (config.chatLayout?.avatarSize ?? 64) * effectiveScale;
+                    const avatarSize = (config.chatLayout?.avatarSize ?? 80) * effectiveScale;
                     const avatarBorderWidth = Math.max(2, 4 * effectiveScale);
                     const bubbleGap = 16 * effectiveScale;
                     const metaGap = 8 * effectiveScale;
-                    const speakerNameSize = (config.chatLayout?.speakerNameSize ?? 14) * effectiveScale;
+                    const speakerNameSize = (config.chatLayout?.speakerNameSize ?? 22) * effectiveScale;
                     const timestampSize = 10 * effectiveScale;
                     
                     // Convert hex color to rgba using opacity
@@ -1766,12 +1790,12 @@ function App() {
                       const textColor = speaker.style?.textColor || '#ffffff';
                       const hexBg = bgColor.startsWith('#') ? bgColor : '#111827';
                       const finalBgColor = `${hexBg}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
-                      const bubbleScale = config.chatLayout?.bubbleScale ?? 1;
+                      const bubbleScale = config.chatLayout?.bubbleScale ?? 1.5;
                       const effectiveScale = Math.max(0.35, previewScale) * bubbleScale;
-                      const shadowSize = (speaker.style?.shadowSize ?? 12) * effectiveScale;
+                      const shadowSize = (speaker.style?.shadowSize ?? 7) * effectiveScale;
                       const maxWidth = (speaker.style?.maxWidth ?? 720) * effectiveScale;
                       return (
-                        <div key={item.id} className={`pointer-events-none ${config.chatLayout?.animationStyle === 'none' ? '' : `podchat-bubble-enter-${config.chatLayout?.animationStyle || 'rise'}`}`} style={{ animationDuration: `${config.chatLayout?.animationDuration ?? 0.45}s` }}>
+                        <div key={item.id} className={`pointer-events-none ${config.chatLayout?.animationStyle === 'none' ? '' : `podchat-bubble-enter-${config.chatLayout?.animationStyle || 'rise'}`}`} style={{ animationDuration: `${config.chatLayout?.animationDuration ?? 0.25}s` }}>
                           <div style={{
                             backgroundColor: finalBgColor,
                             color: textColor,
@@ -1779,7 +1803,7 @@ function App() {
                             borderRadius: `${(speaker.style?.borderRadius ?? 999) * effectiveScale}px`,
                             padding: `${(speaker.style?.paddingY ?? 10) * effectiveScale}px ${(speaker.style?.paddingX ?? 18) * effectiveScale}px`,
                             fontFamily: speaker.style?.fontFamily || 'system-ui',
-                            fontSize: `${(speaker.style?.fontSize ?? 16) * effectiveScale}px`,
+                            fontSize: `${(speaker.style?.fontSize ?? 24) * effectiveScale}px`,
                             boxShadow: shadowSize > 0 ? `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)` : 'none',
                             marginTop: `${(speaker.style?.margin ?? 12) * effectiveScale}px`
                           }}>
@@ -1797,12 +1821,12 @@ function App() {
                       const textColor = speaker.style?.textColor || '#ffffff';
                       const hexBg = bgColor.startsWith('#') ? bgColor : '#111827';
                       const finalBgColor = `${hexBg}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
-                      const bubbleScale = config.chatLayout?.bubbleScale ?? 1;
+                      const bubbleScale = config.chatLayout?.bubbleScale ?? 1.5;
                       const effectiveScale = Math.max(0.35, previewScale) * bubbleScale;
-                      const shadowSize = (speaker.style?.shadowSize ?? 12) * effectiveScale;
+                      const shadowSize = (speaker.style?.shadowSize ?? 7) * effectiveScale;
                       const maxWidth = (speaker.style?.maxWidth ?? 720) * effectiveScale;
                       return (
-                        <div key={item.id} className={`pointer-events-none ${config.chatLayout?.animationStyle === 'none' ? '' : `podchat-bubble-enter-${config.chatLayout?.animationStyle || 'rise'}`}`} style={{ animationDuration: `${config.chatLayout?.animationDuration ?? 0.45}s` }}>
+                        <div key={item.id} className={`pointer-events-none ${config.chatLayout?.animationStyle === 'none' ? '' : `podchat-bubble-enter-${config.chatLayout?.animationStyle || 'rise'}`}`} style={{ animationDuration: `${config.chatLayout?.animationDuration ?? 0.25}s` }}>
                           <div style={{
                             backgroundColor: finalBgColor,
                             color: textColor,
@@ -1810,7 +1834,7 @@ function App() {
                             borderRadius: `${(speaker.style?.borderRadius ?? 999) * effectiveScale}px`,
                             padding: `${(speaker.style?.paddingY ?? 10) * effectiveScale}px ${(speaker.style?.paddingX ?? 18) * effectiveScale}px`,
                             fontFamily: speaker.style?.fontFamily || 'system-ui',
-                            fontSize: `${(speaker.style?.fontSize ?? 16) * effectiveScale}px`,
+                            fontSize: `${(speaker.style?.fontSize ?? 24) * effectiveScale}px`,
                             boxShadow: shadowSize > 0 ? `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)` : 'none',
                             marginBottom: `${(speaker.style?.margin ?? 12) * effectiveScale}px`
                           }}>

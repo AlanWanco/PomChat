@@ -5,15 +5,15 @@ export const demoConfig = {
   dimensions: { width: 1920, height: 1080 },
   chatLayout: {
     paddingTop: 48,
-    paddingBottom: 120, // 底部留白，控制新气泡出现的高度
+    paddingBottom: 30, // 底部留白，控制新气泡出现的高度
     paddingX: 48,
     paddingLeft: 48,
     paddingRight: 48,
-    bubbleScale: 1,
-    avatarSize: 64,
-    speakerNameSize: 14,
+    bubbleScale: 1.5,
+    avatarSize: 80,
+    speakerNameSize: 22,
     animationStyle: "rise",
-    animationDuration: 0.45
+    animationDuration: 0.25
   },
   audioPath: "/projects/demo/assets/test_audio.aac",
   assPath: "/projects/demo/assets/ass_test.ass",
@@ -41,10 +41,10 @@ export const demoConfig = {
         margin: 14,
         paddingX: 20,
         paddingY: 12,
-        shadowSize: 18,
+        shadowSize: 7,
         nameColor: "#ffffff",
         fontFamily: "system-ui",
-        fontSize: 18,
+        fontSize: 30,
         fontWeight: "normal",
         scale: 1.0
       }
@@ -65,10 +65,10 @@ export const demoConfig = {
         margin: 14,
         paddingX: 20,
         paddingY: 12,
-        shadowSize: 18,
+        shadowSize: 7,
         nameColor: "#ffffff",
         fontFamily: "system-ui",
-        fontSize: 18,
+        fontSize: 30,
         fontWeight: "normal",
         scale: 1.0
       }
@@ -90,10 +90,10 @@ export const demoConfig = {
         margin: 12,
         paddingX: 18,
         paddingY: 10,
-        shadowSize: 12,
+        shadowSize: 7,
         maxWidth: 720,
         fontFamily: "system-ui",
-        fontSize: 16,
+        fontSize: 24,
         fontWeight: "normal",
         annotationPosition: "bottom"
       }

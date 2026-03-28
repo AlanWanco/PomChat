@@ -461,7 +461,7 @@ export function SettingsPanel({
                   <span className="text-xs opacity-70">{t('project.bottomPosition')}</span>
                   <input 
                     type="number" 
-                    value={config.chatLayout?.paddingBottom || 120}
+                    value={config.chatLayout?.paddingBottom ?? 30}
                     onChange={(e) => updateChatLayout('paddingBottom', parseInt(e.target.value))}
                     className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`} 
                     style={inputSurfaceStyle}
@@ -516,11 +516,11 @@ export function SettingsPanel({
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-xs opacity-70">{t('project.bubbleScale')}</span>
-                  <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{(config.chatLayout?.bubbleScale ?? 1).toFixed(2)}x</span>
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{(config.chatLayout?.bubbleScale ?? 1.5).toFixed(2)}x</span>
                 </div>
                 <input 
-                  type="range" min="0.5" max="1.5" step="0.05"
-                  value={config.chatLayout?.bubbleScale ?? 1}
+                  type="range" min="0.5" max="5" step="0.05"
+                  value={config.chatLayout?.bubbleScale ?? 1.5}
                   onChange={(e) => updateChatLayout('bubbleScale', parseFloat(e.target.value))}
                   className="w-full" style={themedRangeStyle}
                   title={t('project.bubbleScale.title')}
@@ -531,7 +531,7 @@ export function SettingsPanel({
                   <span className="text-xs opacity-70">{t('project.avatarSize')}</span>
                   <input
                     type="number"
-                    value={config.chatLayout?.avatarSize ?? 64}
+                    value={config.chatLayout?.avatarSize ?? 80}
                     onChange={(e) => updateChatLayout('avatarSize', parseInt(e.target.value))}
                     className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
                     style={inputSurfaceStyle}
@@ -541,7 +541,7 @@ export function SettingsPanel({
                   <span className="text-xs opacity-70">{t('project.speakerNameSize')}</span>
                   <input
                     type="number"
-                    value={config.chatLayout?.speakerNameSize ?? 14}
+                    value={config.chatLayout?.speakerNameSize ?? 22}
                     onChange={(e) => updateChatLayout('speakerNameSize', parseInt(e.target.value))}
                     className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
                     style={inputSurfaceStyle}
@@ -568,11 +568,11 @@ export function SettingsPanel({
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-xs opacity-70">{t('project.animationSpeed')}</span>
-                    <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{(config.chatLayout?.animationDuration ?? 0.45).toFixed(2)}s</span>
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{(config.chatLayout?.animationDuration ?? 0.25).toFixed(2)}s</span>
                   </div>
                   <input 
                     type="range" min="0.1" max="1.2" step="0.05"
-                    value={config.chatLayout?.animationDuration ?? 0.45}
+                    value={config.chatLayout?.animationDuration ?? 0.25}
                     onChange={(e) => updateChatLayout('animationDuration', parseFloat(e.target.value))}
                     className="w-full" style={themedRangeStyle}
                   />
@@ -918,7 +918,7 @@ export function SettingsPanel({
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                           <input 
                             type="number" 
-                            value={speaker.style?.fontSize ?? 18}
+                            value={speaker.style?.fontSize ?? 30}
                             onChange={(e) => updateSpeakerStyle(key, 'fontSize', parseInt(e.target.value))}
                             className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
                             style={inputSurfaceStyle}
@@ -1096,7 +1096,7 @@ export function SettingsPanel({
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                           <input 
                             type="number" min="0" max="64"
-                            value={speaker.style?.shadowSize ?? 18}
+                            value={speaker.style?.shadowSize ?? 7}
                             onChange={(e) => updateSpeakerStyle(key, 'shadowSize', parseInt(e.target.value))}
                             className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
                             style={inputSurfaceStyle}
@@ -1141,7 +1141,7 @@ export function SettingsPanel({
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                         <input
                           type="number"
-                          value={annotation.style?.fontSize ?? 16}
+                          value={annotation.style?.fontSize ?? 24}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'fontSize', parseInt(e.target.value))}
                           className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
                           style={inputSurfaceStyle}
@@ -1164,7 +1164,7 @@ export function SettingsPanel({
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                         <input
                           type="number"
-                          value={annotation.style?.shadowSize ?? 12}
+                          value={annotation.style?.shadowSize ?? 7}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'shadowSize', parseInt(e.target.value))}
                           className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
                           style={inputSurfaceStyle}

@@ -28,7 +28,10 @@ export function useAssSubtitle(assPath: string, speakerConfig: any) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!assPath || !window.electron) return;
+    if (!assPath || !window.electron) {
+      setSubtitles([]);
+      return;
+    }
     
     setLoading(true);
     window.electron.readFile(assPath)
