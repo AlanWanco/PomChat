@@ -22,6 +22,7 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Import local audio and ASS subtitle files
 - Edit subtitle text, start and end time, and speaker assignment
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
+- Switch freely between light and dark mode, with up to 13 theme and secondary color combinations
 - Support both normal speaker bubbles and annotation-style bubbles
 - Preview the conversation layout in real time while the audio plays
 - Set export ranges and filename templates

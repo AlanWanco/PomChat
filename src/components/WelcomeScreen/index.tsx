@@ -21,6 +21,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [hoveredCard, setHoveredCard] = useState<'new' | 'open' | null>(null);
   const [hoverLogo, setHoverLogo] = useState(false);
+  const [logoShakeKey, setLogoShakeKey] = useState(0);
 
   return (
     <div
@@ -44,9 +45,22 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
         </button>
       )}
       <div className="mb-12 flex flex-col items-center">
-        <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-colors" onMouseEnter={() => setHoverLogo(true)} onMouseLeave={() => setHoverLogo(false)} style={{ backgroundColor: hoverLogo ? secondaryThemeColor : themeColor, boxShadow: '0 8px 18px rgba(0,0,0,0.12)' }}>
-          <img src={pomchatIconWhite} alt="PomChat logo" className="w-10 h-10 object-contain" />
-        </div>
+        <button
+          type="button"
+          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-colors cursor-pointer"
+          onMouseEnter={() => setHoverLogo(true)}
+          onMouseLeave={() => setHoverLogo(false)}
+          onClick={() => setLogoShakeKey((prev) => prev + 1)}
+          style={{ backgroundColor: hoverLogo ? secondaryThemeColor : themeColor, boxShadow: '0 8px 18px rgba(0,0,0,0.12)' }}
+        >
+          <img
+            key={logoShakeKey}
+            src={pomchatIconWhite}
+            alt="PomChat logo"
+            className="w-10 h-10 object-contain"
+            style={{ animation: 'pomchat-logo-wiggle 560ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+          />
+        </button>
         <h1 className="text-4xl font-bold mb-3 tracking-tight">PomChat Studio</h1>
         <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           {t('welcome.tagline')}
