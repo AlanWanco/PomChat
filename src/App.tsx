@@ -17,14 +17,8 @@ import './App.css';
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
 
-// Local Storage Keys
+// Web-only local storage key
 const STORAGE_KEY = 'pomchat_demo_config';
-const SETTINGS_POS_KEY = 'pomchat_settings_pos';
-const THEME_KEY = 'pomchat_theme';
-const THEME_COLOR_KEY = 'pomchat_theme_color';
-const SECONDARY_THEME_COLOR_KEY = 'pomchat_secondary_theme_color';
-const RECENT_PROJECT_KEY = 'pomchat_recent_project';
-const PLAYBACK_POSITION_KEY = 'pomchat_playback_positions';
 
 type ExportProgressState = {
   progress: number;
@@ -65,6 +59,16 @@ const DEFAULT_CHAT_LAYOUT = {
   timestampColor: '#FFFFFFA6',
   animationStyle: 'rise',
   animationDuration: 0.2
+};
+
+const DEFAULT_UI_CONFIG = {
+  isDarkMode: true,
+  themeColor: DARK_THEME_DEFAULT,
+  secondaryThemeColor: '#f472b6',
+  settingsPosition: 'right' as 'left' | 'right',
+  recentProject: null as string | null,
+  playbackPositions: {} as Record<string, number>,
+  presets: {} as Record<string, any>
 };
 
 const LEGACY_DEMO_PATH_PREFIXES = ['src/projects/demo/', 'projects/demo/'];
@@ -139,7 +143,15 @@ const sanitizeProjectConfig = (parsed: any) => {
           }
         }
       ])
-    )
+    ),
+    ui: {
+      ...DEFAULT_UI_CONFIG,
+      ...(parsed?.ui || {}),
+      settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
+      recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
+      playbackPositions: parsed?.ui?.playbackPositions && typeof parsed.ui.playbackPositions === 'object' ? parsed.ui.playbackPositions : {},
+      presets: parsed?.ui?.presets && typeof parsed.ui.presets === 'object' ? parsed.ui.presets : {}
+    }
   };
 
   const isDemoProject = merged.projectId === initialConfig.projectId;
@@ -185,7 +197,8 @@ const createBlankProjectConfig = (projectTitle: string) => ({
         annotationPosition: 'bottom'
       }
     }
-  }
+  },
+  ui: { ...DEFAULT_UI_CONFIG }
 });
 
 const sanitizeProjectOverrides = (value: unknown) => {
@@ -314,21 +327,24 @@ function App() {
   const getSpeakerNameSnapshot = (speakers: Record<string, any>) =>
     Object.fromEntries(Object.entries(speakers || {}).map(([key, speaker]) => [key, speaker?.name || '']));
 
+  const isDesktopMode = typeof window !== 'undefined' && Boolean(window.electron);
   const [projectPath, setProjectPath] = useState<string | null>(null);
-  const [recentProject, setRecentProject] = useState<string | null>(() => localStorage.getItem(RECENT_PROJECT_KEY));
+  const [recentProject, setRecentProject] = useState<string | null>(() => isDesktopMode ? null : localStorage.getItem(STORAGE_KEY + '_recent_project'));
 
   // Load initial from localStorage if available
   const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return sanitizeProjectConfig(parsed);
-      } catch (e) {
-        return initialConfig;
+    if (!isDesktopMode) {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return sanitizeProjectConfig(parsed);
+        } catch (_e) {
+          return sanitizeProjectConfig(initialConfig);
+        }
       }
     }
-    return initialConfig;
+    return sanitizeProjectConfig(initialConfig);
   });
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -337,21 +353,13 @@ function App() {
   const [loop, setLoop] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(THEME_KEY) !== 'light');
-  const [themeColorState, setThemeColorState] = useState(() => localStorage.getItem(THEME_COLOR_KEY) || '');
-  const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => {
-    const saved = localStorage.getItem(SECONDARY_THEME_COLOR_KEY);
-    if (!saved || saved === '#01b7ee') {
-      return '#f472b6';
-    }
-    return saved;
-  });
+  const [isDarkMode, setIsDarkMode] = useState(() => config.ui?.isDarkMode ?? DEFAULT_UI_CONFIG.isDarkMode);
+  const [themeColorState, setThemeColorState] = useState(() => config.ui?.themeColor ?? DEFAULT_UI_CONFIG.themeColor);
+  const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => config.ui?.secondaryThemeColor ?? DEFAULT_UI_CONFIG.secondaryThemeColor);
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
   
-  const [settingsPosition, setSettingsPosition] = useState<'left'|'right'>(() => {
-    return (localStorage.getItem(SETTINGS_POS_KEY) as 'left'|'right') || 'right';
-  });
+  const [settingsPosition, setSettingsPosition] = useState<'left'|'right'>(() => config.ui?.settingsPosition ?? DEFAULT_UI_CONFIG.settingsPosition);
 
   // Panel Widths
   const [subtitleWidth, setSubtitleWidth] = useState(320);
@@ -373,6 +381,7 @@ function App() {
   const [customFilename, setCustomFilename] = useState('');
   const [persistedCustomFilename, setPersistedCustomFilename] = useState('');
   const [cachedRemoteAssets, setCachedRemoteAssets] = useState<Record<string, string>>({});
+  const [presets, setPresets] = useState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
   const [isDragOver, setIsDragOver] = useState(false);
   const portraitAutoCollapseRef = useRef<{ subtitle: boolean; settings: boolean } | null>(null);
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
@@ -717,7 +726,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
       const content = await window.electron.readFile(result.filePaths[0]);
       const parsed = JSON.parse(content);
-      const existing = JSON.parse(localStorage.getItem('pomchat_presets') || '{}');
+      const existing = { ...presets };
       const imported: Record<string, any> = {};
 
       if (parsed?.speakers && typeof parsed.speakers === 'object') {
@@ -755,8 +764,7 @@ const [previewScale, setPreviewScale] = useState(1);
         return;
       }
 
-      localStorage.setItem('pomchat_presets', JSON.stringify({ ...existing, ...imported }));
-      window.dispatchEvent(new Event('pomchat_presets_updated'));
+      setPresets({ ...existing, ...imported });
       showToast(t('app.presetsImported'));
     } catch (error) {
       console.error('Failed to import presets:', error);
@@ -767,7 +775,6 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) return;
 
     try {
-      const presets = JSON.parse(localStorage.getItem('pomchat_presets') || '{}');
       const result = await window.electron.showSaveDialog({
         title: t('menu.exportPresets'),
         defaultPath: 'pomchat-presets.json',
@@ -814,36 +821,52 @@ const [previewScale, setPreviewScale] = useState(1);
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
+  useEffect(() => {
+    const ui = config.ui || DEFAULT_UI_CONFIG;
+    setIsDarkMode((prev: boolean) => (prev === ui.isDarkMode ? prev : ui.isDarkMode));
+    setThemeColorState((prev: string) => (prev === ui.themeColor ? prev : ui.themeColor));
+    setSecondaryThemeColorState((prev: string) => (prev === ui.secondaryThemeColor ? prev : ui.secondaryThemeColor));
+    setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
+    setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
+    setPresets((prev: Record<string, any>) => JSON.stringify(prev) === JSON.stringify(ui.presets || {}) ? prev : (ui.presets || {}));
+  }, [config.ui]);
+
+  useEffect(() => {
+    setConfig((prev: any) => {
+      const nextUi = {
+        ...(prev.ui || DEFAULT_UI_CONFIG),
+        isDarkMode,
+        themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
+        secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
+        settingsPosition,
+        recentProject,
+        presets
+      };
+
+      if (JSON.stringify(prev.ui || {}) === JSON.stringify(nextUi)) {
+        return prev;
+      }
+
+      return { ...prev, ui: nextUi };
+    });
+  }, [isDarkMode, themeColorState, secondaryThemeColorState, settingsPosition, recentProject, presets]);
+
    // Save config explicitly
    const handleSaveConfig = () => {
-     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-     if (window.electron) {
-       window.electron.saveConfig(config).catch((err: any) => console.error('Failed to save config to file:', err));
+     if (!window.electron) {
+       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
      }
-     showToast(t('app.configSaved'));
-   };
-
-   useEffect(() => {
-     localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
-   }, [isDarkMode]);
-
-  useEffect(() => {
-    localStorage.setItem(THEME_COLOR_KEY, themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT));
-  }, [themeColorState, isDarkMode]);
-
-  useEffect(() => {
-    localStorage.setItem(SECONDARY_THEME_COLOR_KEY, secondaryThemeColorState || '#f472b6');
-  }, [secondaryThemeColorState]);
+      if (window.electron) {
+        window.electron.saveConfig(config).catch((err: any) => console.error('Failed to save config to file:', err));
+      }
+      showToast(t('app.configSaved'));
+    };
 
   useEffect(() => {
     if (!themeColorState) {
       setThemeColorState(isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT);
     }
   }, [isDarkMode, themeColorState]);
-
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_POS_KEY, settingsPosition);
-  }, [settingsPosition]);
 
   // Load config from Electron config file on startup (only once)
   const hasLoadedElectronConfigRef = useRef(false);
@@ -953,9 +976,16 @@ const [previewScale, setPreviewScale] = useState(1);
       setCurrentTime(time);
       const playbackKey = projectPath || config.assPath || config.audioPath;
       if (playbackKey) {
-        const saved = JSON.parse(localStorage.getItem(PLAYBACK_POSITION_KEY) || '{}');
-        saved[playbackKey] = time;
-        localStorage.setItem(PLAYBACK_POSITION_KEY, JSON.stringify(saved));
+        setConfig((prev: any) => ({
+          ...prev,
+          ui: {
+            ...(prev.ui || DEFAULT_UI_CONFIG),
+            playbackPositions: {
+              ...((prev.ui || DEFAULT_UI_CONFIG).playbackPositions || {}),
+              [playbackKey]: time
+            }
+          }
+        }));
       }
     }
   };
@@ -965,7 +995,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setDuration(audioRef.current.duration);
       const playbackKey = projectPath || config.assPath || config.audioPath;
       if (playbackKey) {
-        const saved = JSON.parse(localStorage.getItem(PLAYBACK_POSITION_KEY) || '{}');
+        const saved = config.ui?.playbackPositions || {};
         const time = saved[playbackKey];
         if (typeof time === 'number' && time >= 0 && time <= audioRef.current.duration) {
           audioRef.current.currentTime = time;
@@ -1481,7 +1511,9 @@ const [previewScale, setPreviewScale] = useState(1);
         await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
         setProjectPath(result.filePath);
         setRecentProject(result.filePath);
-        localStorage.setItem(RECENT_PROJECT_KEY, result.filePath);
+        if (!window.electron) {
+          localStorage.setItem(STORAGE_KEY + '_recent_project', result.filePath);
+        }
         setConfig(newConfig);
         savedSpeakerNamesRef.current = getSpeakerNameSnapshot(newConfig.speakers);
         setShowSettings(true);
@@ -1595,7 +1627,7 @@ const [previewScale, setPreviewScale] = useState(1);
       showToast(t('app.audioImported'));
       return;
     }
-  }, [showToast, t]);
+  }, [presets, showToast, t]);
 
 
   const handleSelectImage = async (): Promise<string | null> => {
@@ -1626,7 +1658,9 @@ const [previewScale, setPreviewScale] = useState(1);
       
       setProjectPath(filePath);
       setRecentProject(filePath);
-      localStorage.setItem(RECENT_PROJECT_KEY, filePath);
+      if (!window.electron) {
+        localStorage.setItem(STORAGE_KEY + '_recent_project', filePath);
+      }
       setConfig(validatedConfig);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
       setShowSettings(true);
@@ -1635,7 +1669,9 @@ const [previewScale, setPreviewScale] = useState(1);
       alert('加载失败: ' + e.message);
       if (filePath === recentProject) {
         setRecentProject(null);
-        localStorage.removeItem(RECENT_PROJECT_KEY);
+        if (!window.electron) {
+          localStorage.removeItem(STORAGE_KEY + '_recent_project');
+        }
       }
     }
   };
@@ -1644,7 +1680,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) {
       // Web mode fallback
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+          const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
           const validatedConfig = validateProjectConfig(parsed);
@@ -1783,6 +1819,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onClose={() => setShowSettings(false)}
                 onSave={handleSaveConfig}
                 showToast={showToast}
+                presets={presets}
+                onPresetsChange={setPresets}
                 activeTab={activeTab as 'global' | 'project' | 'speakers' | 'annotation'}
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}
@@ -1895,6 +1933,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onClose={() => setShowSettings(false)}
                 onSave={handleSaveProject}
                 showToast={showToast}
+                presets={presets}
+                onPresetsChange={setPresets}
                 activeTab={activeTab as 'global' | 'project' | 'speakers' | 'annotation'}
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}
@@ -2118,6 +2158,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onClose={() => setShowSettings(false)}
                 onSave={handleSaveProject}
                 showToast={showToast}
+                presets={presets}
+                onPresetsChange={setPresets}
                 activeTab={activeTab as 'global' | 'project' | 'speakers' | 'annotation'}
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}

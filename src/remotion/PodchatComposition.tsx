@@ -67,18 +67,6 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
           justifyContent: 'space-between'
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 * effectiveScale, alignItems: 'stretch' }}>
-          {topAnnotations.map((item) => (
-            <ChatAnnotationBubble
-              key={`top-${item.speaker}-${item.start}-${item.text}`}
-              item={{ key: `top-${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
-              speaker={props.speakers[item.speaker]}
-              layoutScale={layoutScale}
-              chatLayout={props.chatLayout}
-            />
-          ))}
-        </div>
-
         <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'flex-end' }}>
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
             {visibleMessages.map((item) => {
@@ -122,19 +110,46 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
             })}
           </div>
         </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 * effectiveScale, alignItems: 'stretch' }}>
-          {bottomAnnotations.map((item) => (
-            <ChatAnnotationBubble
-              key={`bottom-${item.speaker}-${item.start}-${item.text}`}
-              item={{ key: `bottom-${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
-              speaker={props.speakers[item.speaker]}
-              layoutScale={layoutScale}
-              chatLayout={props.chatLayout}
-            />
-          ))}
-        </div>
       </AbsoluteFill>
+
+      {(topAnnotations.length > 0 || bottomAnnotations.length > 0) ? (
+        <AbsoluteFill
+          style={{
+            pointerEvents: 'none',
+            paddingTop: 24 * effectiveScale,
+            paddingBottom: 24 * effectiveScale,
+            paddingLeft: 32 * effectiveScale,
+            paddingRight: 32 * effectiveScale,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 * effectiveScale, alignItems: 'center' }}>
+            {topAnnotations.map((item) => (
+              <ChatAnnotationBubble
+                key={`top-${item.speaker}-${item.start}-${item.text}`}
+                item={{ key: `top-${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
+                speaker={props.speakers[item.speaker]}
+                layoutScale={layoutScale}
+                chatLayout={props.chatLayout}
+              />
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 * effectiveScale, alignItems: 'center' }}>
+            {bottomAnnotations.map((item) => (
+              <ChatAnnotationBubble
+                key={`bottom-${item.speaker}-${item.start}-${item.text}`}
+                item={{ key: `bottom-${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
+                speaker={props.speakers[item.speaker]}
+                layoutScale={layoutScale}
+                chatLayout={props.chatLayout}
+              />
+            ))}
+          </div>
+        </AbsoluteFill>
+      ) : null}
     </AbsoluteFill>
   );
 };

@@ -34,6 +34,8 @@ interface SettingsPanelProps {
   onClose: () => void;
   onSave: () => void;
   showToast: (msg: string) => void;
+  presets: Record<string, any>;
+  onPresetsChange: (presets: Record<string, any>) => void;
   activeTab: 'global' | 'project' | 'speakers' | 'annotation';
   setActiveTab: (tab: 'global' | 'project' | 'speakers' | 'annotation') => void;
   onSelectImage?: () => Promise<string | null>;
@@ -43,7 +45,7 @@ export function SettingsPanel({
   config, onConfigChange, 
   isDarkMode, language, themeColor, secondaryThemeColor, onThemeColorChange, onSecondaryThemeColorChange, onLanguageChange, onThemeChange, 
   settingsPosition, onPositionChange,
-  onClose, onSave, showToast, activeTab, setActiveTab,
+  onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
   onSelectImage
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
@@ -56,10 +58,6 @@ export function SettingsPanel({
     if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return `/@fs${path}`;
     return path.startsWith('/') ? path : `/${path}`;
   };
-  const [presets, setPresets] = useState<Record<string, any>>(() => {
-    const saved = localStorage.getItem('pomchat_presets');
-    return saved ? JSON.parse(saved) : {};
-  });
   const [presetPromptKey, setPresetPromptKey] = useState<string | null>(null);
   const [presetNameInput, setPresetNameInput] = useState("");
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
@@ -72,16 +70,6 @@ export function SettingsPanel({
       }
     }
   }, [config.speakers, activeSpeakerTab]);
-
-  useEffect(() => {
-    const handlePresetsUpdate = () => {
-      const saved = localStorage.getItem('pomchat_presets');
-      if (saved) setPresets(JSON.parse(saved));
-    };
-    window.addEventListener('pomchat_presets_updated', handlePresetsUpdate);
-    return () => window.removeEventListener('pomchat_presets_updated', handlePresetsUpdate);
-  }, []);
-
 
   const updateConfig = (key: string, value: any) => {
     onConfigChange({ ...config, [key]: value });
@@ -180,12 +168,9 @@ export function SettingsPanel({
 
   const handleRemovePreset = (presetName: string) => {
     if (!presetName) return;
-    const existingStr = localStorage.getItem('pomchat_presets');
-    if (!existingStr) return;
-    
-    const existing = JSON.parse(existingStr);
+    const existing = { ...presets };
     delete existing[presetName];
-    localStorage.setItem('pomchat_presets', JSON.stringify(existing));
+    onPresetsChange(existing);
     
     // Auto unbind from speakers using this preset
     const newSpeakers = { ...config.speakers };
@@ -198,7 +183,6 @@ export function SettingsPanel({
     });
     if (changed) updateConfig('speakers', newSpeakers);
     
-    window.dispatchEvent(new Event('pomchat_presets_updated'));
     showToast(`Preset "${presetName}" removed`);
   };
 
@@ -951,11 +935,9 @@ export function SettingsPanel({
                         <button 
                           onClick={() => {
                             if (speaker.preset) {
-                              const existingStr = localStorage.getItem('pomchat_presets');
-                              const existing = existingStr ? JSON.parse(existingStr) : {};
+                              const existing = { ...presets };
                               existing[speaker.preset] = buildPresetPayload(speaker);
-                              localStorage.setItem('pomchat_presets', JSON.stringify(existing));
-                              window.dispatchEvent(new Event('pomchat_presets_updated'));
+                              onPresetsChange(existing);
                               showToast(`预设 "${speaker.preset}" 已更新`);
                               return;
                             }
@@ -983,11 +965,9 @@ export function SettingsPanel({
                           <button 
                             onClick={() => {
                               if (!presetNameInput.trim()) return;
-                              const existingStr = localStorage.getItem('pomchat_presets');
-                              const existing = existingStr ? JSON.parse(existingStr) : {};
+                              const existing = { ...presets };
                               existing[presetNameInput.trim()] = buildPresetPayload(speaker);
-                              localStorage.setItem('pomchat_presets', JSON.stringify(existing));
-                              window.dispatchEvent(new Event('pomchat_presets_updated'));
+                              onPresetsChange(existing);
                               showToast(`预设 "${presetNameInput.trim()}" 已保存`);
                               setPresetPromptKey(null);
                             }}
