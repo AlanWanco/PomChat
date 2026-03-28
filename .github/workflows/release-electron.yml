@@ -74,23 +74,23 @@ jobs:
           - name: macos-arm64
             runner: macos-14
             build_args: --mac zip dmg --arm64
-            upload_glob: release/*.zip release/*.dmg
+            artifact_glob: release/*
           - name: windows-x64
             runner: windows-latest
             build_args: --win nsis zip --x64
-            upload_glob: release/*.exe release/*.zip
+            artifact_glob: release/*
           - name: windows-arm64
             runner: windows-latest
             build_args: --win nsis zip --arm64
-            upload_glob: release/*.exe release/*.zip
+            artifact_glob: release/*
           - name: linux-x64
             runner: ubuntu-24.04
             build_args: --linux AppImage tar.gz --x64
-            upload_glob: release/*.AppImage release/*.tar.gz
+            artifact_glob: release/*
           - name: linux-arm64
             runner: ubuntu-24.04
             build_args: --linux AppImage tar.gz --arm64
-            upload_glob: release/*.AppImage release/*.tar.gz
+            artifact_glob: release/*
 
     runs-on: ${{ matrix.runner }}
 
@@ -119,20 +119,28 @@ jobs:
       - name: Package Electron app
         run: npx electron-builder ${{ matrix.build_args }} --publish never
 
-      - name: Upload release assets
-        shell: bash
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  publish-release-assets:
+    needs: build-and-upload
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Upload assets to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-          UPLOAD_GLOB: ${{ matrix.upload_glob }}
         run: |
-          shopt -s nullglob
-          files=()
-          for pattern in $UPLOAD_GLOB; do
-            for file in $pattern; do
-              files+=("$file")
-            done
-          done
+          mapfile -t files < <(find release-artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.tar.gz' \))
 
           if [ ${#files[@]} -eq 0 ]; then
             echo "No release assets found"
