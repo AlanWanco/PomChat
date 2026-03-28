@@ -202,7 +202,7 @@ const runRender = async (config) => {
     });
 
     sendProgress(0.2, 'Rendering frames');
-    await renderMedia({
+     await renderMedia({
       serveUrl,
       composition,
       codec: 'h264',
@@ -215,6 +215,7 @@ const runRender = async (config) => {
       imageFormat: 'jpeg',
       jpegQuality: 92,
       x264Preset: 'veryfast',
+      crf: 20,
       pixelFormat: 'yuv420p',
       chromiumOptions: {
         disableWebSecurity: true,
