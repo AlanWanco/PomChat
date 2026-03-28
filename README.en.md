@@ -1,8 +1,17 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="140" />
+  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="200" />
 </p>
 
-# PomChat Studio
+<h1 align="center">PomChat Studio</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Electron-191970?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Remotion-0F172A?style=flat-square&logo=remotion&logoColor=white" alt="Remotion" />
+  <img src="https://img.shields.io/badge/WaveSurfer.js-0EA5E9?style=flat-square&logoColor=white" alt="WaveSurfer.js" />
+</p>
 
 PomChat Studio is a desktop-first chat video editor for turning local audio, ASS subtitles, and speaker styling into chat-style dialogue videos.
 
@@ -196,3 +205,4 @@ On Windows, the workflow produces both:
 - Add support for inserting a single image either inside the message flow or as a freely positioned element
 - Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
 - Add a GitHub Pages version with basic subtitle and audio import preview capabilities
+- Add an update-checking feature

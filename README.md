@@ -2,12 +2,21 @@
   <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="200" />
 </p>
 
+<h1 align="center">PomChat Studio</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Electron-191970?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Remotion-0F172A?style=flat-square&logo=remotion&logoColor=white" alt="Remotion" />
+  <img src="https://img.shields.io/badge/WaveSurfer.js-0EA5E9?style=flat-square&logoColor=white" alt="WaveSurfer.js" />
+</p>
+
 > 你电脑里的又一个Electron @cﾒ*˶ˆ ᴗ ˆ˵ﾘ  
 > 安装包这么大，我也不想的啊😭  
 > 不过看了眼不渲染的时候占内存倒还好（心虚）  
 > 以上是这篇README里所有的人类文字了
-
-# PomChat Studio
 
 PomChat Studio 是一个以桌面端为主的聊天对话视频编辑工具，用来把本地音频、ASS 字幕和角色样式整理成聊天气泡风格的视频内容。
 
@@ -218,3 +227,4 @@ Windows 会同时产出：
 - 单张图片支持独立动画效果，用于补充说明、过渡或强调内容
 - 导入ASS文件时 支持从已有样式里自动取色
 - 增加 GitHub 静态页面版本，提供字幕与音频导入的基础预览功能，静态版本增加手机竖屏排版
+- 增加检查更新功能
