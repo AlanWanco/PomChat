@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electron', {
   exportVideo: (config: any) => ipcRenderer.invoke('export-video', config),
   getExportPaths: (options: any) => ipcRenderer.invoke('get-export-paths', options),
   showOpenDialog: (options: any) => ipcRenderer.invoke('show-open-dialog', options),
+  cacheRemoteAsset: (assetUrl: string) => ipcRenderer.invoke('cache-remote-asset', assetUrl),
   showSaveDialog: (options: any) => ipcRenderer.invoke('show-save-dialog', options),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
   getDroppedFilePath: (file: File) => webUtils.getPathForFile(file),
@@ -19,4 +20,3 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('export-progress', listener);
   }
 });
-

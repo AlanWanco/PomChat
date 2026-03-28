@@ -373,6 +373,7 @@ function App() {
   const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
   const [customFilename, setCustomFilename] = useState('');
   const [persistedCustomFilename, setPersistedCustomFilename] = useState('');
+  const [cachedRemoteAssets, setCachedRemoteAssets] = useState<Record<string, string>>({});
   const [isDragOver, setIsDragOver] = useState(false);
   const portraitAutoCollapseRef = useRef<{ subtitle: boolean; settings: boolean } | null>(null);
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
@@ -1049,8 +1050,24 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const getExportConfig = () => {
     const { ui, ...restConfig } = config;
+    const remappedSpeakers = Object.fromEntries(
+      Object.entries(restConfig.speakers || {}).map(([key, speaker]: [string, any]) => [
+        key,
+        {
+          ...speaker,
+          avatar: cachedRemoteAssets[speaker?.avatar || ''] || speaker?.avatar || ''
+        }
+      ])
+    );
     return {
       ...restConfig,
+      speakers: remappedSpeakers,
+      background: restConfig.background
+        ? {
+            ...restConfig.background,
+            image: cachedRemoteAssets[restConfig.background.image || ''] || restConfig.background.image
+          }
+        : restConfig.background,
       content: subtitles.map(s => ({
         start: s.start,
         end: s.end,
@@ -1351,6 +1368,10 @@ const [previewScale, setPreviewScale] = useState(1);
     const trimmed = path.trim();
     if (!trimmed) return undefined;
 
+    if (cachedRemoteAssets[trimmed]) {
+      return encodeURI(`file:///${cachedRemoteAssets[trimmed].replace(/\\/g, '/')}`);
+    }
+
     if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) {
       return trimmed;
     }
@@ -1373,6 +1394,45 @@ const [previewScale, setPreviewScale] = useState(1);
 
     return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   };
+
+  useEffect(() => {
+    if (!window.electron) {
+      return;
+    }
+
+    const urls = [
+      config.background?.image,
+      ...Object.values(config.speakers || {}).map((speaker: any) => speaker?.avatar)
+    ].filter((value): value is string => Boolean(value) && /^https?:\/\//i.test(value));
+
+    if (!urls.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const cacheAssets = async () => {
+      for (const url of urls) {
+        if (cachedRemoteAssets[url]) {
+          continue;
+        }
+        try {
+          const cachedPath = await window.electron.cacheRemoteAsset(url);
+          if (!cancelled && cachedPath) {
+            setCachedRemoteAssets((prev) => (prev[url] === cachedPath ? prev : { ...prev, [url]: cachedPath }));
+          }
+        } catch (error) {
+          console.warn('Failed to cache remote asset:', url, error);
+        }
+      }
+    };
+
+    cacheAssets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config.background?.image, config.speakers, cachedRemoteAssets]);
 
   const resolvedAudioPath = resolvePath(config.audioPath) || '';
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fork } from 'node:child_process';
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +30,22 @@ function ensureConfigDir() {
   if (!fs.existsSync(userConfigDir)) {
     fs.mkdirSync(userConfigDir, { recursive: true });
   }
+}
+
+function getRemoteAssetCacheDir() {
+  const dir = path.join(os.homedir(), '.config', 'pomchat', 'cache', 'remote-assets');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function guessExtensionFromContentType(contentType: string | null) {
+  const type = (contentType || '').toLowerCase();
+  if (type.includes('image/png')) return '.png';
+  if (type.includes('image/jpeg')) return '.jpg';
+  if (type.includes('image/webp')) return '.webp';
+  if (type.includes('image/gif')) return '.gif';
+  if (type.includes('image/svg')) return '.svg';
+  return '';
 }
 
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
@@ -238,6 +255,42 @@ ipcMain.handle('get-export-paths', async (_event, options) => {
 ipcMain.handle('show-open-dialog', async (_event, options) => {
   if (!win) return null;
   return await dialog.showOpenDialog(win, options);
+});
+
+ipcMain.handle('cache-remote-asset', async (_event, assetUrl: string) => {
+  if (!assetUrl || !/^https?:\/\//i.test(assetUrl)) {
+    return null;
+  }
+
+  const url = new URL(assetUrl);
+  const cacheDir = getRemoteAssetCacheDir();
+  const hash = crypto.createHash('sha1').update(assetUrl).digest('hex');
+  const urlExtension = path.extname(url.pathname || '').toLowerCase();
+
+  const existing = fs.readdirSync(cacheDir).find((name) => name.startsWith(`${hash}.`));
+  if (existing) {
+    return path.join(cacheDir, existing);
+  }
+
+  const response = await fetch(assetUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 PomChat/1.0',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Referer': `${url.origin}/`
+    },
+    redirect: 'follow'
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to cache remote asset: ${response.status} ${response.statusText}`);
+  }
+
+  const contentType = response.headers.get('content-type');
+  const extension = guessExtensionFromContentType(contentType) || urlExtension || '.bin';
+  const outputPath = path.join(cacheDir, `${hash}${extension}`);
+  const arrayBuffer = await response.arrayBuffer();
+  fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+  return outputPath;
 });
 
 ipcMain.handle('show-save-dialog', async (_event, options) => {
