@@ -332,11 +332,63 @@ function App() {
   const canvasHeight = config.dimensions?.height || 1080;
     useEffect(() => {
     const preventDefault = (e: Event) => e.preventDefault();
+    
+    // Global prevent default to avoid browser navigation
+    window.addEventListener('dragenter', preventDefault, false);
     window.addEventListener('dragover', preventDefault, false);
     window.addEventListener('drop', preventDefault, false);
+    
+    // We handle the actual drag drop globally to ensure it never fails due to React event bubbling issues
+    const handleNativeDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (!window.electron) return;
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+      setIsDragOver(true);
+    };
+    
+    const handleNativeDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      // Ensure we only hide overlay if we are leaving the actual window
+      if (!e.relatedTarget || (e.relatedTarget as HTMLElement).nodeName === 'HTML') {
+        setIsDragOver(false);
+      }
+    };
+    
+    const handleNativeDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      if (!window.electron) return;
+      
+      const droppedFiles = Array.from(e.dataTransfer?.files || []);
+      const firstPath = (droppedFiles[0] as any)?.path;
+      
+      if (firstPath) {
+        // Use timeout to prevent native dialogs from hanging the drag-and-drop session
+        setTimeout(() => {
+          // We have to use the latest projectPath state, but since it's a closure, 
+          // we should ideally use a ref or just rely on the fact that if this fires on the welcome screen,
+          // projectPath is null anyway.
+          // To be perfectly safe, we dispatch a custom event that App.tsx listens to,
+          // or we just call importFileByPath directly. But importFileByPath is a React callback.
+          // Let's dispatch a custom event.
+          window.dispatchEvent(new CustomEvent('podchat-file-drop', { detail: { path: firstPath } }));
+        }, 50);
+      }
+    };
+
+    window.addEventListener('dragover', handleNativeDragOver);
+    window.addEventListener('dragleave', handleNativeDragLeave);
+    window.addEventListener('drop', handleNativeDrop);
+
     return () => {
+      window.removeEventListener('dragenter', preventDefault);
       window.removeEventListener('dragover', preventDefault);
       window.removeEventListener('drop', preventDefault);
+      window.removeEventListener('dragover', handleNativeDragOver);
+      window.removeEventListener('dragleave', handleNativeDragLeave);
+      window.removeEventListener('drop', handleNativeDrop);
     };
   }, []);
 
@@ -1297,6 +1349,17 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   }, [showToast, t]);
 
+  useEffect(() => {
+    const handleCustomDrop = (e: any) => {
+      const filePath = e.detail?.path;
+      if (filePath) {
+        void importFileByPath(filePath, projectPath);
+      }
+    };
+    window.addEventListener('podchat-file-drop', handleCustomDrop);
+    return () => window.removeEventListener('podchat-file-drop', handleCustomDrop);
+  }, [importFileByPath, projectPath]);
+
   const handleSelectImage = async (): Promise<string | null> => {
     if (!window.electron) {
       alert('网页版不支持此功能，请手动输入网络图片链接');
@@ -1409,32 +1472,10 @@ const [previewScale, setPreviewScale] = useState(1);
     const appearanceTime = Math.max(0, item.start - (animationStyle === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime && currentTime <= item.end;
   });
-  const handleAppDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!window.electron) return;
-    e.dataTransfer.dropEffect = 'copy';
-    setIsDragOver(true);
-  };
-  const handleAppDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setIsDragOver(false);
-  };
-  const handleAppDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setIsDragOver(false);
-    const droppedFiles = Array.from(e.dataTransfer.files || []);
-    const firstPath = (droppedFiles[0] as any)?.path;
-    if (firstPath) {
-      await importFileByPath(firstPath, projectPath);
-    }
-  };
 
   if (!projectPath) {
     return (
-      <div className="relative w-full h-screen" style={{ background: appBackground, color: uiTheme.text, ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
+      <div className="relative w-full h-screen" style={{ background: appBackground, color: uiTheme.text, ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }}>
         <WelcomeScreen 
           onNewProject={handleNewProject} 
           onOpenProject={handleOpenProject} 
@@ -1493,9 +1534,7 @@ const [previewScale, setPreviewScale] = useState(1);
     <div
       className={`w-full h-screen flex flex-col font-sans ${textClass} overflow-hidden transition-colors duration-300 relative`}
       style={{ background: appBackground, ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }}
-      onDragOver={handleAppDragOver}
-      onDragLeave={handleAppDragLeave}
-      onDrop={handleAppDrop}
+
     >
       
       <MenuBar 
