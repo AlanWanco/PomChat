@@ -1,70 +1,85 @@
 # PodChat Studio
 
-用于编辑本地音频 + ASS 字幕对话视频项目的桌面 / Web 调试工具。
+PodChat Studio is a desktop-first tool for turning local audio and ASS subtitles into chat-style dialogue videos.
 
-当前项目已经不再只是早期 Demo，现阶段主要提供：
+It is built for editing speakers, bubble styles, layout, timing, and export settings in one place, with a live preview and Electron-based local file access.
 
-- 基于音频时间轴的聊天气泡预览
-- ASS 字幕导入、清理空白行、单条增删改、按开始时间排序
-- 角色配置、预设样式、单条字幕切换说话人
-- 项目级画面尺寸、布局、动画、背景、主题色 / 次主题色设置
-- Electron 本地文件读写、拖拽导入 `json` / `ass` / 音频文件
-- 保存项目时同步回写 ASS 文件内容
+## What It Does
 
-## 技术栈
+- Import local audio and ASS subtitle files
+- Edit subtitle lines, timing, speaker mapping, and text
+- Configure speaker avatars, names, colors, padding, shadows, and animation
+- Preview the conversation layout in real time while the audio plays
+- Export a video with a selected time range and filename template
+- Save project data locally and sync project-related config through Electron
 
-- React 19 + TypeScript
-- Vite 8
-- Tailwind CSS v4
-- Electron
-- WaveSurfer.js
-- ass-compiler
+## Main Features
 
-## 核心功能
+- **Subtitle editing**: add, remove, sort, and update subtitle lines
+- **Speaker styling**: customize avatars, bubble colors, fonts, borders, spacing, and theme
+- **Layout control**: adjust canvas size, padding, bubble scale, avatar size, and annotation position
+- **Playback tools**: scrub audio, loop playback, remember position, and set export range quickly
+- **Video export**: render chat-style video output from the current project configuration
 
-- **项目配置**：保存/打开项目配置，支持全局缓存恢复
-- **ASS 字幕**：导入 ASS 文件、清理空白行、单条编辑、按时间排序
-- **字幕管理**：时间轴编辑、删除、排序、说话人切换、自动创建同名 `.ass`
-- **预览**：实时音频驱动的聊天气泡动画预览、横竖屏切换
-- **导出**：基于 Remotion 的视频导出，支持自定义导出范围
-- **角色配置**：气泡样式、字体、颜色、阴影、动画参数个性化
-- **播放控制**：记住播放位置、调整播放速度、循环播放
+## Getting Started
 
-## 开发启动
-
-安装依赖：
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-启动前端开发环境：
+### Start development
 
 ```bash
 npm run dev
 ```
 
-构建：
+This starts the Vite-based app for local development.
+
+## Basic Usage
+
+1. Open the app
+2. Import an audio file and an ASS subtitle file
+3. Check or adjust speaker assignments
+4. Edit subtitle content, timing, and styles as needed
+5. Tune layout, animation, and export settings
+6. Preview the result in the player area
+7. Export the final video
+
+## Build
+
+Build the app bundles:
 
 ```bash
 npm run build
 ```
 
-## 说明
+Build an Electron package locally:
 
-- `electron/main.ts`：Electron 主进程入口
-- `electron/remotion-worker.cjs`：后台视频渲染进程
-- 主题色、次主题色、界面主题为全局偏好，不跟项目配置绑定
+```bash
+npm run dist
+```
 
-## 主要目录
+Packaged files are written to `release/`.
 
-- `src/App.tsx`：主应用流程、项目加载、预览渲染、字幕持久化
-- `src/components/`：编辑面板、字幕列表、播放器、导出对话框等
-- `src/remotion/`：Remotion 视频导出组件和类型定义
-- `src/hooks/useAssSubtitle.ts`：ASS 解析与字幕数据生成
-- `electron/`：Electron 主进程、预加载脚本、后台 Remotion 工作进程
+## GitHub Actions
 
-## 已知现状
+This repository includes workflows for Electron builds and manual GitHub Releases.
 
-- 开发环境下仍会看到部分 Vite / Electron 警告日志
-- Electron 安全相关配置仍偏开发态，后续可再收紧
+- `Build Electron Apps`: multi-platform build artifacts
+- `Release Electron Apps`: manually create and upload release assets
+
+## Project Structure
+
+- `src/App.tsx`: main application flow and preview integration
+- `src/components/`: editor panels, player, export modal, shared chat UI
+- `src/remotion/`: Remotion export composition and types
+- `src/hooks/useAssSubtitle.ts`: ASS parsing and subtitle loading
+- `electron/`: Electron main process, preload script, and render worker
+- `.github/workflows/`: CI build and release workflows
+
+## Notes
+
+- The app is optimized for local desktop usage through Electron
+- Some Electron settings are still development-oriented and may be tightened later

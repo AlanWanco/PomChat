@@ -1,0 +1,142 @@
+name: Release Electron Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (for example v0.1.0)
+        required: true
+        type: string
+      release_name:
+        description: Release title
+        required: true
+        type: string
+      target:
+        description: Git ref to release from
+        required: false
+        default: main
+        type: string
+      prerelease:
+        description: Mark release as prerelease
+        required: true
+        default: false
+        type: boolean
+      draft:
+        description: Create as draft release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target }}
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          TARGET: ${{ inputs.target }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+
+          args=("$TAG" --target "$TARGET" --title "$RELEASE_NAME" --generate-notes)
+
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          if [ "$DRAFT" = "true" ]; then
+            args+=(--draft)
+          fi
+
+          gh release create "${args[@]}"
+
+  build-and-upload:
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            runner: macos-14
+            build_args: --mac zip dmg --arm64
+            upload_glob: release/*.zip release/*.dmg
+          - name: windows-x64
+            runner: windows-latest
+            build_args: --win nsis zip --x64
+            upload_glob: release/*.exe release/*.zip
+          - name: windows-arm64
+            runner: windows-latest
+            build_args: --win nsis zip --arm64
+            upload_glob: release/*.exe release/*.zip
+          - name: linux-x64
+            runner: ubuntu-24.04
+            build_args: --linux AppImage tar.gz --x64
+            upload_glob: release/*.AppImage release/*.tar.gz
+          - name: linux-arm64
+            runner: ubuntu-24.04
+            build_args: --linux AppImage tar.gz --arm64
+            upload_glob: release/*.AppImage release/*.tar.gz
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer and Electron bundles
+        run: npm run build
+
+      - name: Package Electron app
+        run: npx electron-builder ${{ matrix.build_args }} --publish never
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          UPLOAD_GLOB: ${{ matrix.upload_glob }}
+        run: |
+          shopt -s nullglob
+          files=()
+          for pattern in $UPLOAD_GLOB; do
+            for file in $pattern; do
+              files+=("$file")
+            done
+          done
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release assets found"
+            exit 1
+          fi
+
+          gh release upload "$TAG" "${files[@]}" --clobber
