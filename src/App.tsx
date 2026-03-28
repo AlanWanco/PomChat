@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
 import { demoConfig as initialConfig } from './projects/demo/config';
 import { SettingsPanel } from './components/SettingsPanel';
 import { PlayerControls } from './components/PlayerControls';
@@ -366,6 +366,10 @@ function App() {
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers);
+  const activePlaybackSubtitle = useMemo(
+    () => subtitles.find((sub) => currentTime >= sub.start && currentTime <= sub.end) ?? null,
+    [subtitles, currentTime]
+  );
   const canvasWidth = config.dimensions?.width || 1920;
   const canvasHeight = config.dimensions?.height || 1080;
   
@@ -1086,6 +1090,44 @@ const [previewScale, setPreviewScale] = useState(1);
       return { start: nextStart, end: nextEnd };
     });
   }, [getDefaultExportRange, config.exportRange]);
+
+  useEffect(() => {
+    const nextQuality = config.exportQuality === 'fast' || config.exportQuality === 'balance' || config.exportQuality === 'high'
+      ? config.exportQuality
+      : 'balance';
+    setExportQuality((prev) => (prev === nextQuality ? prev : nextQuality));
+
+    const nextTemplate = config.filenameTemplate === 'default' || config.filenameTemplate === 'timestamp' || config.filenameTemplate === 'unix' || config.filenameTemplate === 'custom'
+      ? config.filenameTemplate
+      : 'default';
+    setFilenameTemplate((prev) => (prev === nextTemplate ? prev : nextTemplate));
+
+    const nextCustomFilename = typeof config.customFilename === 'string' ? config.customFilename : '';
+    setCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
+  }, [config.exportQuality, config.filenameTemplate, config.customFilename]);
+
+  useEffect(() => {
+    setConfig((prev: any) => {
+      const sameExportRange =
+        prev.exportRange?.start === exportRange.start &&
+        prev.exportRange?.end === exportRange.end;
+      const sameQuality = prev.exportQuality === exportQuality;
+      const sameTemplate = prev.filenameTemplate === filenameTemplate;
+      const sameCustomFilename = prev.customFilename === customFilename;
+
+      if (sameExportRange && sameQuality && sameTemplate && sameCustomFilename) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        exportRange,
+        exportQuality,
+        filenameTemplate,
+        customFilename
+      };
+    });
+  }, [exportRange, exportQuality, filenameTemplate, customFilename]);
 
   useEffect(() => {
     if (!window.electron) {
@@ -2122,6 +2164,7 @@ const [previewScale, setPreviewScale] = useState(1);
         defaultExportEnd={defaultExportRange.end}
         onExportRangeChange={updateExportRange}
         editingSub={editingSub}
+        rangeSubtitle={editingSub ?? activePlaybackSubtitle}
         onEditingSubChange={(start, end) => {
           if (editingSub) {
             setEditingSub({ ...editingSub, start, end });

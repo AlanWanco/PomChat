@@ -2,7 +2,7 @@ import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, Chevr
 import { useState, useEffect, useRef } from 'react';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
-import { createThemeTokens } from '../theme';
+import { createThemeTokens, rgba } from '../theme';
 
 interface SubtitlePanelProps {
   subtitles: SubtitleItem[];
@@ -292,8 +292,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           step="0.1"
                           value={editForm.start}
                           onChange={(e) => setEditForm({...editForm, start: e.target.value})}
-                          className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
-                          style={{ borderColor: `${themeColor}55` }}
+                          className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+                          style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                         />
                         <span>-</span>
                         <input
@@ -301,15 +301,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           step="0.1"
                           value={editForm.end}
                           onChange={(e) => setEditForm({...editForm, end: e.target.value})}
-                          className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}
-                          style={{ borderColor: `${themeColor}55` }}
+                          className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+                          style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                         />
                       </div>
                       <select
                         value={editForm.speakerId}
                         onChange={(e) => setEditForm({ ...editForm, speakerId: e.target.value })}
-                        className={`px-2 py-1 rounded border text-xs focus:outline-none ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
-                        style={{ borderColor: `${themeColor}55` }}
+                        className="px-2 py-1 rounded border text-xs focus:outline-none"
+                        style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                       >
                         {Object.entries(speakers).map(([speakerId, speaker]) => (
                           <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
@@ -320,8 +320,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     <textarea
                       value={editForm.text}
                       onChange={(e) => setEditForm({...editForm, text: e.target.value})}
-                      className={`w-full p-2 rounded border text-xs min-h-[60px] resize-y focus:outline-none ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
-                      style={{ borderColor: `${themeColor}55` }}
+                      className="w-full p-2 rounded border text-xs min-h-[60px] resize-y focus:outline-none"
+                      style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -339,7 +339,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           e.stopPropagation();
                           setInlineEditingId(null);
                         }}
-                        className={`px-3 py-1 rounded text-[10px] transition-colors ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                        className="px-3 py-1 rounded text-[10px] transition-colors"
+                        style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: uiTheme.textMuted, border: `1px solid ${rgba(themeColor, isDarkMode ? 0.28 : 0.18)}` }}
                       >
                         {t('subtitle.cancel')}
                       </button>
