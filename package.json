@@ -48,6 +48,7 @@
   "build": {
     "appId": "com.alanwanco.pomchat",
     "productName": "PomChat",
+    "asar": false,
     "directories": {
       "buildResources": "build",
       "output": "release"
