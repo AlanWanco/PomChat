@@ -104,7 +104,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                         minWidth: style.minWidth,
                         borderRadius: style.borderRadius,
                         overflow: 'hidden',
-                        backgroundColor: 'rgba(255,255,255,0.12)',
+                        backgroundColor: (style.borderColor as string) || 'rgba(255,255,255,0.12)',
                         boxShadow: style.boxShadow,
                         border: `${style.borderWidth || '0px'} solid ${style.borderColor || '#ffffff'}`
                       }}

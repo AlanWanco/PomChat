@@ -17,7 +17,7 @@ interface ExportModalProps {
   themeColor: string;
   secondaryThemeColor: string;
   outputPath: string;
-  runtimeDir: string;
+  quickSaveDir: string;
   rangeStart: number;
   rangeEnd: number;
   defaultRangeStart: number;
@@ -100,7 +100,7 @@ export function ExportModal({
   themeColor,
   secondaryThemeColor,
   outputPath,
-  runtimeDir,
+  quickSaveDir,
   rangeStart,
   rangeEnd,
   defaultRangeStart,
@@ -243,7 +243,7 @@ export function ExportModal({
                 placeholder={t('export.pathPlaceholder')}
               />
               <div className="mt-3 text-xs" style={{ color: uiTheme.textMuted }}>
-                {t('export.quickSaveHint')}: <span style={{ color: secondaryThemeColor }}>{runtimeDir || '--'}</span>
+                {t('export.quickSaveHint')}: <span style={{ color: secondaryThemeColor }}>{quickSaveDir || '--'}</span>
               </div>
             </section>
 

@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="140" />
+</p>
+
 # PomChat Studio
 
 PomChat Studio 是一个以桌面端为主的聊天对话视频编辑工具，用来把本地音频、ASS 字幕和角色样式整理成聊天气泡风格的视频内容。
 
-它的目标不是做通用剪辑器，而是聚焦在“字幕驱动的聊天视频”这个场景：你可以导入音频和 ASS 字幕，配置角色头像、气泡颜色、边距、字体、动画和画布布局，然后一边预览一边调整，最后导出成视频。
+它的主要功能聚焦在“字幕驱动的聊天视频”这个场景：你可以导入音频和 ASS 字幕，配置角色头像、气泡颜色、边距、字体、动画和画布布局，然后一边预览一边调整，最后导出成视频。
 
 [English README](https://github.com/AlanWanco/PomChat/blob/main/README.en.md)
 
@@ -26,6 +30,8 @@ PomChat Studio 适合这些场景：
 - 在导出前精调字幕时间、角色样式和整体排版
 
 如果你已经有音频和字幕，PomChat Studio 可以把后续的“对话可视化”流程集中到一个项目里处理。
+
+PomChat虽然提供了字幕的基础修改功能，但它并非为大量修改字幕/翻译设计，推荐在Aegisub里完善后再导入PomChat
 
 ## 核心能力
 
@@ -141,6 +147,10 @@ npm run dist
 - `30 FPS`：导出速度约为 `0.6x`
 - `60 FPS`：导出速度约为 `1x`
 
+以 `i5-10400f`、未启用 GPU 加速为例:
+- `30 FPS`：导出速度约为 `1.3x`
+- `60 FPS`：导出速度约为 `2.6x`
+
 实际速度仍会受到字幕数量、背景图、动画、分辨率、磁盘速度和系统负载影响。
 
 ## GitHub Actions
@@ -202,4 +212,4 @@ Windows 会同时产出：
 - 增加单张图片插入能力，既支持作为信息流内容插入，也支持自由位置插入
 - 单张图片支持独立动画效果，用于补充说明、过渡或强调内容
 - 导入ASS文件时 支持从已有样式里自动取色
-- 增加 GitHub 静态页面版本，提供字幕与音频导入的基础预览功能
+- 增加 GitHub 静态页面版本，提供字幕与音频导入的基础预览功能，静态版本增加手机竖屏排版

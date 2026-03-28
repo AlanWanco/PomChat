@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="140" />
+</p>
+
 # PomChat Studio
 
 PomChat Studio is a desktop-first chat video editor for turning local audio, ASS subtitles, and speaker styling into chat-style dialogue videos.

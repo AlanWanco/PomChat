@@ -360,7 +360,6 @@ function App() {
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
   const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [runtimeDirectory, setRuntimeDirectory] = useState('');
   const [quickSavePath, setQuickSavePath] = useState('');
   const [exportOutputPath, setExportOutputPath] = useState('');
   const [exportRange, setExportRange] = useState({ start: 0, end: 0 });
@@ -399,7 +398,7 @@ function App() {
   }, []);
   
   const isPortraitCanvas = canvasHeight > canvasWidth;
-  const shouldHideSidePanels = isPortraitCanvas || windowWidth < 700;
+  const shouldHideSidePanels = windowWidth < 700;
   const aspectRatio = `${canvasWidth} / ${canvasHeight}`;
   const aspectLabel = `${canvasWidth}:${canvasHeight}`;
 const [previewScale, setPreviewScale] = useState(1);
@@ -885,7 +884,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [config]);
 
   useEffect(() => {
-    const isNarrowOrPortrait = isPortraitCanvas || windowWidth < 700;
+    const isNarrowOrPortrait = windowWidth < 700;
     
     if (isNarrowOrPortrait) {
       if (!portraitAutoCollapseRef.current) {
@@ -1113,7 +1112,6 @@ const [previewScale, setPreviewScale] = useState(1);
       projectTitle: config.projectTitle || t('app.untitled')
     });
 
-    setRuntimeDirectory(paths.runtimeDir);
     setQuickSavePath(paths.quickSavePath);
     setExportOutputPath((prev) => prev || paths.suggestedPath || paths.quickSavePath);
     return paths;
@@ -1921,8 +1919,7 @@ const [previewScale, setPreviewScale] = useState(1);
               <button 
                 onClick={() => setShowSubtitlePanel(!showSubtitlePanel)}
                 className={`p-1.5 rounded transition-colors mr-2 ${isDarkMode ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
-                title={isPortraitCanvas ? 'Portrait mode auto-hides sidebars' : '切换字幕列表'}
-                disabled={isPortraitCanvas}
+                title="切换字幕列表"
               >
                 {showSubtitlePanel ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
@@ -1931,17 +1928,15 @@ const [previewScale, setPreviewScale] = useState(1);
               <div className="text-xs px-2 py-1 rounded border" style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}44`, boxShadow: `0 2px 10px ${secondaryThemeColor}14` }}>
                 {canvasWidth}x{canvasHeight} ({aspectLabel}) @ {config.fps}FPS
               </div>
-              {!shouldHideSidePanels && (
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded transition-colors ${showSettings ? '' : (isDarkMode ? 'hover:bg-gray-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900')}`}
-                  style={showSettings ? { backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55`, boxShadow: `0 4px 12px ${secondaryThemeColor}22` } : { border: `1px solid ${secondaryThemeColor}22` }}
-                  title={t('menu.settings')}
-                >
-                  <Settings size={14} />
-                  {t('menu.settings')}
-                </button>
-              )}
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded transition-colors ${showSettings ? '' : (isDarkMode ? 'hover:bg-gray-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900')}`}
+                style={showSettings ? { backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55`, boxShadow: `0 4px 12px ${secondaryThemeColor}22` } : { border: `1px solid ${secondaryThemeColor}22` }}
+                title={t('menu.settings')}
+              >
+                <Settings size={14} />
+                {t('menu.settings')}
+              </button>
             </div>
           </div>
 
@@ -2030,7 +2025,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             alt={alt}
                             referrerPolicy="no-referrer"
                             className={`rounded-full shrink-0 shadow-lg object-cover ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-white bg-gray-200'}`}
-                            style={style}
+                            style={{ ...style, backgroundColor: style.borderColor as string }}
                           />
                         )}
                         renderBubble={({ outerStyle, contentStyle, children }) => {
@@ -2174,7 +2169,7 @@ const [previewScale, setPreviewScale] = useState(1);
          themeColor={themeColor}
          secondaryThemeColor={secondaryThemeColor}
          outputPath={exportOutputPath}
-         runtimeDir={runtimeDirectory}
+         quickSaveDir={quickSavePath}
          rangeStart={exportRange.start}
          rangeEnd={exportRange.end}
          defaultRangeStart={defaultExportRange.start}

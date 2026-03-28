@@ -223,6 +223,7 @@ export function ChatMessageBubble({
             minWidth: `${avatarPx}px`,
             borderRadius: '999px',
             objectFit: 'cover',
+            backgroundColor: speaker.style?.avatarBorderColor || fallbackAvatarBorderColor,
             borderWidth: `${avatarBorderWidth}px`,
             borderColor: speaker.style?.avatarBorderColor || fallbackAvatarBorderColor,
             boxShadow: bubbleShadow,
