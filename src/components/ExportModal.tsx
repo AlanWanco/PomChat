@@ -390,7 +390,7 @@ export function ExportModal({
                           {t(`export.filenameTemplate${template.charAt(0).toUpperCase()}${template.slice(1)}`)}
                         </button>
                         {filenameExamples[template] && (
-                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50 w-max px-3 py-2 text-xs rounded-lg whitespace-nowrap" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.95 : 0.9), color: uiTheme.text, border: `1px solid ${rgba(secondaryThemeColor, 0.24)}` }}>
+                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50 w-max px-3 py-2 text-xs rounded-lg whitespace-nowrap" style={{ backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, border: `1px solid ${rgba(secondaryThemeColor, 0.24)}`, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
                             {filenameExamples[template]}
                           </div>
                         )}
@@ -446,11 +446,15 @@ export function ExportModal({
                  </div>
                </div>
 
-               <div className="mt-4 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.09 : 0.05), color: statusMessage ? uiTheme.text : uiTheme.textMuted }}>
-                 {statusMessage || t('export.statusIdle')}
-               </div>
+                <div className="mt-4 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.09 : 0.05), color: statusMessage ? uiTheme.text : uiTheme.textMuted }}>
+                  {statusMessage || t('export.statusIdle')}
+                </div>
 
-               {exportSucceeded && !isExporting && outputPath ? (
+                <div className="mt-3 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(themeColor, 0.16), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04), color: uiTheme.textMuted }}>
+                  {t('export.previewDiffNotice')}
+                </div>
+
+                {exportSucceeded && !isExporting && outputPath ? (
                  <button
                    type="button"
                    onClick={() => void onRevealOutput()}

@@ -472,7 +472,7 @@ export function SettingsPanel({
                     {t('project.fps')}
                     <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
                       ?
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-56 -translate-x-1/2 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: uiTheme.panelBgElevated, color: uiTheme.text }}>
+                      <span className="pointer-events-none absolute top-full left-0 z-[140] mt-2 hidden w-56 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
                         {t('project.fpsTip')}
                       </span>
                     </span>
@@ -664,7 +664,7 @@ export function SettingsPanel({
                       {t('project.animationStyle')}
                       <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
                         ?
-                        <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-56 -translate-x-1/2 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: uiTheme.panelBgElevated, color: uiTheme.text }}>
+                        <span className="pointer-events-none absolute top-full left-0 z-[140] mt-2 hidden w-56 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
                           {t('project.animationStyleTip')}
                         </span>
                       </span>
@@ -745,7 +745,15 @@ export function SettingsPanel({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs opacity-70">{t('project.blur')}</span>
+                    <span className="text-xs opacity-70 inline-flex items-center gap-1">
+                      {t('project.blur')}
+                      <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
+                        ?
+                        <span className="pointer-events-none absolute bottom-full left-full z-[140] mb-2 ml-2 hidden w-60 -translate-x-10 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
+                          {t('project.blurTip')}
+                        </span>
+                      </span>
+                    </span>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{config.background?.blur || 0}px</span>
                   </div>
                   <input

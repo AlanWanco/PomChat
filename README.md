@@ -1,6 +1,14 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="140" />
+  <img src="https://raw.githubusercontent.com/AlanWanco/PomChat/refs/heads/main/podchat-icon.png" alt="PomChat logo" width="200" />
 </p>
+
+> 你电脑里的又一个Electron @cﾒ*˶ˆ ᴗ ˆ˵ﾘ
+>
+> 安装包这么大，我也不想的啊😭
+>
+> 不过看了眼不渲染的时候占内存倒还好（心虚）
+>
+> 以上是这篇README里所有的人类文字了
 
 # PomChat Studio
 

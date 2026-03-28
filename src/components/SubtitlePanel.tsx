@@ -159,7 +159,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             {t('subtitle.title')}
             <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
               ?
-              <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: uiTheme.panelBgElevated, color: uiTheme.text }}>
+              <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border px-2.5 py-2 text-[11px] font-normal leading-relaxed shadow-lg group-hover:block" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)', color: uiTheme.text, backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}>
                 {t('subtitle.titleTip')}
               </span>
             </span>

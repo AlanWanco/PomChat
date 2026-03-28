@@ -184,7 +184,7 @@ export function ChatMessageBubble({
   const timestampFontFamily = chatLayout?.timestampFontFamily || 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
   const timestampColor = chatLayout?.timestampColor || 'rgba(255,255,255,0.65)';
   const fontSize = (speaker.style?.fontSize ?? 30) * combinedScale;
-  const bubbleMaxWidth = canvasWidth * 0.62;
+  const bubbleMaxWidth = canvasWidth * 0.75;
   const opacity = speaker.style?.opacity ?? 0.9;
   const hexBg = bgColor.startsWith('#') ? bgColor : '#ffffff';
   const finalBgColor = `${hexBg}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
@@ -210,7 +210,7 @@ export function ChatMessageBubble({
           display: 'flex',
           flexDirection: isLeft ? 'row' : 'row-reverse',
           gap: `${bubbleGap}px`,
-          maxWidth: '62%',
+          maxWidth: '75%',
           alignItems: 'flex-start'
         }}
       >

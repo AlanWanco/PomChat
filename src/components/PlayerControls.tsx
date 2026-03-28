@@ -359,9 +359,11 @@ export function PlayerControls({
   const hasStartRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.start >= 0);
   const hasEndRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.end >= 0);
   const rangeTooltipStyle = {
-    backgroundColor: rgba(themeColor, isDarkMode ? 0.95 : 0.9),
+    backgroundColor: isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)',
     color: uiTheme.text,
-    border: `1px solid ${rgba(secondaryThemeColor, 0.3)}`
+    border: `1px solid ${rgba(secondaryThemeColor, 0.3)}`,
+    backdropFilter: 'blur(14px) saturate(140%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(140%)'
   };
 
   return (
