@@ -1159,11 +1159,11 @@ const [previewScale, setPreviewScale] = useState(1);
     return sanitizeProjectConfig(parsed);
   };
 
-  const handleNewProject = async () => {
+  const handleNewProject = async (initialOverrides?: any) => {
     if (!window.electron) {
       // Web mode fallback
       setProjectPath('web-demo');
-      const cleanConfig = createBlankProjectConfig(t('app.newProject'));
+      const cleanConfig = { ...createBlankProjectConfig(t('app.newProject')), ...(initialOverrides || {}) };
       setConfig(cleanConfig);
       setShowSettings(true);
       return;
@@ -1177,7 +1177,7 @@ const [previewScale, setPreviewScale] = useState(1);
       });
       
       if (!result.canceled && result.filePath) {
-        const newConfig = createBlankProjectConfig(t('app.newProject'));
+        const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...(initialOverrides || {}) };
         await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
         setProjectPath(result.filePath);
         setRecentProject(result.filePath);
@@ -1233,31 +1233,68 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
-  const importFileByPath = useCallback(async (filePath: string) => {
+  const importFileByPath = useCallback(async (filePath: string, currentProjectPath: string | null) => {
     if (!window.electron || !filePath) return;
 
     const normalizedPath = filePath.toLowerCase();
+    const isJson = normalizedPath.endsWith('.json');
+    const isAss = normalizedPath.endsWith('.ass');
+    const isAudio = /(\.mp3|\.wav|\.aac|\.m4a|\.flac|\.mp4)$/i.test(normalizedPath);
 
-    if (normalizedPath.endsWith('.json')) {
+    if (isJson) {
       await loadProjectFromPath(filePath);
       showToast(t('app.projectImported'));
       return;
     }
 
-    if (normalizedPath.endsWith('.ass')) {
+    if (!isAss && !isAudio) {
+      showToast(t('app.dropUnsupported'));
+      return;
+    }
+
+    if (!currentProjectPath) {
+      // 位于欢迎页时，先询问新建项目，然后注入对应的路径
+      const overrides: any = {};
+      if (isAudio) overrides.audioPath = filePath;
+      
+      const result = await window.electron.showSaveDialog({
+        title: t('dialog.newProjectTitle'),
+        defaultPath: 'podchat_project.json',
+        filters: [{ name: 'JSON Config', extensions: ['json'] }]
+      });
+      
+      if (result.canceled || !result.filePath) return;
+      
+      const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...overrides };
+      await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
+      
+      setProjectPath(result.filePath);
+      setRecentProject(result.filePath);
+      localStorage.setItem('podchat_recent_project', result.filePath);
+      setConfig(newConfig);
+      savedSpeakerNamesRef.current = Object.fromEntries(Object.entries(newConfig.speakers || {}).map(([key, speaker]: [string, any]) => [key, speaker?.name || '']));
+      setShowSettings(true);
+      showToast(t('welcome.new'));
+
+      if (isAss) {
+        const content = await window.electron.readFile(filePath);
+        setImportAssData({ path: filePath, content });
+      }
+      return;
+    }
+
+    if (isAss) {
       const content = await window.electron.readFile(filePath);
       setImportAssData({ path: filePath, content });
       showToast(t('app.assImported'));
       return;
     }
 
-    if (/(\.mp3|\.wav|\.aac|\.m4a|\.flac)$/i.test(normalizedPath)) {
+    if (isAudio) {
       setConfig((prev: any) => ({ ...prev, audioPath: filePath }));
       showToast(t('app.audioImported'));
       return;
     }
-
-    showToast(t('app.dropUnsupported'));
   }, [showToast, t]);
 
   const handleSelectImage = async (): Promise<string | null> => {
@@ -1391,7 +1428,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const droppedFiles = Array.from(e.dataTransfer.files || []);
     const firstPath = (droppedFiles[0] as any)?.path;
     if (firstPath) {
-      await importFileByPath(firstPath);
+      await importFileByPath(firstPath, projectPath);
     }
   };
 
