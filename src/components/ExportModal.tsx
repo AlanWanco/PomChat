@@ -369,9 +369,9 @@ export function ExportModal({
                 <div className="grid gap-2 md:grid-cols-2">
                   {(['default', 'timestamp', 'unix', 'custom'] as const).map((template) => {
                     const filenameExamples: Record<string, string> = {
-                      default: 'podchat.mp4',
-                      timestamp: 'podchat_2026-03-28_12-07-03.mp4',
-                      unix: 'podchat_1743192423.mp4',
+                      default: 'pomchat.mp4',
+                      timestamp: 'pomchat_2026-03-28_12-07-03.mp4',
+                      unix: 'pomchat_1743192423.mp4',
                       custom: ''
                     };
                     return (

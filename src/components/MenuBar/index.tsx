@@ -78,7 +78,7 @@ export function MenuBar({
         {/* App Title */}
         <div className="font-bold px-3 py-1 flex items-center gap-2">
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryThemeColor }}></span>
-          PodChat Studio
+          PomChat Studio
         </div>
 
         {/* File Menu */}

@@ -18,13 +18,13 @@ const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
 
 // Local Storage Keys
-const STORAGE_KEY = 'podchat_demo_config';
-const SETTINGS_POS_KEY = 'podchat_settings_pos';
-const THEME_KEY = 'podchat_theme';
-const THEME_COLOR_KEY = 'podchat_theme_color';
-const SECONDARY_THEME_COLOR_KEY = 'podchat_secondary_theme_color';
-const RECENT_PROJECT_KEY = 'podchat_recent_project';
-const PLAYBACK_POSITION_KEY = 'podchat_playback_positions';
+const STORAGE_KEY = 'pomchat_demo_config';
+const SETTINGS_POS_KEY = 'pomchat_settings_pos';
+const THEME_KEY = 'pomchat_theme';
+const THEME_COLOR_KEY = 'pomchat_theme_color';
+const SECONDARY_THEME_COLOR_KEY = 'pomchat_secondary_theme_color';
+const RECENT_PROJECT_KEY = 'pomchat_recent_project';
+const PLAYBACK_POSITION_KEY = 'pomchat_playback_positions';
 
 type ExportProgressState = {
   progress: number;
@@ -713,7 +713,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
       const content = await window.electron.readFile(result.filePaths[0]);
       const parsed = JSON.parse(content);
-      const existing = JSON.parse(localStorage.getItem('podchat_presets') || '{}');
+      const existing = JSON.parse(localStorage.getItem('pomchat_presets') || '{}');
       const imported: Record<string, any> = {};
 
       if (parsed?.speakers && typeof parsed.speakers === 'object') {
@@ -751,8 +751,8 @@ const [previewScale, setPreviewScale] = useState(1);
         return;
       }
 
-      localStorage.setItem('podchat_presets', JSON.stringify({ ...existing, ...imported }));
-      window.dispatchEvent(new Event('podchat_presets_updated'));
+      localStorage.setItem('pomchat_presets', JSON.stringify({ ...existing, ...imported }));
+      window.dispatchEvent(new Event('pomchat_presets_updated'));
       showToast(t('app.presetsImported'));
     } catch (error) {
       console.error('Failed to import presets:', error);
@@ -763,10 +763,10 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) return;
 
     try {
-      const presets = JSON.parse(localStorage.getItem('podchat_presets') || '{}');
+      const presets = JSON.parse(localStorage.getItem('pomchat_presets') || '{}');
       const result = await window.electron.showSaveDialog({
         title: t('menu.exportPresets'),
-        defaultPath: 'podchat-presets.json',
+        defaultPath: 'pomchat-presets.json',
         filters: [{ name: 'JSON', extensions: ['json'] }]
       });
 
@@ -906,9 +906,9 @@ const [previewScale, setPreviewScale] = useState(1);
     if (projectPath) {
       document.title = projectPath === 'web-demo' 
         ? t('app.webDemo')
-        : `PodChat Studio - ${projectPath}`;
+        : `PomChat Studio - ${projectPath}`;
     } else {
-      document.title = 'PodChat Studio';
+      document.title = 'PomChat Studio';
     }
   }, [projectPath, t]);
 
@@ -999,12 +999,12 @@ const [previewScale, setPreviewScale] = useState(1);
     const unixTime = Math.floor(now.getTime() / 1000);
 
     if (template === 'timestamp') {
-      return `podchat_${dateStr}_${timeStr}.mp4`;
+      return `pomchat_${dateStr}_${timeStr}.mp4`;
     }
     if (template === 'unix') {
-      return `podchat_${unixTime}.mp4`;
+      return `pomchat_${unixTime}.mp4`;
     }
-    return 'podchat.mp4';
+    return 'pomchat.mp4';
   };
 
   const normalizeExportDirectory = (rawPath: string) => {
@@ -1047,6 +1047,13 @@ const [previewScale, setPreviewScale] = useState(1);
     const { ui, ...restConfig } = config;
     return {
       ...restConfig,
+      audioPath: resolvePath(restConfig.audioPath),
+      background: restConfig.background
+        ? {
+            ...restConfig.background,
+            image: resolvePath(restConfig.background.image)
+          }
+        : restConfig.background,
       content: subtitles.map(s => ({
         start: s.start,
         end: s.end,
@@ -1280,7 +1287,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(finalConfig, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "podchat_project.json");
+    downloadAnchorNode.setAttribute("download", "pomchat_project.json");
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
@@ -1328,19 +1335,31 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const resolvePath = (path: string | undefined): string | undefined => {
     if (!path) return undefined;
-    // Catch http, https, // protocol-relative, data URI, blob URI
-    if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
-    
-    // Convert local absolute paths to Vite's /@fs/ endpoint for local dev loading
-    if (path.startsWith('file://')) return `/@fs${path.replace(/^file:\/\/?/, '/')}`;
-    if (/^[a-zA-Z]:[\\/]/.test(path)) return `/@fs/${path.replace(/\\/g, '/')}`;
-    
-    // For Unix-like absolute paths that are clearly not project relative paths
-    if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) {
-       return `/@fs${path}`;
+
+    const trimmed = path.trim();
+    if (!trimmed) return undefined;
+
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) {
+      return trimmed;
     }
 
-    return path.startsWith('/') ? path : `/${path}`;
+    if (/^www\./i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+      return encodeURI(`file:///${trimmed.replace(/\\/g, '/')}`);
+    }
+
+    if (trimmed.startsWith('\\\\')) {
+      return encodeURI(`file:${trimmed.replace(/\\/g, '/')}`);
+    }
+
+    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) {
+      return encodeURI(`file://${trimmed}`);
+    }
+
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   };
 
   const resolvedAudioPath = resolvePath(config.audioPath) || '';
@@ -1383,7 +1402,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const result = await window.electron.showSaveDialog({
         title: t('dialog.newProjectTitle'),
-        defaultPath: 'podchat_project.json',
+        defaultPath: 'pomchat_project.json',
         filters: [{ name: 'JSON Config', extensions: ['json'] }]
       });
       
@@ -1406,7 +1425,7 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleCloseProject = () => {
     setProjectPath(null);
     setShowSettings(false);
-    document.title = 'PodChat Studio';
+    document.title = 'PomChat Studio';
   };
 
   const handleSetAudio = async () => {
@@ -1470,7 +1489,7 @@ const [previewScale, setPreviewScale] = useState(1);
       
       const result = await window.electron.showSaveDialog({
         title: t('dialog.newProjectTitle'),
-        defaultPath: 'podchat_project.json',
+        defaultPath: 'pomchat_project.json',
         filters: [{ name: 'JSON Config', extensions: ['json'] }]
       });
       
@@ -1481,7 +1500,7 @@ const [previewScale, setPreviewScale] = useState(1);
       
       setProjectPath(result.filePath);
       setRecentProject(result.filePath);
-      localStorage.setItem('podchat_recent_project', result.filePath);
+      localStorage.setItem('pomchat_recent_project', result.filePath);
       setConfig(newConfig);
       savedSpeakerNamesRef.current = Object.fromEntries(Object.entries(newConfig.speakers || {}).map(([key, speaker]: [string, any]) => [key, speaker?.name || '']));
       setShowSettings(true);
@@ -1658,7 +1677,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   if (!projectPath) {
     return (
-      <div className="relative w-full h-screen" style={{ background: appBackground, color: uiTheme.text, ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
+      <div className="relative w-full h-screen" style={{ background: appBackground, color: uiTheme.text, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
         <WelcomeScreen 
           onNewProject={handleNewProject} 
           onOpenProject={handleOpenProject} 
@@ -1716,7 +1735,7 @@ const [previewScale, setPreviewScale] = useState(1);
   return (
     <div
       className={`w-full h-screen flex flex-col font-sans ${textClass} overflow-hidden transition-colors duration-300 relative`}
-      style={{ background: appBackground, ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }}
+      style={{ background: appBackground, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }}
       onDragOver={handleAppDragOver}
       onDragLeave={handleAppDragLeave}
       onDrop={handleAppDrop}
@@ -1950,9 +1969,9 @@ const [previewScale, setPreviewScale] = useState(1);
                             animationDuration: `${animationDuration}s`,
                             animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
                             animationFillMode: 'both',
-                            ['--podchat-enter-x' as any]: speaker.side === 'left' ? '-18px' : '18px',
-                            ['--podchat-enter-y' as any]: '18px',
-                            ['--podchat-enter-scale' as any]: '0.92'
+                            ['--pomchat-enter-x' as any]: speaker.side === 'left' ? '-18px' : '18px',
+                            ['--pomchat-enter-y' as any]: '18px',
+                            ['--pomchat-enter-scale' as any]: '0.92'
                           };
                           delete bubbleStyle.backgroundColor;
                           return (
@@ -1963,7 +1982,7 @@ const [previewScale, setPreviewScale] = useState(1);
                               backgroundBaseBlur={config.background?.blur || 0}
                               blurPx={0}
                               tintColor={tintColor}
-                              className={`break-words ${animationStyle === 'none' ? '' : `podchat-bubble-enter-${animationStyle}`}`}
+                              className={`break-words ${animationStyle === 'none' ? '' : `pomchat-bubble-enter-${animationStyle}`}`}
                               outerStyle={bubbleStyle}
                               contentStyle={contentStyle}
                             >
@@ -1985,7 +2004,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       const animationStyle = config.chatLayout?.animationStyle || 'rise';
                       const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
                       return (
-                        <div key={item.id} className={animationStyle === 'none' ? '' : `podchat-bubble-enter-${animationStyle}`} style={{ animationDuration: `${animationDuration}s`, animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)', animationFillMode: 'both', ['--podchat-enter-y' as any]: '18px', ['--podchat-enter-scale' as any]: '0.92' }}>
+                        <div key={item.id} className={animationStyle === 'none' ? '' : `pomchat-bubble-enter-${animationStyle}`} style={{ animationDuration: `${animationDuration}s`, animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)', animationFillMode: 'both', ['--pomchat-enter-y' as any]: '18px', ['--pomchat-enter-scale' as any]: '0.92' }}>
                           <ChatAnnotationBubble
                             item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
                             speaker={speaker}
@@ -2002,7 +2021,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       const animationStyle = config.chatLayout?.animationStyle || 'rise';
                       const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
                       return (
-                        <div key={item.id} className={animationStyle === 'none' ? '' : `podchat-bubble-enter-${animationStyle}`} style={{ animationDuration: `${animationDuration}s`, animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)', animationFillMode: 'both', ['--podchat-enter-y' as any]: '18px', ['--podchat-enter-scale' as any]: '0.92' }}>
+                        <div key={item.id} className={animationStyle === 'none' ? '' : `pomchat-bubble-enter-${animationStyle}`} style={{ animationDuration: `${animationDuration}s`, animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)', animationFillMode: 'both', ['--pomchat-enter-y' as any]: '18px', ['--pomchat-enter-scale' as any]: '0.92' }}>
                           <ChatAnnotationBubble
                             item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
                             speaker={speaker}

@@ -1,6 +1,6 @@
-# PodChat Studio
+# PomChat Studio
 
-PodChat Studio is a desktop-first tool for turning local audio and ASS subtitles into chat-style dialogue videos.
+PomChat Studio is a desktop-first tool for turning local audio and ASS subtitles into chat-style dialogue videos.
 
 It is built for editing speakers, bubble styles, layout, timing, and export settings in one place, with a live preview and Electron-based local file access.
 

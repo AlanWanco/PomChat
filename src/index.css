@@ -53,27 +53,27 @@ body {
   }
 }
 
-.podchat-bubble-enter-fade {
-  animation-name: podchat-bubble-fade;
+.pomchat-bubble-enter-fade {
+  animation-name: pomchat-bubble-fade;
 }
 
-.podchat-bubble-enter-rise {
-  animation-name: podchat-bubble-rise;
+.pomchat-bubble-enter-rise {
+  animation-name: pomchat-bubble-rise;
 }
 
-.podchat-bubble-enter-pop {
-  animation-name: podchat-bubble-pop;
+.pomchat-bubble-enter-pop {
+  animation-name: pomchat-bubble-pop;
 }
 
-.podchat-bubble-enter-slide {
-  animation-name: podchat-bubble-slide;
+.pomchat-bubble-enter-slide {
+  animation-name: pomchat-bubble-slide;
 }
 
-.podchat-bubble-enter-blur {
-  animation-name: podchat-bubble-blur;
+.pomchat-bubble-enter-blur {
+  animation-name: pomchat-bubble-blur;
 }
 
-@keyframes podchat-bubble-fade {
+@keyframes pomchat-bubble-fade {
   from {
     opacity: 0;
   }
@@ -82,10 +82,10 @@ body {
   }
 }
 
-@keyframes podchat-bubble-rise {
+@keyframes pomchat-bubble-rise {
   from {
     opacity: 0;
-    transform: translateY(var(--podchat-enter-y, 18px)) scale(var(--podchat-enter-scale, 0.92));
+    transform: translateY(var(--pomchat-enter-y, 18px)) scale(var(--pomchat-enter-scale, 0.92));
   }
   to {
     opacity: 1;
@@ -93,7 +93,7 @@ body {
   }
 }
 
-@keyframes podchat-bubble-pop {
+@keyframes pomchat-bubble-pop {
   0% {
     opacity: 0;
     transform: scale(0.82);
@@ -108,10 +108,10 @@ body {
   }
 }
 
-@keyframes podchat-bubble-slide {
+@keyframes pomchat-bubble-slide {
   from {
     opacity: 0;
-    transform: translateX(var(--podchat-enter-x, 18px));
+    transform: translateX(var(--pomchat-enter-x, 18px));
   }
   to {
     opacity: 1;
@@ -119,7 +119,7 @@ body {
   }
 }
 
-@keyframes podchat-bubble-blur {
+@keyframes pomchat-bubble-blur {
   from {
     opacity: 0;
     filter: blur(10px);

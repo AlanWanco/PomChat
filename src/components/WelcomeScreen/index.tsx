@@ -1,7 +1,8 @@
-import { FolderOpen, Plus, FileVideo, Clock, Settings } from 'lucide-react';
+import { FolderOpen, Plus, Clock, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
+import pomchatIconWhite from '../../../pomchat-icon-white.svg';
 
 interface WelcomeScreenProps {
   onNewProject: () => void;
@@ -28,8 +29,8 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
         backgroundColor: isDarkMode ? uiTheme.appBg : uiTheme.panelBg,
         backgroundImage: `linear-gradient(180deg, transparent 0%, transparent 74%, ${secondaryThemeColor}${isDarkMode ? '14' : '0A'} 100%)`,
         color: uiTheme.text,
-        ['--podchat-scrollbar-thumb' as any]: `${secondaryThemeColor}44`,
-        ['--podchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}66`
+        ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}44`,
+        ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}66`
       }}
     >
       {onOpenSettings && (
@@ -44,9 +45,9 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
       )}
       <div className="mb-12 flex flex-col items-center">
         <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-colors" onMouseEnter={() => setHoverLogo(true)} onMouseLeave={() => setHoverLogo(false)} style={{ backgroundColor: hoverLogo ? secondaryThemeColor : themeColor, boxShadow: '0 8px 18px rgba(0,0,0,0.12)' }}>
-          <FileVideo size={40} className="text-white" />
+          <img src={pomchatIconWhite} alt="PomChat logo" className="w-10 h-10 object-contain" />
         </div>
-        <h1 className="text-4xl font-bold mb-3 tracking-tight">PodChat Studio</h1>
+        <h1 className="text-4xl font-bold mb-3 tracking-tight">PomChat Studio</h1>
         <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           {t('welcome.tagline')}
         </p>

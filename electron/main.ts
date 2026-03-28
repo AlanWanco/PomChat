@@ -10,11 +10,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, '..');
 app.disableHardwareAcceleration();
 
-// Configuration file paths (priority order: ~/.config/podchat > app folder)
+// Configuration file paths (priority order: ~/.config/pomchat > app folder)
 function getConfigFilePath() {
-  const userConfigDir = path.join(os.homedir(), '.config', 'podchat');
+  const userConfigDir = path.join(os.homedir(), '.config', 'pomchat');
   const userConfigFile = path.join(userConfigDir, 'config.json');
-  const appConfigFile = path.join(process.env.APP_ROOT || '', 'podchat-config.json');
+  const appConfigFile = path.join(process.env.APP_ROOT || '', 'pomchat-config.json');
   
   // Check if user config exists, otherwise use app folder
   if (fs.existsSync(userConfigFile)) {
@@ -25,7 +25,7 @@ function getConfigFilePath() {
 
 // Ensure config directory exists
 function ensureConfigDir() {
-  const userConfigDir = path.join(os.homedir(), '.config', 'podchat');
+  const userConfigDir = path.join(os.homedir(), '.config', 'pomchat');
   if (!fs.existsSync(userConfigDir)) {
     fs.mkdirSync(userConfigDir, { recursive: true });
   }
@@ -58,7 +58,7 @@ function getRuntimeDirectory() {
 
 function sanitizeFileStem(value: string) {
   const trimmed = value.trim();
-  const base = trimmed || 'podchat-export';
+  const base = trimmed || 'pomchat-export';
   return base.replace(/[<>:"/\\|?*]+/g, '-').replace(/\s+/g, '-');
 }
 
@@ -66,6 +66,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1400,
     height: 900,
+    autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: false, // For local files
@@ -73,6 +74,10 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+
+  if (process.platform !== 'darwin') {
+    win.setMenuBarVisibility(false);
+  }
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
@@ -198,7 +203,7 @@ ipcMain.handle('get-export-paths', async (_event, options) => {
   const runtimeDir = getRuntimeDirectory();
   const projectPath = typeof options?.projectPath === 'string' && options.projectPath ? resolveAppFilePath(options.projectPath) : '';
   const projectDir = projectPath ? path.dirname(projectPath) : runtimeDir;
-  const fileStem = sanitizeFileStem(options?.projectTitle || 'podchat-export');
+  const fileStem = sanitizeFileStem(options?.projectTitle || 'pomchat-export');
   return {
     runtimeDir,
     quickSavePath: runtimeDir,
@@ -270,7 +275,7 @@ ipcMain.handle('load-config', async () => {
 ipcMain.handle('save-config', async (_event, config) => {
   try {
     ensureConfigDir();
-    const userConfigDir = path.join(os.homedir(), '.config', 'podchat');
+    const userConfigDir = path.join(os.homedir(), '.config', 'pomchat');
     const configPath = path.join(userConfigDir, 'config.json');
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     return true;

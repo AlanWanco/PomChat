@@ -59,7 +59,7 @@ export function SettingsPanel({
     return path.startsWith('/') ? path : `/${path}`;
   };
   const [presets, setPresets] = useState<Record<string, any>>(() => {
-    const saved = localStorage.getItem('podchat_presets');
+    const saved = localStorage.getItem('pomchat_presets');
     return saved ? JSON.parse(saved) : {};
   });
   const [presetPromptKey, setPresetPromptKey] = useState<string | null>(null);
@@ -77,11 +77,11 @@ export function SettingsPanel({
 
   useEffect(() => {
     const handlePresetsUpdate = () => {
-      const saved = localStorage.getItem('podchat_presets');
+      const saved = localStorage.getItem('pomchat_presets');
       if (saved) setPresets(JSON.parse(saved));
     };
-    window.addEventListener('podchat_presets_updated', handlePresetsUpdate);
-    return () => window.removeEventListener('podchat_presets_updated', handlePresetsUpdate);
+    window.addEventListener('pomchat_presets_updated', handlePresetsUpdate);
+    return () => window.removeEventListener('pomchat_presets_updated', handlePresetsUpdate);
   }, []);
 
 
@@ -182,12 +182,12 @@ export function SettingsPanel({
 
   const handleRemovePreset = (presetName: string) => {
     if (!presetName) return;
-    const existingStr = localStorage.getItem('podchat_presets');
+    const existingStr = localStorage.getItem('pomchat_presets');
     if (!existingStr) return;
     
     const existing = JSON.parse(existingStr);
     delete existing[presetName];
-    localStorage.setItem('podchat_presets', JSON.stringify(existing));
+    localStorage.setItem('pomchat_presets', JSON.stringify(existing));
     
     // Auto unbind from speakers using this preset
     const newSpeakers = { ...config.speakers };
@@ -200,7 +200,7 @@ export function SettingsPanel({
     });
     if (changed) updateConfig('speakers', newSpeakers);
     
-    window.dispatchEvent(new Event('podchat_presets_updated'));
+    window.dispatchEvent(new Event('pomchat_presets_updated'));
     showToast(`Preset "${presetName}" removed`);
   };
 
@@ -828,11 +828,11 @@ export function SettingsPanel({
                         <button 
                           onClick={() => {
                             if (speaker.preset) {
-                              const existingStr = localStorage.getItem('podchat_presets');
+                              const existingStr = localStorage.getItem('pomchat_presets');
                               const existing = existingStr ? JSON.parse(existingStr) : {};
                               existing[speaker.preset] = buildPresetPayload(speaker);
-                              localStorage.setItem('podchat_presets', JSON.stringify(existing));
-                              window.dispatchEvent(new Event('podchat_presets_updated'));
+                              localStorage.setItem('pomchat_presets', JSON.stringify(existing));
+                              window.dispatchEvent(new Event('pomchat_presets_updated'));
                               showToast(`预设 "${speaker.preset}" 已更新`);
                               return;
                             }
@@ -860,11 +860,11 @@ export function SettingsPanel({
                           <button 
                             onClick={() => {
                               if (!presetNameInput.trim()) return;
-                              const existingStr = localStorage.getItem('podchat_presets');
+                              const existingStr = localStorage.getItem('pomchat_presets');
                               const existing = existingStr ? JSON.parse(existingStr) : {};
                               existing[presetNameInput.trim()] = buildPresetPayload(speaker);
-                              localStorage.setItem('podchat_presets', JSON.stringify(existing));
-                              window.dispatchEvent(new Event('podchat_presets_updated'));
+                              localStorage.setItem('pomchat_presets', JSON.stringify(existing));
+                              window.dispatchEvent(new Event('pomchat_presets_updated'));
                               showToast(`预设 "${presetNameInput.trim()}" 已保存`);
                               setPresetPromptKey(null);
                             }}
@@ -894,7 +894,7 @@ export function SettingsPanel({
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                           <input 
                             type="text" 
-                            list="podchat-font-options"
+                            list="pomchat-font-options"
                             placeholder={t('speakers.fontPlaceholder')}
                             value={speaker.style?.fontFamily || ''}
                             onChange={(e) => updateSpeakerStyle(key, 'fontFamily', e.target.value)}
@@ -902,7 +902,7 @@ export function SettingsPanel({
                             className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
                             style={inputSurfaceStyle}
                           />
-                          <datalist id="podchat-font-options">
+                          <datalist id="pomchat-font-options">
                             {SYSTEM_FONT_OPTIONS.map((font) => (
                               <option key={font} value={font} />
                             ))}
@@ -1153,7 +1153,7 @@ export function SettingsPanel({
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                         <input
                           type="text"
-                          list="podchat-font-options"
+                          list="pomchat-font-options"
                           value={annotation.style?.fontFamily || ''}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'fontFamily', e.target.value)}
                           className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}

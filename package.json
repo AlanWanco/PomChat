@@ -1,5 +1,5 @@
 {
-  "name": "podchat",
+  "name": "pomchat",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -46,8 +46,8 @@
   },
   "main": "dist-electron/main.js",
   "build": {
-    "appId": "com.alanwanco.podchat",
-    "productName": "PodChat",
+    "appId": "com.alanwanco.pomchat",
+    "productName": "PomChat",
     "directories": {
       "buildResources": "build",
       "output": "release"
