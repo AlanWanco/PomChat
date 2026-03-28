@@ -392,9 +392,21 @@ export function PlayerControls({
                 setTimeInputValue(formatTime(currentTime));
                 setTimeInputMode(true);
               }}
-              className={`w-[130px] text-lg font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
-              style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
+              className={`w-[130px] text-lg font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full transition-all duration-200 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              style={{ 
+                backgroundColor: `${secondaryThemeColor}20`, 
+                border: `1.5px solid ${secondaryThemeColor}55`,
+                boxShadow: `0 0 0 0 transparent`
+              }}
               title="Double click to jump (supports 00:00:00.00)"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}28`;
+                e.currentTarget.style.boxShadow = `0 4px 12px ${secondaryThemeColor}22`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `${secondaryThemeColor}20`;
+                e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
+              }}
             >
               {formatTime(currentTime)}
             </button>

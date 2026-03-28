@@ -172,8 +172,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             }
           }}
           placeholder={t('subtitle.searchPlaceholder')}
-          className={`flex-1 px-2 py-1 rounded text-xs border focus:outline-none ${isDarkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'}`}
-          style={{ borderColor: `${secondaryThemeColor}44` }}
+          className="flex-1 px-2 py-1 rounded text-xs border focus:outline-none"
+          style={{ backgroundColor: uiTheme.inputBg, color: uiTheme.text, borderColor: `${secondaryThemeColor}44` }}
         />
         <button
           type="button"
