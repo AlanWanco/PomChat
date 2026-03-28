@@ -802,29 +802,9 @@ const [previewScale, setPreviewScale] = useState(1);
      showToast(t('app.configSaved'));
    };
 
-   // Load config from Electron config file on startup
    useEffect(() => {
-     if (!window.electron) return;
-     
-     const loadElectronConfig = async () => {
-       try {
-         const electronConfig = await window.electron.loadConfig();
-         if (electronConfig) {
-           const mergedConfig = sanitizeProjectConfig(electronConfig);
-           setConfig(mergedConfig);
-         }
-       } catch (error) {
-         console.error('Failed to load config from Electron:', error);
-       }
-     };
-     
-     // Only load once on mount
-     loadElectronConfig();
-   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
-  }, [isDarkMode]);
+     localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
+   }, [isDarkMode]);
 
   useEffect(() => {
     localStorage.setItem(THEME_COLOR_KEY, themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT));
@@ -844,13 +824,43 @@ const [previewScale, setPreviewScale] = useState(1);
     localStorage.setItem(SETTINGS_POS_KEY, settingsPosition);
   }, [settingsPosition]);
 
+  // Load config from Electron config file on startup (only once)
+  const hasLoadedElectronConfigRef = useRef(false);
   useEffect(() => {
-    // Save export range to config
-    setConfig((prev: any) => ({
-      ...prev,
-      exportRange: exportRange
-    }));
-  }, [exportRange]);
+    if (hasLoadedElectronConfigRef.current || !window.electron) return;
+    
+    hasLoadedElectronConfigRef.current = true;
+    
+    const loadElectronConfig = async () => {
+      try {
+        const electronConfig = await window.electron.loadConfig();
+        if (electronConfig) {
+          const mergedConfig = sanitizeProjectConfig(electronConfig);
+          setConfig(mergedConfig);
+          // Mark that we loaded from electron to prevent re-loading
+        }
+      } catch (error) {
+        console.error('Failed to load config from Electron:', error);
+      }
+    };
+    
+    loadElectronConfig();
+  }, []);
+
+  // Save config changes to Electron file (debounced to prevent too frequent saves)
+  useEffect(() => {
+    // Only save if we have substantive changes (not just on every render)
+    if (!window.electron) return;
+    
+    // Save to file in background without blocking
+    const saveTimer = setTimeout(() => {
+      window.electron.saveConfig(config).catch((err: any) => 
+        console.error('Failed to save config to file:', err)
+      );
+    }, 500);
+    
+    return () => clearTimeout(saveTimer);
+  }, [config]);
 
   useEffect(() => {
     const isNarrowOrPortrait = isPortraitCanvas || windowWidth < 700;
