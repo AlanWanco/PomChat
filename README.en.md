@@ -201,9 +201,10 @@ On Windows, the workflow produces both:
 
 ## Todo
 
-- Add GPU-accelerated export support, such as hardware encoder paths like macOS `VideoToolbox`
-- Add information text blocks that can be placed at the top, left, right, or bottom for program title, update time, and similar context
-- Add support for inserting a single image either inside the message flow or as a freely positioned element
-- Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
-- Add a GitHub Pages version with basic subtitle and audio import preview capabilities
-- Add an update-checking feature
+- [ ] Add GPU-accelerated export support, such as hardware encoder paths like macOS `VideoToolbox`
+- [ ] Add information text blocks that can be placed at the top, left, right, or bottom for program title, update time, and similar context
+- [ ] Add support for inserting a single image either inside the message flow or as a freely positioned element
+- [ ] Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
+- [x] Add a GitHub Pages version with basic subtitle and audio import preview capabilities
+- [ ] Add mobile portrait-oriented layout support for the static web version
+- [ ] Add an update-checking feature

@@ -835,14 +835,10 @@ const [previewScale, setPreviewScale] = useState(1);
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
-  useEffect(() => {
-    if (window.electron || projectPath) {
-      return;
-    }
-
+  const loadWebSavedProject = useCallback(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) {
-      return;
+      return false;
     }
 
     try {
@@ -857,10 +853,30 @@ const [previewScale, setPreviewScale] = useState(1);
       if (hasBlobAudio) {
         showToast('已恢复上次网页项目配置，请重新选择音频文件');
       }
+      return true;
     } catch (error) {
       console.error('Failed to restore web project from localStorage:', error);
+      return false;
     }
-  }, [projectPath, showToast]);
+  }, [showToast]);
+
+  useEffect(() => {
+    if (window.electron) {
+      return;
+    }
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(saved);
+      setRecentProject(parsed?.projectTitle || 'web-demo');
+    } catch (error) {
+      console.error('Failed to parse saved web project metadata:', error);
+    }
+  }, []);
 
   useEffect(() => {
     const ui = config.ui || DEFAULT_UI_CONFIG;
@@ -1863,16 +1879,9 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleSaveProject = async () => {
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
-      const finalConfig = getExportConfig();
-      const blob = new Blob([JSON.stringify(finalConfig, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'pomchat_project.json';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      const finalConfig = getProjectConfig();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
+      setRecentProject(finalConfig.projectTitle || 'web-demo');
       showToast(t('app.projectSaved'));
       return;
     }
@@ -1997,7 +2006,15 @@ const [previewScale, setPreviewScale] = useState(1);
         <WelcomeScreen 
           onNewProject={handleNewProject} 
           onOpenProject={handleOpenProject} 
-          onOpenRecent={() => recentProject && loadProjectFromPath(recentProject)}
+          onOpenRecent={() => {
+            if (window.electron) {
+              if (recentProject) {
+                void loadProjectFromPath(recentProject);
+              }
+              return;
+            }
+            loadWebSavedProject();
+          }}
           onOpenSettings={() => setShowSettings(true)}
           recentProject={recentProject}
           isDarkMode={isDarkMode} 
