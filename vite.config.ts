@@ -6,10 +6,11 @@ import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
 
 // https://vite.dev/config/
-const isGitHubPages = process.env.GITHUB_ACTIONS === 'true'
+export default defineConfig(({ command }) => {
+  const isPagesBuild = process.env.BUILD_TARGET === 'pages'
 
-export default defineConfig({
-  base: isGitHubPages ? '/PomChat/' : '/',
+  return {
+    base: command === 'serve' ? '/' : (isPagesBuild ? '/PomChat/' : './'),
   plugins: [
     react(), 
     tailwindcss(),
@@ -36,14 +37,15 @@ export default defineConfig({
     ]),
     renderer(),
   ],
-  server: {
-    fs: {
-      strict: false,
-    }
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
+    server: {
+      fs: {
+        strict: false,
+      }
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
+      }
     }
   }
 })

@@ -33,7 +33,7 @@ jobs:
 
       - name: Build web app
         env:
-          GITHUB_ACTIONS: 'true'
+          BUILD_TARGET: pages
         run: npm run build
 
       - name: Configure Pages
