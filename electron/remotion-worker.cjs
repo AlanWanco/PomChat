@@ -2,9 +2,12 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { fileURLToPath } = require('node:url');
 
 let cachedBundle = null;
+let cachedPatchedBinariesDir = null;
 
 const resolveAppFilePath = (filePath) => {
   if (!filePath) {
@@ -160,6 +163,54 @@ const getRenderConcurrency = () => {
   return Math.max(2, Math.min(8, cpuCount - 1));
 };
 
+const patchMacCompositorBinaries = () => {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  if (cachedPatchedBinariesDir) {
+    return cachedPatchedBinariesDir;
+  }
+
+  const compositorPkgName = process.arch === 'arm64'
+    ? '@remotion/compositor-darwin-arm64/package.json'
+    : '@remotion/compositor-darwin-x64/package.json';
+  const pkgJsonPath = require.resolve(compositorPkgName);
+  const sourceDir = path.dirname(pkgJsonPath);
+  const hash = crypto.createHash('sha1').update(sourceDir).digest('hex').slice(0, 8);
+  const targetDir = path.join(os.tmpdir(), `pomchat-remotion-bin-${process.arch}-${hash}`);
+  const marker = path.join(targetDir, '.patched');
+
+  if (!fs.existsSync(marker)) {
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+    fs.cpSync(sourceDir, targetDir, { recursive: true });
+
+    const dylibs = fs.readdirSync(targetDir).filter((name) => name.endsWith('.dylib'));
+    const patchTarget = (filePath) => {
+      dylibs.forEach((libName) => {
+        execFileSync('install_name_tool', ['-change', libName, `@loader_path/${libName}`, filePath]);
+      });
+    };
+
+    dylibs.forEach((libName) => {
+      const dylibPath = path.join(targetDir, libName);
+      execFileSync('install_name_tool', ['-id', `@loader_path/${libName}`, dylibPath]);
+      patchTarget(dylibPath);
+    });
+
+    ['ffmpeg', 'ffprobe', 'remotion'].forEach((binary) => {
+      const binaryPath = path.join(targetDir, binary);
+      patchTarget(binaryPath);
+    });
+
+    fs.writeFileSync(marker, 'ok');
+  }
+
+  cachedPatchedBinariesDir = targetDir;
+  return cachedPatchedBinariesDir;
+};
+
 const getBundle = async (bundleFn) => {
   if (!cachedBundle) {
     const entryPoint = path.join(process.env.APP_ROOT || process.cwd(), 'src/remotion/Root.tsx');
@@ -177,6 +228,7 @@ const runRender = async (config) => {
   const { bundle } = await import('@remotion/bundler');
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
   const mediaServer = await createLocalMediaServer();
+  const binariesDirectory = patchMacCompositorBinaries();
 
   try {
     const inputProps = prepareInputProps(config, mediaServer);
@@ -204,6 +256,7 @@ const runRender = async (config) => {
       id: 'PodchatRender',
       inputProps,
       logLevel: 'error',
+      binariesDirectory,
       chromiumOptions: {
         disableWebSecurity: true,
         gl: 'angle',
@@ -226,6 +279,7 @@ const runRender = async (config) => {
       x264Preset: config.x264Preset || 'veryfast',
       crf: config.crf || 20,
       pixelFormat: 'yuv420p',
+      binariesDirectory,
       chromiumOptions: {
         disableWebSecurity: true,
         gl: 'angle',

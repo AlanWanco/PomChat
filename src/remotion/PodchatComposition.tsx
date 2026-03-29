@@ -3,6 +3,10 @@ import { AbsoluteFill, Audio, Img, Sequence, useCurrentFrame, useVideoConfig } f
 import type { PodchatExportInput } from './types';
 import { ChatAnnotationBubble, ChatMessageBubble } from '../components/chat/SharedChatBubbles';
 
+const MESSAGE_LOOKBACK_SECONDS = 5;
+const MESSAGE_LOOKAHEAD_SECONDS = 2;
+const MESSAGE_FALLBACK_COUNT = 32;
+
 export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const frame = useCurrentFrame();
   const { fps, width } = useVideoConfig();
@@ -14,23 +18,29 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const topPadding = (props.chatLayout?.paddingTop ?? 48) * effectiveScale;
   const bottomPadding = (props.chatLayout?.paddingBottom ?? 80) * effectiveScale;
 
-  const visibleItems = props.content.filter((item) => {
+  const appearedMessages = props.content.filter((item) => {
     const speaker = props.speakers[item.speaker];
-    if (!speaker) {
+    if (!speaker || speaker.type === 'annotation') {
       return false;
-    }
-
-    if (speaker.type === 'annotation') {
-      return currentTime >= item.start && currentTime <= item.end;
     }
 
     const appearanceTime = Math.max(0, item.start - ((props.chatLayout?.animationStyle || 'rise') === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime;
   });
+  const timeWindowMessages = appearedMessages.filter((item) => (
+    item.start >= currentTime - MESSAGE_LOOKBACK_SECONDS &&
+    item.start <= currentTime + MESSAGE_LOOKAHEAD_SECONDS
+  ));
+  const visibleMessages = timeWindowMessages.length >= MESSAGE_FALLBACK_COUNT
+    ? timeWindowMessages
+    : appearedMessages.slice(-MESSAGE_FALLBACK_COUNT);
 
-  const visibleMessages = visibleItems.filter((item) => props.speakers[item.speaker]?.type !== 'annotation');
-  const topAnnotations = visibleItems.filter((item) => props.speakers[item.speaker]?.type === 'annotation' && props.speakers[item.speaker]?.style?.annotationPosition === 'top');
-  const bottomAnnotations = visibleItems.filter((item) => props.speakers[item.speaker]?.type === 'annotation' && (props.speakers[item.speaker]?.style?.annotationPosition ?? 'bottom') === 'bottom');
+  const visibleAnnotations = props.content.filter((item) => {
+    const speaker = props.speakers[item.speaker];
+    return Boolean(speaker?.type === 'annotation' && currentTime >= item.start && currentTime <= item.end);
+  });
+  const topAnnotations = visibleAnnotations.filter((item) => props.speakers[item.speaker]?.style?.annotationPosition === 'top');
+  const bottomAnnotations = visibleAnnotations.filter((item) => (props.speakers[item.speaker]?.style?.annotationPosition ?? 'bottom') === 'bottom');
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#111111', overflow: 'hidden', fontFamily: 'system-ui' }}>

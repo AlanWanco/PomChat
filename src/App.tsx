@@ -19,6 +19,9 @@ const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
 const SECONDARY_THEME_DEFAULT = '#ed7e96';
 const THEME_COLOR_VALUES = ['#545454', '#ed7e96', '#e7d600', '#01b7ee', '#485ec6', '#ff5800', '#a764a1', '#d71c30', '#83c36e', '#9ca4b8', '#36b583', '#aaa898', '#f8c9c4'];
+const MESSAGE_LOOKBACK_SECONDS = 5;
+const MESSAGE_LOOKAHEAD_SECONDS = 2;
+const MESSAGE_FALLBACK_COUNT = 32;
 
 // Web-only local storage key
 const STORAGE_KEY = 'pomchat_config';
@@ -439,7 +442,6 @@ function App() {
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
   const exportRangeTouchedRef = useRef(false);
   
-  const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const webAudioInputRef = useRef<HTMLInputElement>(null);
   const webSubtitleInputRef = useRef<HTMLInputElement>(null);
@@ -1306,16 +1308,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setCurrentTime(time);
   }, []);
 
-  // Auto-scroll log (Only scroll to active subtitle in the chat view)
-  useEffect(() => {
-    if (scrollRef.current) {
-      requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      });
-    }
-  }, [currentTime]);
+  // Keep preview chat anchored by virtualized render window.
 
   const generateFilename = (template: 'default' | 'timestamp' | 'unix' | 'custom', customName: string): string => {
     if (template === 'custom' && customName.trim()) {
@@ -2381,6 +2374,26 @@ const [previewScale, setPreviewScale] = useState(1);
     const appearanceTime = Math.max(0, item.start - (animationStyle === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime && currentTime <= item.end;
   });
+  const visibleMessages = useMemo(() => {
+    const appeared = subtitles.filter((item) => {
+      const speaker = config.speakers[item.speakerId];
+      if (!speaker || speaker.type === 'annotation') return false;
+      const animationStyle = config.chatLayout?.animationStyle || 'rise';
+      const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
+      const animationLeadTime = animationStyle === 'none' ? 0 : animationDuration;
+      const appearanceTime = Math.max(0, item.start - animationLeadTime);
+      return currentTime >= appearanceTime;
+    });
+
+    const inWindow = appeared.filter((item) => (
+      item.start >= currentTime - MESSAGE_LOOKBACK_SECONDS &&
+      item.start <= currentTime + MESSAGE_LOOKAHEAD_SECONDS
+    ));
+
+    return inWindow.length >= MESSAGE_FALLBACK_COUNT
+      ? inWindow
+      : appeared.slice(-MESSAGE_FALLBACK_COUNT);
+  }, [subtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, currentTime]);
 
   const previewChatLayout = useMemo(() => {
     if (!isMobileWebLayout) {
@@ -2871,8 +2884,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
               {/* Chat Stream */}
               <div 
-                ref={scrollRef}
-                className="preview-scroll-hidden relative z-20 flex-1 overflow-y-auto flex flex-col"
+                className="preview-scroll-hidden relative z-20 flex-1 overflow-hidden flex flex-col"
                 style={{
                   paddingTop: `${(previewChatLayout?.paddingTop ?? 48) * Math.max(0.35, previewScale)}px`,
                   paddingBottom: `${(previewChatLayout?.paddingBottom ?? 80) * Math.max(0.35, previewScale)}px`,
@@ -2883,17 +2895,9 @@ const [previewScale, setPreviewScale] = useState(1);
                 {subtitlesLoading ? (
                   <div className="text-center opacity-50 my-auto">{t('app.loadSubtitle')}</div>
                 ) : (
-                  subtitles.map((item) => {
+                  visibleMessages.map((item) => {
                     const speaker = config.speakers[item.speakerId];
                     if (!speaker || speaker.type === 'annotation') return null;
-
-                    const animationStyle = config.chatLayout?.animationStyle || 'rise';
-                    const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
-                    const animationLeadTime = animationStyle === 'none' ? 0 : animationDuration;
-                    const appearanceTime = Math.max(0, item.start - animationLeadTime);
-                    const isVisible = currentTime >= appearanceTime;
-
-                    if (!isVisible) return null;
 
                     return (
                       <ChatMessageBubble

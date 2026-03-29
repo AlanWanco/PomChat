@@ -554,6 +554,9 @@ export function SettingsPanel({
                       style={inputSurfaceStyle}
                       title={t('project.topLimit.title')}
                     />
+                    <p className="text-[11px] opacity-60 leading-relaxed">
+                      {t('project.topLimit.help')}
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.bottomPosition')}</span>
