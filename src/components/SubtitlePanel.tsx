@@ -1,4 +1,4 @@
-import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
@@ -135,10 +135,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     setInlineEditingId(null);
   };
 
-  // Global shortcut to finish Region Edit with Enter
+  // Global shortcuts for Region Edit
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && editingSub && !inlineEditingId) {
+        e.preventDefault();
+        if (setEditingSub) setEditingSub(null);
+      }
+
+      if (e.key === 'Escape' && editingSub && !inlineEditingId) {
         e.preventDefault();
         if (setEditingSub) setEditingSub(null);
       }
@@ -232,47 +237,65 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               >
                 {!isInlineEditing && (
                   <>
-                    <div className="flex justify-between items-center mb-2 opacity-70 relative">
-                      <div className="flex items-center gap-1 font-mono text-[10px]">
+                    <div className="flex justify-between items-center mb-2 opacity-70 relative gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-1 font-mono text-[10px] shrink-0">
                         <Clock size={10} />
                         <span>{formatTime(sub.start)} - {formatTime(sub.end)}</span>
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor }}>
+                          {sub.duration}s
+                        </span>
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor }}>
-                          {sub.duration}s
-                        </span>
-                        
                         <button 
                           onClick={(e) => toggleRegionEdit(sub, e)}
                           onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                          className={`z-20 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all cursor-pointer
+                          className={`z-20 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 transition-all cursor-pointer border
                             ${isRegionEditing 
                               ? `opacity-100 text-white shadow-md`
-                              : `opacity-0 group-hover:opacity-100 ${isDarkMode ? 'text-gray-300' : 'text-gray-600 shadow-sm border border-gray-200'}`
+                              : `opacity-0 group-hover:opacity-100 shadow-sm`
                              }
                            `}
-                          style={isRegionEditing ? { backgroundColor: themeColor, boxShadow: `0 4px 12px ${themeColor}24` } : { backgroundColor: `${themeColor}12`, borderColor: `${themeColor}33` }}
+                          style={isRegionEditing ? { backgroundColor: secondaryThemeColor, borderColor: `${secondaryThemeColor}55`, boxShadow: `0 4px 12px ${secondaryThemeColor}24` } : { backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor, borderColor: `${secondaryThemeColor}33` }}
                           title={isRegionEditing ? t('subtitle.adjustDoneTitle') : t('subtitle.adjustTitle')}
                         >
                           {isRegionEditing ? <Check size={10} /> : <MousePointer2 size={10} />}
                           {isRegionEditing ? t('subtitle.adjustDone') : t('subtitle.adjust')}
                         </button>
 
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onDeleteSubtitle(sub.id);
-                          }}
-                          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                          className={`z-20 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all cursor-pointer opacity-0 group-hover:opacity-100 border`}
-                          style={{ backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor, borderColor: `${secondaryThemeColor}33` }}
-                          title={t('subtitle.deleteOne')}
-                        >
-                          <Trash2 size={10} />
-                          {t('subtitle.delete')}
-                        </button>
+                        {isRegionEditing ? (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (setEditingSub) setEditingSub(null);
+                            }}
+                            onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          className="z-20 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 transition-all cursor-pointer opacity-100 border"
+                            style={{ backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor, borderColor: `${secondaryThemeColor}33` }}
+                            title={t('subtitle.cancel')}
+                          >
+                            <X size={10} />
+                            {t('subtitle.cancel')}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onDeleteSubtitle(sub.id);
+                            }}
+                            onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            className="z-20 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 transition-all cursor-pointer opacity-0 group-hover:opacity-100 border"
+                            style={{ backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor, borderColor: `${secondaryThemeColor}33` }}
+                            title={t('subtitle.deleteOne')}
+                          >
+                            <Trash2 size={10} />
+                            {t('subtitle.delete')}
+                          </button>
+                        )}
                       </div>
                     </div>
                     

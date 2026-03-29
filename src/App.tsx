@@ -417,6 +417,7 @@ function App() {
   const [isMobileBottomPanelCollapsed, setIsMobileBottomPanelCollapsed] = useState(false);
   const [isMobileBottomPanelExpanded, setIsMobileBottomPanelExpanded] = useState(false);
   const [mobileBottomPanelHeight, setMobileBottomPanelHeight] = useState(340);
+  const [isMobileBottomResizeActive, setIsMobileBottomResizeActive] = useState(false);
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
   const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1775,6 +1776,7 @@ const [previewScale, setPreviewScale] = useState(1);
   const startMobileBottomResizePointer = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    setIsMobileBottomResizeActive(true);
     const startY = e.clientY;
     const startHeight = mobileBottomPanelHeight;
 
@@ -1790,6 +1792,7 @@ const [previewScale, setPreviewScale] = useState(1);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       document.body.style.touchAction = '';
+      setIsMobileBottomResizeActive(false);
     };
 
     document.body.style.touchAction = 'none';
@@ -3171,13 +3174,13 @@ const [previewScale, setPreviewScale] = useState(1);
             <div
               className="h-4 cursor-row-resize border-b flex items-center justify-center touch-none select-none"
               onPointerDown={startMobileBottomResizePointer}
-              style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}
+              style={{ borderColor: isMobileBottomResizeActive ? `${secondaryThemeColor}66` : uiTheme.border, backgroundColor: isMobileBottomResizeActive ? `${secondaryThemeColor}18` : uiTheme.panelBgElevated }}
               title={t('app.dragHint')}
             >
-              <div className="h-1.5 w-14 rounded-full" style={{ backgroundColor: `${secondaryThemeColor}66` }} />
+              <div className="h-1.5 w-14 rounded-full transition-colors" style={{ backgroundColor: isMobileBottomResizeActive ? secondaryThemeColor : `${secondaryThemeColor}66` }} />
               <button
                 type="button"
-                className="absolute right-2 px-2 py-0.5 text-[10px] rounded border"
+                className="absolute right-2 h-6 w-14 text-[10px] rounded border"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsMobileBottomPanelExpanded((prev) => !prev);
