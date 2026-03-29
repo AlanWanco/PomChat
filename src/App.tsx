@@ -384,6 +384,7 @@ function App() {
     !window.electron && window.innerWidth < 700 ? 'subtitle' : 'speakers'
   );
   const [isMobileSubtitleCollapsed, setIsMobileSubtitleCollapsed] = useState(false);
+  const [mobileBottomPanelHeight, setMobileBottomPanelHeight] = useState(340);
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
   const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1517,6 +1518,26 @@ const [previewScale, setPreviewScale] = useState(1);
     document.body.style.cursor = 'col-resize';
   };
 
+  const startMobileBottomResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = mobileBottomPanelHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startY - moveEvent.clientY;
+      const next = Math.max(220, Math.min(560, startHeight + delta));
+      setMobileBottomPanelHeight(next);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const resolvePath = (path: string | undefined): string | undefined => {
     if (!path) return undefined;
 
@@ -2391,8 +2412,19 @@ const [previewScale, setPreviewScale] = useState(1);
                 </button>
               )}
               {isMobileWebLayout && (
-                <div className="text-xs px-2 py-1 rounded border" style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}44` }}>
-                  {canvasWidth}x{canvasHeight} ({aspectLabel}) @ {config.fps}FPS
+                <div className="flex items-center gap-2">
+                  <div className="text-xs px-2 py-1 rounded border" style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}44` }}>
+                    {canvasWidth}x{canvasHeight} ({aspectLabel}) @ {config.fps}FPS
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveProject()}
+                    className="text-xs px-2 py-1 rounded border transition-colors"
+                    style={{ color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44` }}
+                    title={t('settings.save')}
+                  >
+                    {t('settings.save')}
+                  </button>
                 </div>
               )}
             </div>
@@ -2713,10 +2745,19 @@ const [previewScale, setPreviewScale] = useState(1);
             handleUpdateSubtitle(editingSub.id, { start, end, duration: Number((end - start).toFixed(2)) });
           }
         }}
+        compactMobile={isMobileWebLayout}
       />
 
       {isMobileWebLayout && (
-        <div className="h-[42vh] min-h-[240px] border-t overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
+        <div className="border-t overflow-hidden" style={{ height: `${mobileBottomPanelHeight}px`, minHeight: '220px', maxHeight: '560px', borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
+          <div
+            className="h-2 cursor-row-resize border-b flex items-center justify-center"
+            onMouseDown={startMobileBottomResize}
+            style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}
+            title={t('app.dragHint')}
+          >
+            <div className="h-1 w-10 rounded-full" style={{ backgroundColor: `${secondaryThemeColor}66` }} />
+          </div>
           <SettingsPanel
             config={config}
             onConfigChange={setConfig}
@@ -2742,6 +2783,9 @@ const [previewScale, setPreviewScale] = useState(1);
             setActiveTab={setActiveTab}
             onSelectImage={handleSelectImage}
             showSubtitleTab
+            compactHeader
+            hideHeaderTitle
+            hideHeaderSave
             subtitleContent={(
               <div className="h-full min-h-0 flex flex-col">
                 <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>

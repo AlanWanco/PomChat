@@ -43,6 +43,9 @@ interface SettingsPanelProps {
   globalOnly?: boolean;
   showSubtitleTab?: boolean;
   subtitleContent?: ReactNode;
+  compactHeader?: boolean;
+  hideHeaderTitle?: boolean;
+  hideHeaderSave?: boolean;
 }
 
 export function SettingsPanel({ 
@@ -50,7 +53,8 @@ export function SettingsPanel({
   isDarkMode, language, themeColor, secondaryThemeColor, onThemeColorChange, onSecondaryThemeColorChange, onLanguageChange, onThemeChange, 
   settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
-  onSelectImage, globalOnly = false, showSubtitleTab = false, subtitleContent = null
+  onSelectImage, globalOnly = false, showSubtitleTab = false, subtitleContent = null,
+  compactHeader = false, hideHeaderTitle = false, hideHeaderSave = false
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
@@ -299,15 +303,17 @@ export function SettingsPanel({
 
   return (
     <div className={`h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
-      <div className={`p-4 border-b flex items-center justify-between shrink-0 ${headerClass}`} style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
-        <h2 className="font-bold flex items-center gap-2 text-sm">
+      <div className={`${compactHeader ? 'p-2.5' : 'p-4'} border-b flex items-center justify-between shrink-0 ${headerClass}`} style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
+        <h2 className={`${hideHeaderTitle ? 'opacity-0 pointer-events-none select-none' : ''} font-bold flex items-center gap-2 text-sm`}>
           <Settings size={16} /> {t('settings.title')}
         </h2>
         <div className="flex items-center gap-2">
-          <button onClick={onSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-sm font-medium" style={{ color: '#fff', backgroundColor: secondaryThemeColor, boxShadow: '0 4px 10px rgba(0,0,0,0.12)' }} title={t('settings.save')}>
+          {!hideHeaderSave && (
+            <button onClick={onSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors text-sm font-medium" style={{ color: '#fff', backgroundColor: secondaryThemeColor, boxShadow: '0 4px 10px rgba(0,0,0,0.12)' }} title={t('settings.save')}>
             <Save size={15} />
             {t('settings.save')}
-          </button>
+            </button>
+          )}
           <button onClick={onClose} className="p-1.5 rounded-md transition-colors" style={{ color: uiTheme.textMuted }} title={t('settings.close')}>
             <X size={16} />
           </button>

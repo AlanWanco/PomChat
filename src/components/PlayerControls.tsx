@@ -31,6 +31,7 @@ interface PlayerControlsProps {
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   rangeSubtitle?: { id: string, start: number, end: number, text: string } | null;
   onEditingSubChange?: (start: number, end: number) => void;
+  compactMobile?: boolean;
 }
 
 interface WaveformRegion {
@@ -83,10 +84,12 @@ export function PlayerControls({
   onExportRangeChange,
   editingSub,
   rangeSubtitle,
-  onEditingSubChange
+  onEditingSubChange,
+  compactMobile = false
 }: PlayerControlsProps) {
   const t = (key: string) => translate(language, key);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const waveformHeight = compactMobile ? 34 : 48;
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [regionTooltip, setRegionTooltip] = useState<{ start: number; end: number } | null>(null);
   const [timeInputMode, setTimeInputMode] = useState(false);
@@ -182,7 +185,7 @@ export function PlayerControls({
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
-      height: 48,
+      height: waveformHeight,
       normalize: true,
       media: audioRef.current,
       minPxPerSec: 50,
@@ -276,7 +279,7 @@ export function PlayerControls({
       setIsWaveformReady(false);
       wavesurfer.current?.destroy();
     };
-  }, [audioPath, isDarkMode, onSeek, audioRef, themeColor, secondaryThemeColor]);
+  }, [audioPath, isDarkMode, onSeek, audioRef, themeColor, secondaryThemeColor, waveformHeight]);
 
   useEffect(() => {
     if (wavesurfer.current && isWaveformReady) {
@@ -394,7 +397,7 @@ export function PlayerControls({
   };
 
   return (
-    <div className="h-32 border-t flex flex-col px-6 py-2 shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm" style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
+    <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto min-h-[148px] px-3 py-2' : 'h-32 px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
       {/* Waveform Track */}
       <div className="relative w-full mb-2">
@@ -407,8 +410,8 @@ export function PlayerControls({
       </div>
 
       {/* Controls Row */}
-      <div className="flex items-center justify-between gap-4 pb-2 min-w-0">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
+      <div className={`flex items-center gap-4 pb-2 min-w-0 ${compactMobile ? 'flex-wrap justify-between' : 'justify-between'}`}>
+        <div className={`flex items-center gap-4 min-w-0 ${compactMobile ? 'order-2 basis-auto' : 'flex-1'}`}>
           {timeInputMode ? (
             <input
               type="text"
@@ -452,7 +455,7 @@ export function PlayerControls({
           <span className={`text-lg font-mono ${textClass}`}>/ {formatTime(duration)}</span>
         </div>
 
-        <div className="flex items-center gap-3 justify-center shrink-0">
+        <div className={`flex items-center gap-3 shrink-0 ${compactMobile ? 'order-1 basis-full overflow-x-auto pb-1 justify-start' : 'justify-center'}`}>
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ backgroundColor: `${secondaryThemeColor}10`, border: `1px solid ${secondaryThemeColor}22`, boxShadow: `0 4px 14px ${secondaryThemeColor}10` }}>
             <button
               type="button"
@@ -763,7 +766,7 @@ export function PlayerControls({
            </div>
         </div>
 
-        <div className={`flex items-center justify-end gap-4 flex-1 min-w-0 ${textClass}`}>
+        <div className={`flex items-center gap-4 min-w-0 ${textClass} ${compactMobile ? 'order-2 ml-auto basis-auto justify-end' : 'flex-1 justify-end'}`}>
           
           <button 
             onClick={() => onLoopChange(!loop)}
