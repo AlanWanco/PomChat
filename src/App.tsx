@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
-import { demoConfig as initialConfig } from './projects/demo/config';
 import { SettingsPanel } from './components/SettingsPanel';
 import { PlayerControls } from './components/PlayerControls';
 import { SubtitlePanel } from './components/SubtitlePanel';
@@ -22,7 +21,7 @@ const SECONDARY_THEME_DEFAULT = '#ed7e96';
 const THEME_COLOR_VALUES = ['#545454', '#ed7e96', '#e7d600', '#01b7ee', '#485ec6', '#ff5800', '#a764a1', '#d71c30', '#83c36e', '#9ca4b8', '#36b583', '#aaa898', '#f8c9c4'];
 
 // Web-only local storage key
-const STORAGE_KEY = 'pomchat_demo_config';
+const STORAGE_KEY = 'pomchat_config';
 
 type ExportProgressState = {
   progress: number;
@@ -77,7 +76,63 @@ const DEFAULT_UI_CONFIG = {
 
 type SubtitleFormat = 'ass' | 'srt' | 'lrc';
 
-const LEGACY_DEMO_PATH_PREFIXES = ['src/projects/demo/', 'projects/demo/'];
+const DEFAULT_PROJECT_CONFIG = {
+  projectId: 'pomchat-project',
+  projectTitle: 'PomChat Project',
+  fps: 60,
+  dimensions: { width: 1920, height: 1080 },
+  chatLayout: { ...DEFAULT_CHAT_LAYOUT },
+  background: {
+    image: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1920&q=80',
+    blur: 8,
+    brightness: 1
+  },
+  audioPath: '',
+  assPath: '',
+  subtitleFormat: 'ass' as SubtitleFormat,
+  content: [] as any[],
+  speakers: {
+    A: {
+      name: '主播A',
+      avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
+      side: 'left',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#2563eb',
+        textColor: '#ffffff',
+        nameColor: '#ffffff'
+      }
+    },
+    B: {
+      name: '嘉宾B',
+      avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=B',
+      side: 'right',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#f3f4f6',
+        textColor: '#111827',
+        nameColor: '#ffffff'
+      }
+    },
+    ANNOTATION: {
+      name: '注释',
+      avatar: '',
+      side: 'center',
+      type: 'annotation',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#111827',
+        textColor: '#ffffff',
+        borderRadius: 999,
+        paddingX: 18,
+        paddingY: 10,
+        maxWidth: 720,
+        fontSize: 24,
+        annotationPosition: 'bottom'
+      }
+    }
+  }
+};
 
 const sanitizeImportedAssContent = (content: string) => {
   const lines = content.split(/\r?\n/);
@@ -98,48 +153,22 @@ const sanitizeImportedAssContent = (content: string) => {
   return sanitizedLines.join('\n');
 };
 
-const normalizeDemoAssetPath = (path: unknown, fallback: string) => {
-  if (typeof path !== 'string') {
-    return fallback;
-  }
-
-  if (!path.trim()) {
-    return '';
-  }
-
-  const normalizedPath = path.replace(/\\/g, '/').trim();
-
-  if (normalizedPath === fallback) {
-    return fallback;
-  }
-
-  if (LEGACY_DEMO_PATH_PREFIXES.some((prefix) => normalizedPath.startsWith(prefix))) {
-    return fallback;
-  }
-
-  if (normalizedPath.startsWith('projects/demo/assets/')) {
-    return `/${normalizedPath}`;
-  }
-
-  return normalizedPath;
-};
-
 const sanitizeProjectConfig = (parsed: any) => {
   const legacyPaddingX = parsed?.chatLayout?.paddingX;
   const merged = {
-    ...initialConfig,
+    ...DEFAULT_PROJECT_CONFIG,
     ...parsed,
-    dimensions: { ...initialConfig.dimensions, ...(parsed?.dimensions || {}) },
+    dimensions: { ...DEFAULT_PROJECT_CONFIG.dimensions, ...(parsed?.dimensions || {}) },
     chatLayout: {
       ...DEFAULT_CHAT_LAYOUT,
-      ...initialConfig.chatLayout,
+      ...DEFAULT_PROJECT_CONFIG.chatLayout,
       ...(parsed?.chatLayout || {}),
-      paddingLeft: parsed?.chatLayout?.paddingLeft ?? legacyPaddingX ?? (initialConfig.chatLayout as any)?.paddingLeft ?? initialConfig.chatLayout?.paddingX ?? DEFAULT_CHAT_LAYOUT.paddingLeft,
-      paddingRight: parsed?.chatLayout?.paddingRight ?? legacyPaddingX ?? (initialConfig.chatLayout as any)?.paddingRight ?? initialConfig.chatLayout?.paddingX ?? DEFAULT_CHAT_LAYOUT.paddingRight
+      paddingLeft: parsed?.chatLayout?.paddingLeft ?? legacyPaddingX ?? (DEFAULT_PROJECT_CONFIG.chatLayout as any)?.paddingLeft ?? DEFAULT_PROJECT_CONFIG.chatLayout?.paddingX ?? DEFAULT_CHAT_LAYOUT.paddingLeft,
+      paddingRight: parsed?.chatLayout?.paddingRight ?? legacyPaddingX ?? (DEFAULT_PROJECT_CONFIG.chatLayout as any)?.paddingRight ?? DEFAULT_PROJECT_CONFIG.chatLayout?.paddingX ?? DEFAULT_CHAT_LAYOUT.paddingRight
     },
-    background: { ...initialConfig.background, ...(parsed?.background || {}) },
+    background: { ...DEFAULT_PROJECT_CONFIG.background, ...(parsed?.background || {}) },
     speakers: Object.fromEntries(
-      Object.entries({ ...initialConfig.speakers, ...(parsed?.speakers || {}) }).map(([speakerId, speaker]: [string, any]) => [
+      Object.entries({ ...DEFAULT_PROJECT_CONFIG.speakers, ...(parsed?.speakers || {}) }).map(([speakerId, speaker]: [string, any]) => [
         speakerId,
         {
           ...speaker,
@@ -166,20 +195,11 @@ const sanitizeProjectConfig = (parsed: any) => {
     }
   };
 
-  const isDemoProject = merged.projectId === initialConfig.projectId;
-  if (!isDemoProject) {
-    return merged;
-  }
-
-  return {
-    ...merged,
-    audioPath: normalizeDemoAssetPath(merged.audioPath, initialConfig.audioPath),
-    assPath: normalizeDemoAssetPath(merged.assPath, initialConfig.assPath)
-  };
+  return merged;
 };
 
 const createBlankProjectConfig = (projectTitle: string) => ({
-  ...initialConfig,
+  ...DEFAULT_PROJECT_CONFIG,
   fps: 30,
   projectId: `project-${Date.now()}`,
   projectTitle,
@@ -364,11 +384,11 @@ function App() {
           const parsed = JSON.parse(saved);
           return sanitizeProjectConfig(parsed);
         } catch {
-          return sanitizeProjectConfig(initialConfig);
+          return sanitizeProjectConfig(DEFAULT_PROJECT_CONFIG);
         }
       }
     }
-    return sanitizeProjectConfig(initialConfig);
+    return sanitizeProjectConfig(DEFAULT_PROJECT_CONFIG);
   });
 
   const [currentTime, setCurrentTime] = useState(0);
