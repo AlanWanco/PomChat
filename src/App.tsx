@@ -441,6 +441,8 @@ function App() {
   const portraitAutoCollapseRef = useRef<{ subtitle: boolean; settings: boolean } | null>(null);
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
   const exportRangeTouchedRef = useRef(false);
+  const lastPlaybackPersistAtRef = useRef(0);
+  const lastUiFrameAtRef = useRef(0);
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const webAudioInputRef = useRef<HTMLInputElement>(null);
@@ -448,6 +450,7 @@ function App() {
   const webProjectInputRef = useRef<HTMLInputElement>(null);
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const subtitleFormat = (config.subtitleFormat || 'ass') as SubtitleFormat;
   const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat);
   const activePlaybackSubtitle = useMemo(
@@ -455,35 +458,27 @@ function App() {
     [subtitles, currentTime]
   );
   const nearestSubtitleIndex = useMemo(() => {
-    if (subtitles.length === 0) {
-      return -1;
-    }
-
+    if (subtitles.length === 0) return -1;
     const activeIndex = subtitles.findIndex((sub) => currentTime >= sub.start && currentTime <= sub.end);
-    if (activeIndex >= 0) {
-      return activeIndex;
-    }
+    if (activeIndex >= 0) return activeIndex;
 
-    let closestIndex = 0;
-    let closestDistance = Number.POSITIVE_INFINITY;
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
     subtitles.forEach((sub, index) => {
       const distance = currentTime < sub.start
         ? sub.start - currentTime
         : currentTime > sub.end
           ? currentTime - sub.end
           : 0;
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = index;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
       }
     });
-
-    return closestIndex;
+    return bestIndex;
   }, [subtitles, currentTime]);
-  const nearbyPlaybackSubtitles = useMemo(() => {
-    if (nearestSubtitleIndex < 0) {
-      return [];
-    }
+  const nearbySubtitles = useMemo(() => {
+    if (nearestSubtitleIndex < 0) return [];
     const start = Math.max(0, nearestSubtitleIndex - 2);
     const end = Math.min(subtitles.length, nearestSubtitleIndex + 3);
     return subtitles.slice(start, end);
@@ -1299,25 +1294,80 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   }, [config.audioPath]);
 
-  const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const time = audioRef.current.currentTime;
-      setCurrentTime(time);
-      const playbackKey = projectPath || config.assPath || config.audioPath;
-      if (playbackKey) {
-        setConfig((prev: any) => ({
-          ...prev,
-          ui: {
-            ...(prev.ui || DEFAULT_UI_CONFIG),
-            playbackPositions: {
-              ...((prev.ui || DEFAULT_UI_CONFIG).playbackPositions || {}),
-              [playbackKey]: time
-            }
-          }
-        }));
+  const persistPlaybackPosition = useCallback((time: number) => {
+    const playbackKey = projectPath || config.assPath || config.audioPath;
+    if (!playbackKey || !Number.isFinite(time)) {
+      return;
+    }
+
+    setConfig((prev: any) => {
+      const prevUi = prev.ui || DEFAULT_UI_CONFIG;
+      const prevPositions = prevUi.playbackPositions || {};
+      const previousTime = prevPositions[playbackKey];
+      if (typeof previousTime === 'number' && Math.abs(previousTime - time) < 0.5) {
+        return prev;
       }
+
+      return {
+        ...prev,
+        ui: {
+          ...prevUi,
+          playbackPositions: {
+            ...prevPositions,
+            [playbackKey]: time
+          }
+        }
+      };
+    });
+  }, [projectPath, config.assPath, config.audioPath]);
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) {
+      return;
+    }
+
+    const time = audioRef.current.currentTime;
+    if (!isPlaying) {
+      setCurrentTime(time);
     }
   };
+
+  useEffect(() => {
+    if (!isPlaying || !audioRef.current) {
+      return;
+    }
+
+    let rafId = 0;
+    const tick = () => {
+      if (audioRef.current) {
+        const now = performance.now();
+        if (now - lastUiFrameAtRef.current >= 16) {
+          lastUiFrameAtRef.current = now;
+          setCurrentTime(audioRef.current.currentTime);
+        }
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const now = performance.now();
+    if (isPlaying) {
+      if (now - lastPlaybackPersistAtRef.current < 900) {
+        return;
+      }
+      lastPlaybackPersistAtRef.current = now;
+      persistPlaybackPosition(currentTime);
+      return;
+    }
+
+    persistPlaybackPosition(currentTime);
+  }, [currentTime, isPlaying, persistPlaybackPosition]);
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
@@ -2429,6 +2479,18 @@ const [previewScale, setPreviewScale] = useState(1);
       : appeared.slice(-MESSAGE_FALLBACK_COUNT);
   }, [subtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, currentTime]);
 
+  useEffect(() => {
+    if (!isPlaying || !scrollRef.current) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+  }, [visibleMessages.length, isPlaying]);
+
   const previewChatLayout = useMemo(() => {
     if (!isMobileWebLayout) {
       return config.chatLayout;
@@ -2918,7 +2980,8 @@ const [previewScale, setPreviewScale] = useState(1);
 
               {/* Chat Stream */}
               <div 
-                className="preview-scroll-hidden relative z-20 flex-1 overflow-hidden flex flex-col"
+                ref={scrollRef}
+                className="preview-scroll-hidden relative z-20 flex-1 overflow-y-auto flex flex-col"
                 style={{
                   paddingTop: `${(previewChatLayout?.paddingTop ?? 48) * Math.max(0.35, previewScale)}px`,
                   paddingBottom: `${(previewChatLayout?.paddingBottom ?? 80) * Math.max(0.35, previewScale)}px`,
@@ -3056,7 +3119,6 @@ const [previewScale, setPreviewScale] = useState(1);
       <PlayerControls 
         audioPath={resolvedAudioPath}
         audioRef={audioRef}
-        currentTime={currentTime} 
         duration={duration}
         isPlaying={isPlaying}
         loop={loop}
@@ -3080,7 +3142,7 @@ const [previewScale, setPreviewScale] = useState(1);
         onExportRangeChange={updateExportRange}
         editingSub={editingSub}
         rangeSubtitle={editingSub ?? activePlaybackSubtitle}
-        nearbySubtitles={nearbyPlaybackSubtitles}
+        nearbySubtitles={nearbySubtitles}
         onEditingSubChange={(start, end) => {
           if (editingSub) {
             setEditingSub({ ...editingSub, start, end });

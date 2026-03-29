@@ -1,5 +1,5 @@
 import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2, Clock3, SkipBack, SkipForward, ArrowRight, ArrowLeft, ArrowDown } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { ZoomIn, ZoomOut } from 'lucide-react';
@@ -9,7 +9,6 @@ import { createThemeTokens, rgba } from '../theme';
 interface PlayerControlsProps {
   audioPath: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
-  currentTime: number;
   duration: number;
   isPlaying: boolean;
   loop: boolean;
@@ -30,7 +29,7 @@ interface PlayerControlsProps {
   onExportRangeChange: (range: { start?: number; end?: number }) => void;
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   rangeSubtitle?: { id: string, start: number, end: number, text: string } | null;
-  nearbySubtitles?: Array<{ id: string; start: number; end: number; text: string }>;
+  nearbySubtitles?: Array<{ id: string; start: number; end: number; text: string; speakerId?: string }>;
   onEditingSubChange?: (start: number, end: number) => void;
   compactMobile?: boolean;
 }
@@ -61,10 +60,9 @@ const formatTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
 };
 
-export function PlayerControls({ 
+export const PlayerControls = memo(function PlayerControls({ 
   audioPath,
   audioRef,
-  currentTime, 
   duration, 
   isPlaying, 
   loop,
@@ -101,6 +99,7 @@ export function PlayerControls({
   const [exportEndInputMode, setExportEndInputMode] = useState(false);
   const [exportEndInputValue, setExportEndInputValue] = useState('');
   const speedMenuRef = useRef<HTMLDivElement>(null);
+  const onEditingSubChangeRef = useRef(onEditingSubChange);
   
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -110,6 +109,53 @@ export function PlayerControls({
   const [zoomLevel, setZoomLevel] = useState(50);
   const [minZoom, setMinZoom] = useState(10);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
+  const [displayCurrentTime, setDisplayCurrentTime] = useState(0);
+
+  useEffect(() => {
+    onEditingSubChangeRef.current = onEditingSubChange;
+  }, [onEditingSubChange]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    let rafId = 0;
+    const syncFromAudio = () => {
+      if (!Number.isFinite(audio.currentTime)) return;
+      setDisplayCurrentTime(audio.currentTime);
+    };
+
+    const handleSeeked = () => syncFromAudio();
+    const handleLoadedMeta = () => syncFromAudio();
+    const handlePausedTime = () => {
+      if (!isPlaying) {
+        syncFromAudio();
+      }
+    };
+
+    audio.addEventListener('seeked', handleSeeked);
+    audio.addEventListener('loadedmetadata', handleLoadedMeta);
+    audio.addEventListener('timeupdate', handlePausedTime);
+
+    if (isPlaying) {
+      const tick = () => {
+        syncFromAudio();
+        rafId = window.requestAnimationFrame(tick);
+      };
+      rafId = window.requestAnimationFrame(tick);
+    } else {
+      syncFromAudio();
+    }
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      audio.removeEventListener('seeked', handleSeeked);
+      audio.removeEventListener('loadedmetadata', handleLoadedMeta);
+      audio.removeEventListener('timeupdate', handlePausedTime);
+    };
+  }, [audioRef, audioPath, isPlaying]);
 
   const parseFlexibleTime = (value: string) => {
     const input = value.trim();
@@ -214,10 +260,35 @@ export function PlayerControls({
             const regionStyle = document.createElement('style');
             regionStyle.id = 'ws-region-style';
             regionStyle.textContent = `
+              .region[data-pomchat-nearby="1"] {
+               border: 1px solid transparent !important;
+               background:
+                 linear-gradient(
+                   to right,
+                   ${rgba(secondaryThemeColor, 0.62)} 0,
+                   ${rgba(secondaryThemeColor, 0.62)} 1px,
+                   transparent 1px,
+                   transparent calc(100% - 1px),
+                   ${rgba(secondaryThemeColor, 0.62)} calc(100% - 1px),
+                   ${rgba(secondaryThemeColor, 0.62)} 100%
+                 ),
+                 ${rgba(secondaryThemeColor, 0.16)} !important;
+               box-shadow: none !important;
+              }
               .region {
-               border: 2px solid ${themeColor} !important;
-               background: linear-gradient(90deg, ${themeColor}1f, ${secondaryThemeColor}26) !important;
-               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.34), 0 0 0 1px rgba(0,0,0,0.14);
+               border: 1px solid transparent !important;
+               background:
+                 linear-gradient(
+                   to right,
+                   ${rgba(secondaryThemeColor, 0.95)} 0,
+                   ${rgba(secondaryThemeColor, 0.95)} 2px,
+                   transparent 2px,
+                   transparent calc(100% - 2px),
+                   ${rgba(secondaryThemeColor, 0.95)} calc(100% - 2px),
+                   ${rgba(secondaryThemeColor, 0.95)} 100%
+                 ),
+                 linear-gradient(90deg, ${secondaryThemeColor}55, ${secondaryThemeColor}2f) !important;
+               box-shadow: none !important;
               }
               .region::before,
               .region::after {
@@ -225,17 +296,42 @@ export function PlayerControls({
                 position: absolute;
                 top: 50%;
                 transform: translateY(-50%);
-               width: 16px;
-               height: 42px;
+               width: 7px;
+               height: 20px;
                 border-radius: 999px;
-               background: linear-gradient(180deg, rgba(255,255,255,0.98), ${themeColor}66);
-               border: 2px solid ${themeColor};
-               box-shadow: 0 4px 12px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.24);
-               z-index: 5;
-               pointer-events: none;
+               background: ${secondaryThemeColor};
+               border: 1px solid rgba(255,255,255,0.9);
+               box-shadow: 0 2px 8px rgba(0,0,0,0.24);
+                z-index: 5;
+                pointer-events: none;
               }
-             .region::before { left: -9px; }
-             .region::after { right: -9px; }
+             .region::before { left: -4px; }
+             .region::after { right: -4px; }
+              .region-handle,
+              .handle,
+              [part~="region-handle"],
+              [part~="region-handle-left"],
+              [part~="region-handle-right"] {
+               width: 7px !important;
+               height: 20px !important;
+               top: 50% !important;
+               transform: translateY(-50%) !important;
+               margin-top: 0 !important;
+               border-radius: 999px !important;
+               background: ${secondaryThemeColor} !important;
+               border: 1px solid rgba(255,255,255,0.9) !important;
+               box-shadow: 0 2px 8px rgba(0,0,0,0.24) !important;
+               opacity: 1 !important;
+             }
+             .region[data-pomchat-nearby="1"]::before,
+             .region[data-pomchat-nearby="1"]::after,
+             .region[data-pomchat-nearby="1"] .region-handle,
+             .region[data-pomchat-nearby="1"] .handle,
+             .region[data-pomchat-nearby="1"] [part~="region-handle"],
+             .region[data-pomchat-nearby="1"] [part~="region-handle-left"],
+             .region[data-pomchat-nearby="1"] [part~="region-handle-right"] {
+               display: none !important;
+             }
             `;
             host.shadowRoot.appendChild(regionStyle);
           }
@@ -330,22 +426,52 @@ export function PlayerControls({
     if (!wsRegions.current || !wavesurfer.current) return;
     wsRegions.current.clearRegions();
 
-    if (editingSub) {
-      const region = wsRegions.current.addRegion({
-        start: editingSub.start,
-        end: editingSub.end,
+    const sourceRegion = editingSub ?? rangeSubtitle;
+    nearbySubtitles.forEach((sub) => {
+      const isPrimary = Boolean(sourceRegion && sub.start === sourceRegion.start && sub.end === sourceRegion.end);
+      if (isPrimary) return;
+
+      const region = wsRegions.current?.addRegion({
+        start: sub.start,
+        end: sub.end,
+        color: `${secondaryThemeColor}14`,
+        drag: false,
+        resize: false,
+      }) as any;
+
+      if (region?.element?.dataset) {
+        region.element.dataset.pomchatNearby = '1';
+      }
+    });
+
+      if (sourceRegion) {
+        const region = wsRegions.current.addRegion({
+        start: sourceRegion.start,
+        end: sourceRegion.end,
         color: `${secondaryThemeColor}33`,
-        drag: true,
-        resize: true,
+        drag: Boolean(editingSub),
+        resize: Boolean(editingSub),
       });
 
       const tooltipTimer = window.setTimeout(() => {
-        setRegionTooltip({ start: editingSub.start, end: editingSub.end });
+        setRegionTooltip({ start: sourceRegion.start, end: sourceRegion.end });
       }, 0);
 
+      const regionAny = region as any;
+      if (regionAny?.element?.dataset) {
+        regionAny.element.dataset.pomchatNearby = '0';
+      }
+
+      if (!editingSub) {
+        return () => {
+          window.clearTimeout(tooltipTimer);
+          setRegionTooltip(null);
+        };
+      }
+
       const handleUpdate = () => {
-        if (onEditingSubChange) {
-          onEditingSubChange(region.start, region.end);
+        if (onEditingSubChangeRef.current) {
+          onEditingSubChangeRef.current(region.start, region.end);
         }
       };
 
@@ -367,14 +493,15 @@ export function PlayerControls({
         region.un('update-end', handleRegionDone);
       };
     }
+
     const tooltipResetTimer = window.setTimeout(() => setRegionTooltip(null), 0);
     return () => {
       window.clearTimeout(tooltipResetTimer);
     };
-  }, [editingSub, onEditingSubChange, themeColor, secondaryThemeColor, isDarkMode, zoomLevel]);
+  }, [editingSub, rangeSubtitle, nearbySubtitles, themeColor, secondaryThemeColor, isDarkMode, zoomLevel]);
 
   // Removed manual Sync effect since WaveSurfer syncs via the media element automatically.
-  // We still format time based on App's currentTime state for the UI string.
+  // UI time display is read directly from the audio element.
 
   const rates = [0.5, 1.0, 1.25, 1.5, 2.0];
 
@@ -390,6 +517,7 @@ export function PlayerControls({
 
   const textClass = isDarkMode ? "text-gray-400" : "text-gray-600";
   const showWaveformContainer = Boolean(audioPath && isWaveformReady);
+  const liveCurrentTime = audioRef.current?.currentTime ?? displayCurrentTime;
   const hasStartRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.start >= 0);
   const hasEndRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.end >= 0);
   const rangeTooltipStyle = {
@@ -399,9 +527,6 @@ export function PlayerControls({
     backdropFilter: 'blur(14px) saturate(140%)',
     WebkitBackdropFilter: 'blur(14px) saturate(140%)'
   };
-  const subtitleWindow = nearbySubtitles.slice(0, 5);
-  const subtitleWindowHasItems = subtitleWindow.length > 0;
-
   return (
     <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto px-2.5 py-1.5' : 'h-auto px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
@@ -426,47 +551,6 @@ export function PlayerControls({
           )}
       </div>
 
-      {subtitleWindowHasItems && (
-        <div
-          className="mb-2 rounded-lg border px-2 py-1.5"
-          style={{
-            borderColor: `${secondaryThemeColor}33`,
-            backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.55)' : 'rgba(255, 255, 255, 0.8)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)'
-          }}
-        >
-          <div className="flex gap-1 overflow-x-auto pb-1 [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full" style={{ ['--tw-scrollbar-thumb' as any]: `${secondaryThemeColor}66` }}>
-            {subtitleWindow.map((sub, index) => {
-              const isCurrent = currentTime >= sub.start && currentTime <= sub.end;
-              return (
-                <button
-                  key={`${sub.id}-${sub.start}`}
-                  type="button"
-                  onClick={() => onSeek(sub.start)}
-                  className="shrink-0 rounded-md border px-2 py-1 text-[11px] font-mono transition-colors"
-                  style={isCurrent
-                    ? {
-                      color: '#ffffff',
-                      borderColor: secondaryThemeColor,
-                      backgroundColor: secondaryThemeColor,
-                      boxShadow: `0 4px 12px ${secondaryThemeColor}33`
-                    }
-                    : {
-                      color: uiTheme.text,
-                      borderColor: `${secondaryThemeColor}33`,
-                      backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.45)' : 'rgba(255,255,255,0.72)'
-                    }}
-                  title={sub.text || `Subtitle ${index + 1}`}
-                >
-                  {formatTime(sub.start)}-{formatTime(sub.end)}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Controls Row */}
       <div className={`relative z-40 flex items-center gap-2 pb-2 min-w-0 ${compactMobile ? 'justify-between' : 'justify-between'}`}>
         {!compactMobile && (
@@ -489,7 +573,7 @@ export function PlayerControls({
             <button
               type="button"
               onDoubleClick={() => {
-                setTimeInputValue(formatTime(currentTime));
+                setTimeInputValue(formatTime(liveCurrentTime));
                 setTimeInputMode(true);
               }}
               className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[112px] text-base'} font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full transition-all duration-200 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
@@ -508,7 +592,7 @@ export function PlayerControls({
                 e.currentTarget.style.boxShadow = '0 0 0 0 transparent';
               }}
             >
-              {formatTime(currentTime)}
+              {formatTime(liveCurrentTime)}
             </button>
           )}
           <span className={`${compactMobile ? 'text-sm' : 'text-xs'} font-mono ${textClass}`}>/ {formatTime(duration)}</span>
@@ -578,7 +662,7 @@ export function PlayerControls({
             </button>
             <button
                type="button"
-               onClick={() => onExportRangeChange({ start: currentTime })}
+               onClick={() => onExportRangeChange({ start: liveCurrentTime })}
                 className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 relative group"
                 style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
                 onMouseEnter={(e) => {
@@ -756,7 +840,7 @@ export function PlayerControls({
              )}
             <button
               type="button"
-              onClick={() => onExportRangeChange({ end: currentTime })}
+              onClick={() => onExportRangeChange({ end: liveCurrentTime })}
               className="rounded-full p-1.5 transition-all duration-200 hover:scale-105 relative group"
               style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, boxShadow: `0 0 0 0 transparent` }}
               onMouseEnter={(e) => {
@@ -876,7 +960,7 @@ export function PlayerControls({
               </button>
             </div>
             <div className="flex items-center gap-1 min-w-0">
-              <span className="text-[10px] font-mono" style={{ color: uiTheme.text }}>{formatTime(currentTime)}</span>
+              <span className="text-[10px] font-mono" style={{ color: uiTheme.text }}>{formatTime(liveCurrentTime)}</span>
               <span className="text-[8px] font-mono" style={{ color: uiTheme.textMuted }}>/ {formatTime(duration)}</span>
             </div>
           </div>
@@ -1013,4 +1097,4 @@ export function PlayerControls({
 
     </div>
   );
-}
+});
