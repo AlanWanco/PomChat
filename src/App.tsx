@@ -500,6 +500,35 @@ const [previewScale, setPreviewScale] = useState(1);
     };
   }, [canvasWidth, canvasHeight, showSubtitlePanel, showSettings, subtitleWidth, settingsWidth, shouldHideSidePanels, isMobileWebLayout]);
 
+  useLayoutEffect(() => {
+    const forceScale = () => {
+      const areaEl = previewAreaRef.current;
+      if (!areaEl) return;
+      const styles = window.getComputedStyle(areaEl);
+      const horizontalPadding = parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0');
+      const verticalPadding = parseFloat(styles.paddingTop || '0') + parseFloat(styles.paddingBottom || '0');
+      const availableWidth = areaEl.clientWidth - horizontalPadding;
+      const availableHeight = areaEl.clientHeight - verticalPadding;
+      if (!availableWidth || !availableHeight) return;
+      const nextScale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+      const safeScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
+      setPreviewScale(safeScale);
+      setPreviewFrameSize({
+        width: Math.round(canvasWidth * safeScale),
+        height: Math.round(canvasHeight * safeScale)
+      });
+    };
+
+    const t1 = window.setTimeout(forceScale, 50);
+    const t2 = window.setTimeout(forceScale, 180);
+    const t3 = window.setTimeout(forceScale, 420);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
+  }, [projectPath, config.projectId, config.dimensions?.width, config.dimensions?.height, subtitles.length]);
+
   const formatAssTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -997,6 +1026,11 @@ const [previewScale, setPreviewScale] = useState(1);
         ? restoredConfig
         : { ...restoredConfig, subtitleFormat: restoredConfig.assPath ? 'ass' : (restoredConfig.content?.length ? 'srt' : 'ass') };
       setConfig(normalizedRestoredConfig);
+      if (normalizedRestoredConfig.subtitleFormat === 'ass' && normalizedRestoredConfig.assPath) {
+        setWebAssContent(normalizedRestoredConfig.assPath);
+      } else {
+        setWebAssContent(null);
+      }
       setProjectPath('web-demo');
       setRecentProject(parsed?.projectTitle || 'web-demo');
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedRestoredConfig.speakers);
@@ -2014,6 +2048,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const normalizedConfig = validatedConfig.subtitleFormat
         ? validatedConfig
         : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
+      const shouldUseAssSource = !window.electron && normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
       
       setProjectPath(filePath);
       setRecentProject(filePath);
@@ -2027,6 +2062,7 @@ const [previewScale, setPreviewScale] = useState(1);
           recentProject: filePath
         }
       }));
+      setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(t('app.projectLoaded'));
@@ -2112,10 +2148,6 @@ const [previewScale, setPreviewScale] = useState(1);
     event.target.value = '';
   };
 
-  const handleWebAudioReload = async () => {
-    webAudioInputRef.current?.click();
-  };
-
   const handleWebPresetSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2188,6 +2220,7 @@ const [previewScale, setPreviewScale] = useState(1);
         const normalizedConfig = validatedConfig.subtitleFormat
           ? validatedConfig
           : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
+        const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
         setProjectPath('web-demo');
         setRecentProject(file.name);
         setConfig((prev: any) => ({
@@ -2197,7 +2230,7 @@ const [previewScale, setPreviewScale] = useState(1);
             recentProject: file.name
           }
         }));
-        setWebAssContent(null);
+        setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
         savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
         setShowSettings(true);
         showToast(t('app.projectLoaded'));
@@ -2287,6 +2320,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const normalizedConfig = validatedConfig.subtitleFormat
         ? validatedConfig
         : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
+      const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
       setProjectPath('web-demo');
       setRecentProject(file.name);
       setConfig((prev: any) => ({
@@ -2296,7 +2330,7 @@ const [previewScale, setPreviewScale] = useState(1);
           recentProject: file.name
         }
       }));
-      setWebAssContent(null);
+      setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(requiresAudioReload ? `${t('app.projectLoaded')}，请重新加载音频文件` : t('app.projectLoaded'));
@@ -2655,16 +2689,6 @@ const [previewScale, setPreviewScale] = useState(1);
                   <div className="text-xs px-2 py-1 rounded border" style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}44` }}>
                     {canvasWidth}x{canvasHeight} ({aspectLabel}) @ {config.fps}FPS
                   </div>
-                  {!config.audioPath && (
-                    <button
-                      type="button"
-                      onClick={handleWebAudioReload}
-                      className="text-xs px-2 py-1 rounded border transition-colors"
-                      style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}33` }}
-                    >
-                      {t('menu.importAudio')}
-                    </button>
-                  )}
                 </div>
               )}
             </div>

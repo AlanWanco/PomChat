@@ -39,6 +39,8 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Edit subtitle text, start and end time, and speaker assignment
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
 - Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
+- Mobile web layout is optimized with adaptive preview scaling, a collapsible/resizable bottom panel, and compact playback controls
+- Waveform uses a dedicated container and is shown only after audio is actually loaded, so it does not occupy space when audio is missing or blocked
 - Switch freely between light and dark mode, with up to 13 theme and secondary color combinations
 - Support both normal speaker bubbles and annotation-style bubbles
 - Preview the conversation layout in real time while the audio plays
