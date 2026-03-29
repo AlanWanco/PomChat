@@ -884,7 +884,9 @@ const [previewScale, setPreviewScale] = useState(1);
     setThemeColorState((prev: string) => (prev === ui.themeColor ? prev : ui.themeColor));
     setSecondaryThemeColorState((prev: string) => (prev === ui.secondaryThemeColor ? prev : ui.secondaryThemeColor));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
-    setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
+    if (window.electron) {
+      setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
+    }
     setPresets((prev: Record<string, any>) => JSON.stringify(prev) === JSON.stringify(ui.presets || {}) ? prev : (ui.presets || {}));
   }, [config.ui]);
 
@@ -1906,13 +1908,14 @@ const [previewScale, setPreviewScale] = useState(1);
       const content = await file.text();
       const parsed = JSON.parse(content);
       const validatedConfig = validateProjectConfig(parsed);
+      const requiresAudioReload = !window.electron && Boolean(validatedConfig.audioPath);
       setProjectPath('web-demo');
       setRecentProject(file.name);
-      setConfig(validatedConfig);
+      setConfig(requiresAudioReload ? { ...validatedConfig, audioPath: '' } : validatedConfig);
       setWebAssContent(null);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
       setShowSettings(true);
-      showToast(t('app.projectLoaded'));
+      showToast(requiresAudioReload ? `${t('app.projectLoaded')}，请重新加载音频文件` : t('app.projectLoaded'));
     } catch (e: any) {
       alert('加载失败: ' + e.message);
     } finally {
