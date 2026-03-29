@@ -1036,7 +1036,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setRecentProject(parsed?.projectTitle || 'web-demo');
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedRestoredConfig.speakers);
       if (requiresAudioReload) {
-        showToast('已恢复上次网页项目配置，请重新选择音频文件');
+        showToast(t('app.projectLoadedNeedAudio'));
       }
       return true;
     } catch (error) {
@@ -2236,7 +2236,11 @@ const [previewScale, setPreviewScale] = useState(1);
         setIsMobileBottomPanelExpanded(false);
         savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
         setShowSettings(true);
-        showToast(t('app.projectLoaded'));
+        const requiresAudioReload = Boolean(normalizedConfig.audioPath);
+        if (requiresAudioReload) {
+          setConfig((prev: any) => ({ ...prev, audioPath: '' }));
+        }
+        showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
       } catch (e: any) {
         alert('加载失败: ' + e.message);
       }
@@ -2337,7 +2341,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setIsMobileBottomPanelExpanded(false);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
-      showToast(requiresAudioReload ? `${t('app.projectLoaded')}，请重新加载音频文件` : t('app.projectLoaded'));
+      showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
     } catch (e: any) {
       alert('加载失败: ' + e.message);
     } finally {
