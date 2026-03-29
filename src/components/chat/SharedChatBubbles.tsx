@@ -172,6 +172,9 @@ export function ChatMessageBubble({
   const borderColor = speaker.style?.borderColor || '#ffffff';
   const borderOpacity = speaker.style?.borderOpacity ?? 1;
   const radius = (speaker.style?.borderRadius ?? 28) * combinedScale;
+  const sharpCornerRadius = Math.max(3, 4 * combinedScale);
+  const topLeftRadius = isLeft ? sharpCornerRadius : radius;
+  const topRightRadius = isLeft ? radius : sharpCornerRadius;
   const shadowSize = (speaker.style?.shadowSize ?? 7) * combinedScale;
   const margin = (speaker.style?.margin ?? 14) * combinedScale;
   const paddingX = (speaker.style?.paddingX ?? 20) * combinedScale;
@@ -268,9 +271,10 @@ export function ChatMessageBubble({
               fontSize: `${fontSize}px`,
               fontWeight: speaker.style?.fontWeight || 'normal',
               backgroundClip: 'padding-box',
-              borderRadius: `${radius}px`,
-              borderTopLeftRadius: isLeft ? `${Math.max(3, 4 * combinedScale)}px` : `${radius}px`,
-              borderTopRightRadius: !isLeft ? `${Math.max(3, 4 * combinedScale)}px` : `${radius}px`,
+              borderTopLeftRadius: `${topLeftRadius}px`,
+              borderTopRightRadius: `${topRightRadius}px`,
+              borderBottomLeftRadius: `${radius}px`,
+              borderBottomRightRadius: `${radius}px`,
               border: (speaker.style?.borderWidth ?? 0) > 0 ? `${speaker.style?.borderWidth ?? 0}px solid ${rgba(borderColor, borderOpacity)}` : 'none',
               boxShadow: bubbleShadow,
               maxWidth: `${bubbleMaxWidth}px`

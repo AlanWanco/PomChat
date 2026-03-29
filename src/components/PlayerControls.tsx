@@ -623,7 +623,15 @@ export function PlayerControls({
           <button 
             onClick={onPlayPause}
             className={`w-10 h-10 min-w-10 min-h-10 aspect-square shrink-0 flex items-center justify-center rounded-full transition-transform hover:scale-105 text-white shadow-lg`}
-            style={isPlaying ? { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` } : { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` }}
+            style={{ backgroundColor: themeColor, boxShadow: `0 8px 18px ${themeColor}30` }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = secondaryThemeColor;
+              e.currentTarget.style.boxShadow = `0 8px 18px ${secondaryThemeColor}30`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = themeColor;
+              e.currentTarget.style.boxShadow = `0 8px 18px ${themeColor}30`;
+            }}
           >
             {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
           </button>
@@ -795,8 +803,16 @@ export function PlayerControls({
               <button
                 onClick={onPlayPause}
                 className="w-8 h-8 min-w-8 min-h-8 aspect-square shrink-0 flex items-center justify-center rounded-full text-white"
-                style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 6px 12px ${secondaryThemeColor}33` }}
+                style={{ backgroundColor: themeColor, boxShadow: `0 6px 12px ${themeColor}33` }}
                 title={isPlaying ? t('player.pause') : t('player.play')}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = secondaryThemeColor;
+                  e.currentTarget.style.boxShadow = `0 6px 12px ${secondaryThemeColor}33`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = themeColor;
+                  e.currentTarget.style.boxShadow = `0 6px 12px ${themeColor}33`;
+                }}
               >
                 {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5" />}
               </button>

@@ -1116,22 +1116,32 @@ export function SettingsPanel({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-1">
-                        <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
-                          <div className="flex items-center gap-2">
-                            <input 
-                              type="range" min="0" max="1" step="0.05"
-                              value={speaker.style?.opacity ?? 0.9}
-                              onChange={(e) => updateSpeakerStyle(key, 'opacity', parseFloat(e.target.value))}
-                              className="w-full" style={themedRangeStyle}
-                            />
-                            <span className="text-[10px] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">-</span>
-                          <div className="text-[10px] opacity-40 pt-2">{t('speakers.blurRemoved')}</div>
+                      <div className="space-y-1 pt-1">
+                        <button
+                          type="button"
+                          className="w-full px-2 py-1.5 text-[10px] rounded border transition-colors"
+                          style={{ borderColor: uiTheme.border, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+                          onClick={() => {
+                            const currentBg = speaker.style?.bgColor || '#3B82F6';
+                            const currentText = speaker.style?.textColor || '#FFFFFF';
+                            updateSpeakerStyle(key, 'bgColor', currentText);
+                            updateSpeakerStyle(key, 'textColor', currentBg);
+                          }}
+                        >
+                          {t('speakers.swapBgText')}
+                        </button>
+                      </div>
+
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range" min="0" max="1" step="0.05"
+                            value={speaker.style?.opacity ?? 0.9}
+                            onChange={(e) => updateSpeakerStyle(key, 'opacity', parseFloat(e.target.value))}
+                            className="w-full" style={themedRangeStyle}
+                          />
+                          <span className="text-[10px] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
                         </div>
                       </div>
                     </div>
