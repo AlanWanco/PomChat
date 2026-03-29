@@ -75,6 +75,8 @@ const DEFAULT_UI_CONFIG = {
   presets: {} as Record<string, any>
 };
 
+type SubtitleFormat = 'ass' | 'srt' | 'lrc';
+
 const LEGACY_DEMO_PATH_PREFIXES = ['src/projects/demo/', 'projects/demo/'];
 
 const sanitizeImportedAssContent = (content: string) => {
@@ -183,6 +185,7 @@ const createBlankProjectConfig = (projectTitle: string) => ({
   projectTitle,
   audioPath: '',
   assPath: '',
+  subtitleFormat: 'ass' as SubtitleFormat,
   content: [],
   speakers: {
     A: {
@@ -226,6 +229,10 @@ const sanitizeProjectOverrides = (value: unknown) => {
 
   if (typeof candidate.assPath === 'string') {
     overrides.assPath = candidate.assPath;
+  }
+
+  if (candidate.subtitleFormat === 'ass' || candidate.subtitleFormat === 'srt' || candidate.subtitleFormat === 'lrc') {
+    overrides.subtitleFormat = candidate.subtitleFormat;
   }
 
   if (Array.isArray(candidate.content)) {
@@ -418,7 +425,8 @@ function App() {
   const webProjectInputRef = useRef<HTMLInputElement>(null);
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
-  const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content);
+  const subtitleFormat = (config.subtitleFormat || 'ass') as SubtitleFormat;
+  const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat);
   const activePlaybackSubtitle = useMemo(
     () => subtitles.find((sub) => currentTime >= sub.start && currentTime <= sub.end) ?? null,
     [subtitles, currentTime]
@@ -464,9 +472,7 @@ const [previewScale, setPreviewScale] = useState(1);
       }
       const widthRatio = availableWidth / canvasWidth;
       const heightRatio = availableHeight / canvasHeight;
-      const nextScale = isMobileWebLayout
-        ? Math.min(widthRatio, heightRatio * 1.04)
-        : Math.min(widthRatio, heightRatio);
+      const nextScale = Math.min(widthRatio, heightRatio);
       const safeScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
       setPreviewScale(safeScale);
       setPreviewFrameSize({
@@ -478,6 +484,8 @@ const [previewScale, setPreviewScale] = useState(1);
     updateScale();
     const rafId = window.requestAnimationFrame(updateScale);
     const timeoutId = window.setTimeout(updateScale, 80);
+    const timeoutId2 = window.setTimeout(updateScale, 220);
+    const timeoutId3 = window.setTimeout(updateScale, 420);
     const observer = new ResizeObserver(updateScale);
     observer.observe(areaEl);
     window.addEventListener('resize', updateScale);
@@ -485,6 +493,8 @@ const [previewScale, setPreviewScale] = useState(1);
     return () => {
       window.cancelAnimationFrame(rafId);
       window.clearTimeout(timeoutId);
+      window.clearTimeout(timeoutId2);
+      window.clearTimeout(timeoutId3);
       observer.disconnect();
       window.removeEventListener('resize', updateScale);
     };
@@ -562,6 +572,90 @@ const [previewScale, setPreviewScale] = useState(1);
     ].join('\n');
   };
 
+  const parseTimeToSeconds = (timeText: string) => {
+    const normalized = timeText.replace(',', '.').trim();
+    const parts = normalized.split(':').map((part) => part.trim());
+    if (parts.length === 0 || parts.length > 3) return null;
+
+    const numeric = parts.map((part) => Number(part));
+    if (numeric.some((value) => !Number.isFinite(value) || value < 0)) return null;
+
+    if (numeric.length === 1) {
+      return numeric[0];
+    }
+    if (numeric.length === 2) {
+      return numeric[0] * 60 + numeric[1];
+    }
+    return numeric[0] * 3600 + numeric[1] * 60 + numeric[2];
+  };
+
+  const parseSrtSubtitles = (content: string) => {
+    const blocks = content.replace(/\r/g, '').split('\n\n').map((block) => block.trim()).filter(Boolean);
+    const items: Array<{ start: number; end: number; text: string }> = [];
+
+    blocks.forEach((block) => {
+      const lines = block.split('\n').map((line) => line.trimEnd());
+      const timingLine = lines.find((line) => line.includes('-->'));
+      if (!timingLine) return;
+
+      const [startRaw, endRaw] = timingLine.split('-->').map((value) => value.trim());
+      const start = parseTimeToSeconds(startRaw);
+      const end = parseTimeToSeconds(endRaw);
+      if (start === null || end === null || end <= start) return;
+
+      const textStartIndex = lines.indexOf(timingLine) + 1;
+      const text = lines.slice(textStartIndex).join('\n').trim();
+      if (!text) return;
+
+      items.push({ start, end, text });
+    });
+
+    return items;
+  };
+
+  const parseLrcSubtitles = (content: string) => {
+    const lines = content.replace(/\r/g, '').split('\n');
+    const timedItems: Array<{ start: number; text: string }> = [];
+    const timeTagRegex = /\[(\d{1,2}:\d{2}(?:\.\d{1,3})?)\]/g;
+
+    lines.forEach((line) => {
+      const tags = Array.from(line.matchAll(timeTagRegex));
+      if (tags.length === 0) return;
+      const text = line.replace(timeTagRegex, '').trim();
+      if (!text) return;
+
+      tags.forEach((match) => {
+        const start = parseTimeToSeconds(match[1]);
+        if (start !== null) {
+          timedItems.push({ start, text });
+        }
+      });
+    });
+
+    timedItems.sort((a, b) => a.start - b.start);
+
+    const minDuration = 1.5;
+    return timedItems.map((item, index) => {
+      const next = timedItems[index + 1];
+      const end = next ? Math.max(item.start + 0.2, next.start - 0.05) : item.start + minDuration;
+      return { start: item.start, end, text: item.text };
+    });
+  };
+
+  const buildPlainSubtitleProjectContent = (
+    rows: Array<{ start: number; end: number; text: string }>,
+    speakers: Record<string, any>
+  ) => {
+    const defaultSpeakerId = Object.keys(speakers || {}).find((key) => speakers[key]?.type !== 'annotation') || 'A';
+    return rows.map((row) => ({
+      type: 'text',
+      start: Number(row.start.toFixed(2)),
+      end: Number(row.end.toFixed(2)),
+      speaker: defaultSpeakerId,
+      text: row.text
+    }));
+  };
+
   const ensureAssPathForEditing = async () => {
     if (!window.electron) return null;
     if (config.assPath) return config.assPath;
@@ -601,6 +695,20 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const persistSubtitlesToAss = async (nextSubtitles: any[], shouldUpdateState = true) => {
+    if (subtitleFormat !== 'ass') {
+      const defaultSpeakerId = Object.keys(config.speakers || {}).find((key) => config.speakers[key]?.type !== 'annotation') || 'A';
+      const normalized = nextSubtitles.map((subtitle: any, index: number) => ({
+        ...subtitle,
+        id: subtitle.id || `sub-${index}`,
+        speakerId: subtitle.speakerId || defaultSpeakerId,
+        sourceLineIndex: index
+      }));
+      if (shouldUpdateState) {
+        setSubtitles(normalized);
+      }
+      return normalized;
+    }
+
     if (!window.electron) {
       if (shouldUpdateState) {
         setSubtitles(nextSubtitles);
@@ -643,6 +751,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const syncSubtitleToFile = async (id: string, updates: { start?: number, end?: number, text?: string; actor?: string; style?: string }) => {
+    if (subtitleFormat !== 'ass') return;
     if (!window.electron || !config.assPath) return;
     try {
       const content = await window.electron.readFile(config.assPath);
@@ -884,10 +993,13 @@ const [previewScale, setPreviewScale] = useState(1);
       const validatedConfig = validateProjectConfig(parsed);
       const requiresAudioReload = Boolean(validatedConfig.audioPath);
       const restoredConfig = requiresAudioReload ? { ...validatedConfig, audioPath: '' } : validatedConfig;
-      setConfig(restoredConfig);
+      const normalizedRestoredConfig = restoredConfig.subtitleFormat
+        ? restoredConfig
+        : { ...restoredConfig, subtitleFormat: restoredConfig.assPath ? 'ass' : (restoredConfig.content?.length ? 'srt' : 'ass') };
+      setConfig(normalizedRestoredConfig);
       setProjectPath('web-demo');
       setRecentProject(parsed?.projectTitle || 'web-demo');
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(restoredConfig.speakers);
+      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedRestoredConfig.speakers);
       if (requiresAudioReload) {
         showToast('已恢复上次网页项目配置，请重新选择音频文件');
       }
@@ -1523,48 +1635,30 @@ const [previewScale, setPreviewScale] = useState(1);
     document.body.style.cursor = 'col-resize';
   };
 
-  const startMobileBottomResize = (e: React.MouseEvent) => {
+  const startMobileBottomResizePointer = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     const startY = e.clientY;
     const startHeight = mobileBottomPanelHeight;
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
       const delta = startY - moveEvent.clientY;
       const next = Math.max(220, Math.min(560, startHeight + delta));
       setMobileBottomPanelHeight(next);
     };
 
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      document.body.style.touchAction = '';
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
-
-  const startMobileBottomResizeTouch = (e: React.TouchEvent) => {
-    e.preventDefault();
-    const startY = e.touches[0]?.clientY ?? 0;
-    const startHeight = mobileBottomPanelHeight;
-
-    const onTouchMove = (moveEvent: TouchEvent) => {
-      moveEvent.preventDefault();
-      const currentY = moveEvent.touches[0]?.clientY ?? startY;
-      const delta = startY - currentY;
-      const next = Math.max(220, Math.min(560, startHeight + delta));
-      setMobileBottomPanelHeight(next);
-    };
-
-    const onTouchEnd = () => {
-      document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend', onTouchEnd);
-      document.removeEventListener('touchcancel', onTouchEnd);
-    };
-
-    document.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
-    document.addEventListener('touchend', onTouchEnd);
-    document.addEventListener('touchcancel', onTouchEnd);
+    document.body.style.touchAction = 'none';
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
   };
 
   const resolvePath = (path: string | undefined): string | undefined => {
@@ -1758,13 +1852,27 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const res = await window.electron.showOpenDialog({
         title: t('dialog.selectSubtitleTitle'),
-        filters: [{ name: 'Subtitle Files', extensions: ['ass'] }],
+        filters: [{ name: 'Subtitle Files', extensions: ['ass', 'srt', 'lrc'] }],
         properties: ['openFile']
       });
       if (!res.canceled && res.filePaths.length > 0) {
         const path = res.filePaths[0];
         const content = await window.electron.readFile(path);
-        setImportAssData({ path, content });
+        const lower = path.toLowerCase();
+        if (lower.endsWith('.ass')) {
+          setImportAssData({ path, content });
+        } else {
+          const rows = lower.endsWith('.srt') ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
+          const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+          setConfig((prev: any) => ({
+            ...prev,
+            assPath: '',
+            subtitleFormat: lower.endsWith('.srt') ? 'srt' : 'lrc',
+            content: projectContent
+          }));
+          setWebAssContent(null);
+          showToast(t('app.subtitleImported'));
+        }
       }
     } catch (e: any) {
       alert('选择字幕失败: ' + e.message);
@@ -1777,6 +1885,8 @@ const [previewScale, setPreviewScale] = useState(1);
     const normalizedPath = filePath.toLowerCase();
     const isJson = normalizedPath.endsWith('.json');
     const isAss = normalizedPath.endsWith('.ass');
+    const isSrt = normalizedPath.endsWith('.srt');
+    const isLrc = normalizedPath.endsWith('.lrc');
     const isAudio = /(\.mp3|\.wav|\.aac|\.m4a|\.flac|\.mp4)$/i.test(normalizedPath);
 
     if (isJson) {
@@ -1785,7 +1895,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (!isAss && !isAudio) {
+    if (!isAss && !isSrt && !isLrc && !isAudio) {
       showToast(t('app.dropUnsupported'));
       return;
     }
@@ -1820,9 +1930,25 @@ const [previewScale, setPreviewScale] = useState(1);
       setShowSettings(true);
       showToast(t('welcome.new'));
 
-      if (isAss) {
+      if (isAss || isSrt || isLrc) {
         const content = await window.electron.readFile(filePath);
-        setImportAssData({ path: filePath, content });
+        if (isAss) {
+          setImportAssData({ path: filePath, content });
+        } else {
+          const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
+          const projectContent = buildPlainSubtitleProjectContent(rows, newConfig.speakers || {});
+          setConfig((prev: any) => ({
+            ...prev,
+            subtitleFormat: isSrt ? 'srt' : 'lrc',
+            assPath: '',
+            content: projectContent,
+            ui: {
+              ...(prev?.ui || DEFAULT_UI_CONFIG),
+              recentProject: result.filePath
+            }
+          }));
+          showToast(t('app.subtitleImported'));
+        }
       }
       return;
     }
@@ -1834,12 +1960,27 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    if (isSrt || isLrc) {
+      const content = await window.electron.readFile(filePath);
+      const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
+      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      setConfig((prev: any) => ({
+        ...prev,
+        subtitleFormat: isSrt ? 'srt' : 'lrc',
+        assPath: '',
+        content: projectContent
+      }));
+      setWebAssContent(null);
+      showToast(t('app.subtitleImported'));
+      return;
+    }
+
     if (isAudio) {
       setConfig((prev: any) => ({ ...prev, audioPath: filePath }));
       showToast(t('app.audioImported'));
       return;
     }
-  }, [presets, showToast, t]);
+  }, [config.speakers, presets, showToast, t]);
 
 
   const handleSelectImage = async (): Promise<string | null> => {
@@ -1867,6 +2008,9 @@ const [previewScale, setPreviewScale] = useState(1);
       const content = await window.electron.readFile(filePath);
       const parsed = JSON.parse(content);
       const validatedConfig = validateProjectConfig(parsed);
+      const normalizedConfig = validatedConfig.subtitleFormat
+        ? validatedConfig
+        : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
       
       setProjectPath(filePath);
       setRecentProject(filePath);
@@ -1874,13 +2018,13 @@ const [previewScale, setPreviewScale] = useState(1);
         localStorage.setItem(STORAGE_KEY + '_recent_project', filePath);
       }
       setConfig((prev: any) => ({
-        ...validatedConfig,
+        ...normalizedConfig,
         ui: {
           ...(prev?.ui || DEFAULT_UI_CONFIG),
           recentProject: filePath
         }
       }));
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
+      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(t('app.projectLoaded'));
     } catch (e: any) {
@@ -1945,7 +2089,23 @@ const [previewScale, setPreviewScale] = useState(1);
       setShowSettings(true);
     }
 
-    setImportAssData({ path: file.name, content });
+    const normalizedName = file.name.toLowerCase();
+    if (normalizedName.endsWith('.ass')) {
+      setImportAssData({ path: file.name, content });
+    } else if (normalizedName.endsWith('.srt') || normalizedName.endsWith('.lrc')) {
+      const rows = normalizedName.endsWith('.srt') ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
+      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      setConfig((prev: any) => ({
+        ...prev,
+        subtitleFormat: normalizedName.endsWith('.srt') ? 'srt' : 'lrc',
+        assPath: '',
+        content: projectContent
+      }));
+      setWebAssContent(null);
+      showToast(t('app.subtitleImported'));
+    } else {
+      showToast(t('app.dropUnsupported'));
+    }
     event.target.value = '';
   };
 
@@ -2009,6 +2169,8 @@ const [previewScale, setPreviewScale] = useState(1);
     const normalizedName = file.name.toLowerCase();
     const isJson = normalizedName.endsWith('.json');
     const isAss = normalizedName.endsWith('.ass');
+    const isSrt = normalizedName.endsWith('.srt');
+    const isLrc = normalizedName.endsWith('.lrc');
     const isAudio = /\.(mp3|wav|aac|m4a|flac|mp4|ogg|opus)$/i.test(normalizedName);
 
     if (isJson) {
@@ -2016,17 +2178,20 @@ const [previewScale, setPreviewScale] = useState(1);
         const content = await file.text();
         const parsed = JSON.parse(content);
         const validatedConfig = validateProjectConfig(parsed);
+        const normalizedConfig = validatedConfig.subtitleFormat
+          ? validatedConfig
+          : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
         setProjectPath('web-demo');
         setRecentProject(file.name);
         setConfig((prev: any) => ({
-          ...validatedConfig,
+          ...normalizedConfig,
           ui: {
             ...(prev?.ui || DEFAULT_UI_CONFIG),
             recentProject: file.name
           }
         }));
         setWebAssContent(null);
-        savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
+        savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
         setShowSettings(true);
         showToast(t('app.projectLoaded'));
       } catch (e: any) {
@@ -2042,6 +2207,25 @@ const [previewScale, setPreviewScale] = useState(1);
         setShowSettings(true);
       }
       setImportAssData({ path: file.name, content });
+      return;
+    }
+
+    if (isSrt || isLrc) {
+      const content = await file.text();
+      if (!currentProjectPath) {
+        setProjectPath('web-demo');
+        setShowSettings(true);
+      }
+      const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
+      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      setConfig((prev: any) => ({
+        ...prev,
+        subtitleFormat: isSrt ? 'srt' : 'lrc',
+        assPath: '',
+        content: projectContent
+      }));
+      setWebAssContent(null);
+      showToast(t('app.subtitleImported'));
       return;
     }
 
@@ -2061,7 +2245,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     showToast(t('app.dropUnsupported'));
-  }, [showToast, t, validateProjectConfig, webAudioObjectUrl]);
+  }, [config.speakers, showToast, t, validateProjectConfig, webAudioObjectUrl]);
 
   const handleSaveProject = async () => {
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
@@ -2093,17 +2277,20 @@ const [previewScale, setPreviewScale] = useState(1);
       const parsed = JSON.parse(content);
       const validatedConfig = validateProjectConfig(parsed);
       const requiresAudioReload = !window.electron && Boolean(validatedConfig.audioPath);
+      const normalizedConfig = validatedConfig.subtitleFormat
+        ? validatedConfig
+        : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
       setProjectPath('web-demo');
       setRecentProject(file.name);
       setConfig((prev: any) => ({
-        ...(requiresAudioReload ? { ...validatedConfig, audioPath: '' } : validatedConfig),
+        ...(requiresAudioReload ? { ...normalizedConfig, audioPath: '' } : normalizedConfig),
         ui: {
           ...(prev?.ui || DEFAULT_UI_CONFIG),
           recentProject: file.name
         }
       }));
       setWebAssContent(null);
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
+      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(requiresAudioReload ? `${t('app.projectLoaded')}，请重新加载音频文件` : t('app.projectLoaded'));
     } catch (e: any) {
@@ -2206,7 +2393,7 @@ const [previewScale, setPreviewScale] = useState(1);
             <input
               ref={webSubtitleInputRef}
               type="file"
-              accept=".ass,text/plain"
+              accept=".ass,.srt,.lrc,text/plain"
               className="hidden"
               onChange={handleWebSubtitleSelected}
             />
@@ -2342,7 +2529,7 @@ const [previewScale, setPreviewScale] = useState(1);
           <input
             ref={webSubtitleInputRef}
             type="file"
-            accept=".ass,text/plain"
+            accept=".ass,.srt,.lrc,text/plain"
             className="hidden"
             onChange={handleWebSubtitleSelected}
           />
@@ -2576,7 +2763,7 @@ const [previewScale, setPreviewScale] = useState(1);
               {toastMessage}
             </div>
           )}
-          <div ref={previewAreaRef} className={`flex-1 min-w-0 min-h-0 relative z-10 ${isMobileWebLayout ? 'p-2' : 'p-8'} overflow-hidden ${canvasBg}`}>
+          <div ref={previewAreaRef} className={`flex-1 min-w-0 min-h-0 relative z-10 ${isMobileWebLayout ? 'p-1' : 'p-8'} overflow-hidden ${canvasBg}`}>
             <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
               <div 
                 ref={previewFrameRef}
@@ -2584,8 +2771,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onContextMenu={handleCopyPreviewToClipboard}
                 className="relative pointer-events-auto bg-transparent rounded-lg overflow-hidden flex flex-col border shrink-0"
                 style={{
-                  width: `${(isMobileWebLayout ? previewFrameSize.width * 0.98 : previewFrameSize.width)}px`,
-                  height: `${(isMobileWebLayout ? previewFrameSize.height * 0.98 : previewFrameSize.height)}px`,
+                  width: `${previewFrameSize.width}px`,
+                  height: `${previewFrameSize.height}px`,
                   aspectRatio,
                   borderColor: isDarkMode ? '#1f2937' : '#d1d5db',
                   isolation: 'isolate',
@@ -2799,10 +2986,8 @@ const [previewScale, setPreviewScale] = useState(1);
         <div className="border-t overflow-hidden" style={{ height: isMobileBottomPanelCollapsed ? '44px' : `${mobileBottomPanelHeight}px`, minHeight: isMobileBottomPanelCollapsed ? '44px' : '220px', maxHeight: '560px', borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
           {!isMobileBottomPanelCollapsed && (
             <div
-              className="h-2 cursor-row-resize border-b flex items-center justify-center"
-              onMouseDown={startMobileBottomResize}
-              onTouchStart={startMobileBottomResizeTouch}
-              onTouchMove={(e) => e.preventDefault()}
+              className="h-3 cursor-row-resize border-b flex items-center justify-center"
+              onPointerDown={startMobileBottomResizePointer}
               style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}
               title={t('app.dragHint')}
             >
@@ -2918,6 +3103,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
             setConfig((prev: any) => ({
               ...prev,
+              subtitleFormat: 'ass',
               assPath: path,
               speakers: newSpeakers
             }));

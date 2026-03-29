@@ -66,7 +66,13 @@ const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineIndexes: nu
   }, []);
 };
 
-export function useAssSubtitle(assPath: string, speakerConfig: SpeakerConfig, assContentOverride?: string | null, projectContent?: ProjectTextItem[]) {
+export function useAssSubtitle(
+  assPath: string,
+  speakerConfig: SpeakerConfig,
+  assContentOverride?: string | null,
+  projectContent?: ProjectTextItem[],
+  subtitleFormat?: 'ass' | 'srt' | 'lrc'
+) {
   const [subtitles, setSubtitles] = useState<SubtitleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +113,9 @@ export function useAssSubtitle(assPath: string, speakerConfig: SpeakerConfig, as
       };
     }
 
-    if (!window.electron && Array.isArray(projectContent) && projectContent.length > 0) {
+    const shouldUseProjectContent = Array.isArray(projectContent) && projectContent.length > 0 && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || !assPath);
+
+    if (shouldUseProjectContent) {
       const items: SubtitleItem[] = projectContent
         .filter((item): item is ProjectTextItem => Boolean(item) && typeof item === 'object' && item.type === 'text')
         .map((item, index) => ({
@@ -170,7 +178,7 @@ export function useAssSubtitle(assPath: string, speakerConfig: SpeakerConfig, as
     return () => {
       cancelled = true;
     };
-  }, [assPath, assContentOverride, projectContent, speakerConfig]);
+  }, [assPath, assContentOverride, projectContent, speakerConfig, subtitleFormat]);
 
   return { subtitles, setSubtitles, loading, error };
 }

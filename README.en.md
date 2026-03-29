@@ -33,8 +33,12 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 ## Core Capabilities
 
 - Import local audio and ASS subtitle files
+- Support importing `ASS / SRT / LRC` subtitle files (SRT/LRC use the first non-annotation speaker by default)
+- Detect ASS Name/Style on import, with optional style-to-bubble mapping (outline color -> bubble color, shadow/back color -> border color, primary color -> text color, Outline -> border width)
+- For `SRT/LRC`, subtitle edits are stored in project `content` only and are not written back to ASS files
 - Edit subtitle text, start and end time, and speaker assignment
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
+- Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
 - Switch freely between light and dark mode, with up to 13 theme and secondary color combinations
 - Support both normal speaker bubbles and annotation-style bubbles
 - Preview the conversation layout in real time while the audio plays
@@ -188,6 +192,8 @@ On Windows, the workflow produces both:
 ## Development Notes
 
 - The project is mainly optimized for local desktop usage through Electron
+- A web mode is also available for core editing flows (JSON/ASS/audio import, live preview, preset import/export)
+- Mobile narrow-screen layout is supported in web mode (top preview+playback area, bottom tabbed panel)
 - Local Windows audio and image paths are now normalized to `file://` URLs
 - The native Electron menu bar is hidden by default on Windows and Linux
 - Generated folders such as `release/` and `dist-electron/` are ignored to keep the repo clean
@@ -205,6 +211,7 @@ On Windows, the workflow produces both:
 - [ ] Add information text blocks that can be placed at the top, left, right, or bottom for program title, update time, and similar context
 - [ ] Add support for inserting a single image either inside the message flow or as a freely positioned element
 - [ ] Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
+- [x] Support importing ASS styles into speaker/bubble styles (including color, opacity, and border width)
 - [x] Add a GitHub Pages version with basic subtitle and audio import preview capabilities
-- [ ] Add mobile portrait-oriented layout support for the static web version
+- [x] Add basic mobile portrait-oriented layout support for the static web version with a collapsible bottom panel
 - [ ] Add an update-checking feature
