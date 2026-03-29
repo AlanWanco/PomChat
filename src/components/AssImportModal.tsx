@@ -119,6 +119,28 @@ const getImportedSpeakerStyle = (assStyle: ParsedAssStyle | undefined, isAnnotat
   };
 };
 
+const getBaseImportedStyle = (isAnnotation: boolean, charCode: number) => ({
+  bgColor: isAnnotation ? '#111827' : (charCode % 2 === 0 ? '#2563eb' : '#f3f4f6'),
+  textColor: isAnnotation ? '#ffffff' : (charCode % 2 === 0 ? '#ffffff' : '#111827'),
+  borderRadius: isAnnotation ? 999 : 28,
+  opacity: 0.9,
+  borderWidth: 0,
+  avatarBorderColor: '#ffffff',
+  borderColor: '#ffffff',
+  borderOpacity: 1.0,
+  margin: isAnnotation ? 10 : 14,
+  paddingX: isAnnotation ? 18 : 20,
+  paddingY: isAnnotation ? 10 : 12,
+  shadowSize: 7,
+  animationStyle: 'rise',
+  animationDuration: 0.2,
+  fontFamily: 'system-ui',
+  fontSize: isAnnotation ? 24 : 30,
+  fontWeight: 'normal',
+  nameColor: '#ffffff',
+  annotationPosition: 'bottom'
+});
+
 interface AssImportModalProps {
   assPath: string;
   assContent: string;
@@ -149,7 +171,12 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       
       parsed.events.dialogue.forEach(d => {
         if (d.Name) nameSet.add(d.Name);
-        if (d.Style) styleSet.add(d.Style);
+      });
+
+      parsed.styles.style.forEach((style) => {
+        if (style?.Name) {
+          styleSet.add(style.Name);
+        }
       });
       
       setNames(Array.from(nameSet));
@@ -195,6 +222,7 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       (latestParsedAss?.styles?.style || []).map((style) => [style.Name, style])
     );
     const preferredStylesByName = getPreferredStylesByName(latestParsedAss?.events?.dialogue || []);
+    const usedStyleNames = new Set((latestParsedAss?.events?.dialogue || []).map((dialogue) => dialogue?.Style).filter(Boolean));
     const newSpeakers: ImportedSpeakerMap = {};
     const newPresets: ImportedPresetMap = {};
     let charCode = 65; // 'A'
@@ -202,46 +230,33 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
     selectedItems.forEach(id => {
       const isName = id.startsWith('name:');
       const val = isName ? id.substring(5) : id.substring(6);
-      const isAnnotation = /注释/.test(val);
-      const speakerId = isAnnotation ? 'ANNOTATION' : String.fromCharCode(charCode++);
       const matchedStyleName = isName ? (preferredStylesByName.get(val) || val) : val;
+      const assPresetKey = buildAssPresetKey(matchedStyleName || val || 'Default');
+      const isAnnotation = /注释/.test(val);
+      const previewCharCode = isName && !isAnnotation ? charCode + 1 : charCode;
+      const baseStyle = getBaseImportedStyle(isAnnotation, previewCharCode);
       const importedStyle = getImportedSpeakerStyle(assStylesByName.get(matchedStyleName), isAnnotation);
-      const assPresetKey = buildAssPresetKey(matchedStyleName || val || speakerId);
-      const baseStyle = {
-        bgColor: isAnnotation ? '#111827' : (charCode % 2 === 0 ? '#2563eb' : '#f3f4f6'),
-        textColor: isAnnotation ? '#ffffff' : (charCode % 2 === 0 ? '#ffffff' : '#111827'),
-        borderRadius: isAnnotation ? 999 : 28,
-        opacity: 0.9,
-        borderWidth: 0,
-        avatarBorderColor: '#ffffff',
-        borderColor: '#ffffff',
-        borderOpacity: 1.0,
-        margin: isAnnotation ? 10 : 14,
-        paddingX: isAnnotation ? 18 : 20,
-        paddingY: isAnnotation ? 10 : 12,
-        shadowSize: 7,
-        animationStyle: 'rise',
-        animationDuration: 0.2,
-        fontFamily: 'system-ui',
-        fontSize: isAnnotation ? 24 : 30,
-        fontWeight: 'normal',
-        nameColor: '#ffffff',
-        annotationPosition: 'bottom'
-      };
       const mergedStyle = {
         ...baseStyle,
         ...(applyDetectedStyle ? importedStyle : {})
       };
 
-      if (applyDetectedStyle && !isAnnotation && !newPresets[assPresetKey]) {
+      if (!isAnnotation && !newPresets[assPresetKey]) {
         newPresets[assPresetKey] = {
           style: mergedStyle,
           avatar: '',
           side: 'left'
         };
       }
-      
-        newSpeakers[speakerId] = {
+
+      const shouldCreateSpeakerFromStyle = !isName && names.length === 0 && usedStyleNames.has(val);
+
+      if (!isName && !shouldCreateSpeakerFromStyle) {
+        return;
+      }
+
+      const speakerId = isAnnotation ? 'ANNOTATION' : String.fromCharCode(charCode++);
+      newSpeakers[speakerId] = {
           name: isAnnotation ? '注释' : (val || `角色${speakerId}`),
           avatar: isAnnotation ? '' : `https://api.dicebear.com/7.x/adventurer/svg?seed=${val || speakerId}`,
           side: isAnnotation ? 'center' : (charCode % 2 === 0 ? "left" : "right"),
