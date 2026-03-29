@@ -50,6 +50,7 @@ export interface SharedChatLayout {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const MIN_LAYOUT_SCALE = 0.15;
 
 const rgba = (hex: string, alpha: number) => {
   const normalized = hex.replace('#', '');
@@ -154,7 +155,7 @@ export function ChatMessageBubble({
 }: ChatMessageBubbleProps) {
   const isLeft = (speaker.side ?? 'left') === 'left';
   const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
-  const combinedScale = Math.max(0.35, layoutScale) * bubbleScale;
+  const combinedScale = Math.max(MIN_LAYOUT_SCALE, layoutScale) * bubbleScale;
   const animationStyle = chatLayout?.animationStyle || 'rise';
   const animationDuration = chatLayout?.animationDuration ?? 0.2;
   const currentProgress = animationStyle === 'none' || animationDuration <= 0
@@ -300,7 +301,7 @@ interface ChatAnnotationBubbleProps {
 
 export function ChatAnnotationBubble({ item, speaker, layoutScale, chatLayout, renderBubble }: ChatAnnotationBubbleProps) {
   const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
-  const combinedScale = Math.max(0.35, layoutScale) * bubbleScale;
+  const combinedScale = Math.max(MIN_LAYOUT_SCALE, layoutScale) * bubbleScale;
   const shadowSize = (speaker.style?.shadowSize ?? 7) * combinedScale;
   const maxWidth = (speaker.style?.maxWidth ?? 720) * combinedScale;
   const opacity = speaker.style?.opacity ?? 0.9;

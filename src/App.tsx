@@ -1230,6 +1230,9 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
+      if (!Number.isFinite(audioRef.current.duration) || audioRef.current.duration <= 0) {
+        showToast('浏览器安全策略导致未自动加载音频，请重新选择音频文件');
+      }
       setDuration(audioRef.current.duration);
       const playbackKey = projectPath || config.assPath || config.audioPath;
       if (playbackKey) {
@@ -2109,6 +2112,10 @@ const [previewScale, setPreviewScale] = useState(1);
     event.target.value = '';
   };
 
+  const handleWebAudioReload = async () => {
+    webAudioInputRef.current?.click();
+  };
+
   const handleWebPresetSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2648,6 +2655,16 @@ const [previewScale, setPreviewScale] = useState(1);
                   <div className="text-xs px-2 py-1 rounded border" style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}44` }}>
                     {canvasWidth}x{canvasHeight} ({aspectLabel}) @ {config.fps}FPS
                   </div>
+                  {!config.audioPath && (
+                    <button
+                      type="button"
+                      onClick={handleWebAudioReload}
+                      className="text-xs px-2 py-1 rounded border transition-colors"
+                      style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle, borderColor: `${secondaryThemeColor}33` }}
+                    >
+                      {t('menu.importAudio')}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2986,7 +3003,7 @@ const [previewScale, setPreviewScale] = useState(1);
         <div className="border-t overflow-hidden" style={{ height: isMobileBottomPanelCollapsed ? '44px' : `${mobileBottomPanelHeight}px`, minHeight: isMobileBottomPanelCollapsed ? '44px' : '220px', maxHeight: '560px', borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
           {!isMobileBottomPanelCollapsed && (
             <div
-              className="h-3 cursor-row-resize border-b flex items-center justify-center"
+              className="h-4 cursor-row-resize border-b flex items-center justify-center touch-none select-none"
               onPointerDown={startMobileBottomResizePointer}
               style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}
               title={t('app.dragHint')}

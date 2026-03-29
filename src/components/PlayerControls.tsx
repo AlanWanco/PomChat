@@ -386,6 +386,7 @@ export function PlayerControls({
   }, []);
 
   const textClass = isDarkMode ? "text-gray-400" : "text-gray-600";
+  const showWaveformContainer = Boolean(audioPath && isWaveformReady);
   const hasStartRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.start >= 0);
   const hasEndRangeSubtitle = Boolean(rangeSubtitle && rangeSubtitle.end >= 0);
   const rangeTooltipStyle = {
@@ -397,26 +398,31 @@ export function PlayerControls({
   };
 
   return (
-    <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto min-h-[148px] px-3 py-2' : 'h-32 px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
+    <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto px-3 py-2' : 'h-32 px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
       {/* Waveform Track */}
-      {audioPath && isWaveformReady && (
-        <div className="relative w-full mb-2">
+      <div
+        className="relative w-full overflow-hidden"
+        style={{
+          height: showWaveformContainer ? undefined : 0,
+          marginBottom: showWaveformContainer ? '0.5rem' : 0
+        }}
+      >
           <div
             className="w-full cursor-pointer"
             ref={waveformRef}
             title={t('player.waveformTitle')}
+            style={{ visibility: isWaveformReady ? 'visible' : 'hidden' }}
           />
-          {regionTooltip && (
+          {showWaveformContainer && regionTooltip && (
             <div className={`absolute top-1 right-2 px-2 py-1 rounded-md text-[10px] font-mono z-20 pointer-events-none ${isDarkMode ? 'bg-gray-950/95' : 'bg-white/95 shadow-sm'}`} style={{ color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55` }}>
               {formatTime(regionTooltip.start)} - {formatTime(regionTooltip.end)}
             </div>
           )}
-        </div>
-      )}
+      </div>
 
       {/* Controls Row */}
-      <div className={`flex items-center gap-4 pb-2 min-w-0 ${compactMobile ? 'flex-wrap justify-between' : 'justify-between'}`}>
+      <div className={`flex items-center gap-4 pb-2 min-w-0 ${compactMobile ? 'justify-between' : 'justify-between'}`}>
         {!compactMobile && (
         <div className="flex items-center gap-4 flex-1 min-w-0">
           {timeInputMode ? (
@@ -777,41 +783,13 @@ export function PlayerControls({
         )}
 
         {compactMobile && (
-          <div className="order-1 basis-full flex items-center justify-center gap-2 pb-1">
-            <div className="min-w-[44px] text-left">
-              <span className="text-[11px] font-mono" style={{ color: uiTheme.text }}>{formatTime(currentTime)}</span>
-            </div>
-            <button
-              onClick={onReset}
-              className={`p-1.5 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-              title={t('player.restart')}
-            >
-              <RotateCcw size={15} />
-            </button>
-            <button
-              onClick={onPlayPause}
-              className="w-10 h-10 min-w-10 min-h-10 aspect-square shrink-0 flex items-center justify-center rounded-full text-white"
-              style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 6px 14px ${secondaryThemeColor}30` }}
-              >
-                {isPlaying ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" className="ml-0.5" />}
-              </button>
-            <button
-              className={`p-1.5 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
-              title={t('player.stop')}
-              onClick={() => {
-                if (isPlaying) onPlayPause();
-                onReset();
-              }}
-              >
-                <SquareSquare size={15} />
-              </button>
-            <div className="min-w-[44px] text-left">
-              <span className="text-[9px] font-mono" style={{ color: uiTheme.textMuted }}>/ {formatTime(duration)}</span>
-            </div>
+          <div className="order-1 flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-mono" style={{ color: uiTheme.text }}>{formatTime(currentTime)}</span>
+            <span className="text-[9px] font-mono" style={{ color: uiTheme.textMuted }}>/ {formatTime(duration)}</span>
           </div>
         )}
 
-        <div className={`flex items-center min-w-0 ${textClass} ${compactMobile ? 'order-2 basis-full justify-between gap-2 flex-nowrap overflow-hidden pb-1' : 'gap-4 flex-1 justify-end'}`}>
+        <div className={`flex items-center min-w-0 ${textClass} ${compactMobile ? 'order-2 ml-auto justify-end gap-1.5 flex-nowrap overflow-x-auto' : 'gap-4 flex-1 justify-end'}`}>
           <button 
             onClick={() => onLoopChange(!loop)}
             className={`p-1.5 rounded transition-colors ${loop ? '' : (isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100')}`}
