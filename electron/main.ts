@@ -156,7 +156,10 @@ ipcMain.handle('export-video', async (_event, config) => {
       let workerStdErr = '';
       let workerStdOut = '';
 
+      const workerCwd = app.getPath('userData');
+      fs.mkdirSync(workerCwd, { recursive: true });
       const worker = fork(workerPath, [], {
+        cwd: workerCwd,
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         env: {
           ...process.env,
