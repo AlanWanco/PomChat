@@ -19,6 +19,8 @@ It is not meant to be a general-purpose video editor. Instead, it focuses on a s
 
 [Chinese README](https://github.com/AlanWanco/PomChat/blob/main/README.md)
 
+[Online Demo](https://alanwanco.github.io/PomChat/)
+
 ## What It Is Good For
 
 PomChat Studio works well for cases like:
@@ -33,19 +35,18 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 ## Core Capabilities
 
 - Import local audio and ASS subtitle files
-- Support importing `ASS / SRT / LRC` subtitle files (SRT/LRC use the first non-annotation speaker by default)
+- Support importing `ASS / SRT / LRC` subtitle files
 - Detect ASS Name/Style on import, with optional style-to-bubble mapping (outline color -> bubble color, shadow/back color -> border color, primary color -> text color, Outline -> border width)
-- For `SRT/LRC`, subtitle edits are stored in project `content` only and are not written back to ASS files
 - Edit subtitle text, start and end time, and speaker assignment
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
 - Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
 - Mobile web layout is optimized with adaptive preview scaling, a collapsible/resizable bottom panel, and compact playback controls
-- Waveform uses a dedicated container and is shown only after audio is actually loaded, so it does not occupy space when audio is missing or blocked
 - Switch freely between light and dark mode, with up to 13 theme and secondary color combinations
 - Support both normal speaker bubbles and annotation-style bubbles
 - Preview the conversation layout in real time while the audio plays
 - Set export ranges and filename templates
 - Read and write project files locally through Electron
+- The web version can also be used as an ASS subtitle content viewer
 
 ## Main Features
 
@@ -198,7 +199,6 @@ On Windows, the workflow produces both:
 - Mobile narrow-screen layout is supported in web mode (top preview+playback area, bottom tabbed panel)
 - Local Windows audio and image paths are now normalized to `file://` URLs
 - The native Electron menu bar is hidden by default on Windows and Linux
-- Generated folders such as `release/` and `dist-electron/` are ignored to keep the repo clean
 
 ## Current Notes
 
@@ -213,7 +213,6 @@ On Windows, the workflow produces both:
 
 - Added `SRT/LRC` subtitle import support, using the default non-annotation speaker and saving edits into project `content`
 - Added ASS style mapping and preset generation on import (color, opacity, and border width)
-- Enabled preset import/export in web mode to align behavior with desktop
 - Improved mobile web layout: adaptive preview scaling, collapsible/expandable/resizable bottom panel, and compact playback controls
 - Refactored waveform into a dedicated container that appears only after audio is successfully loaded
 
