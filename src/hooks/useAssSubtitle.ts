@@ -80,7 +80,9 @@ export function useAssSubtitle(
   useEffect(() => {
     let cancelled = false;
 
-    const shouldUseProjectContent = Array.isArray(projectContent) && projectContent.length > 0 && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || !assPath);
+    const shouldUseProjectContent = Array.isArray(projectContent)
+      && projectContent.length > 0
+      && (!window.electron || subtitleFormat === 'srt' || subtitleFormat === 'lrc' || !assPath);
 
     if (assContentOverride && !shouldUseProjectContent) {
       Promise.resolve().then(() => {

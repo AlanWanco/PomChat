@@ -392,6 +392,7 @@ function App() {
     !window.electron && window.innerWidth < 700 ? 'subtitle' : 'speakers'
   );
   const [isMobileBottomPanelCollapsed, setIsMobileBottomPanelCollapsed] = useState(false);
+  const [isMobileBottomPanelExpanded, setIsMobileBottomPanelExpanded] = useState(false);
   const [mobileBottomPanelHeight, setMobileBottomPanelHeight] = useState(340);
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
   const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
@@ -498,7 +499,7 @@ const [previewScale, setPreviewScale] = useState(1);
       observer.disconnect();
       window.removeEventListener('resize', updateScale);
     };
-  }, [canvasWidth, canvasHeight, showSubtitlePanel, showSettings, subtitleWidth, settingsWidth, shouldHideSidePanels, isMobileWebLayout]);
+  }, [canvasWidth, canvasHeight, showSubtitlePanel, showSettings, subtitleWidth, settingsWidth, shouldHideSidePanels, isMobileWebLayout, isMobileBottomPanelExpanded, mobileBottomPanelHeight, isMobileBottomPanelCollapsed]);
 
   useLayoutEffect(() => {
     const forceScale = () => {
@@ -527,7 +528,7 @@ const [previewScale, setPreviewScale] = useState(1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
     };
-  }, [projectPath, config.projectId, config.dimensions?.width, config.dimensions?.height, subtitles.length]);
+  }, [projectPath, config.projectId, config.dimensions?.width, config.dimensions?.height, subtitles.length, isMobileBottomPanelExpanded, mobileBottomPanelHeight, isMobileBottomPanelCollapsed]);
 
   const formatAssTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -2063,6 +2064,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }));
       setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+      setIsMobileBottomPanelExpanded(false);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(t('app.projectLoaded'));
@@ -2231,6 +2233,7 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         }));
         setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+        setIsMobileBottomPanelExpanded(false);
         savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
         setShowSettings(true);
         showToast(t('app.projectLoaded'));
@@ -2331,6 +2334,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }));
       setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+      setIsMobileBottomPanelExpanded(false);
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
       setShowSettings(true);
       showToast(requiresAudioReload ? `${t('app.projectLoaded')}，请重新加载音频文件` : t('app.projectLoaded'));
@@ -3024,7 +3028,7 @@ const [previewScale, setPreviewScale] = useState(1);
       />
 
       {isMobileWebLayout && (
-        <div className="border-t overflow-hidden" style={{ height: isMobileBottomPanelCollapsed ? '44px' : `${mobileBottomPanelHeight}px`, minHeight: isMobileBottomPanelCollapsed ? '44px' : '220px', maxHeight: '560px', borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
+        <div className="border-t overflow-hidden" style={{ height: isMobileBottomPanelCollapsed ? '44px' : (isMobileBottomPanelExpanded ? '68vh' : `${mobileBottomPanelHeight}px`), minHeight: isMobileBottomPanelCollapsed ? '44px' : '220px', maxHeight: isMobileBottomPanelExpanded ? '78vh' : '560px', borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
           {!isMobileBottomPanelCollapsed && (
             <div
               className="h-4 cursor-row-resize border-b flex items-center justify-center touch-none select-none"
@@ -3033,6 +3037,17 @@ const [previewScale, setPreviewScale] = useState(1);
               title={t('app.dragHint')}
             >
               <div className="h-1.5 w-14 rounded-full" style={{ backgroundColor: `${secondaryThemeColor}66` }} />
+              <button
+                type="button"
+                className="absolute right-2 px-2 py-0.5 text-[10px] rounded border"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMobileBottomPanelExpanded((prev) => !prev);
+                }}
+                style={{ borderColor: uiTheme.border, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+              >
+                {isMobileBottomPanelExpanded ? '收起' : '展开'}
+              </button>
             </div>
           )}
           <SettingsPanel

@@ -450,7 +450,7 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
           <button onClick={onCancel} className="px-4 py-2 text-sm rounded hover:bg-black/5 transition-colors">
             {t('common.cancel')}
           </button>
-          <button onClick={handleConfirm} className="px-4 py-2 text-sm rounded text-white transition-colors" style={{ backgroundColor: themeColor }}>
+          <button onClick={handleConfirm} className="px-4 py-2 text-sm rounded text-white transition-colors" style={{ backgroundColor: secondaryThemeColor }}>
             {t('common.confirm')}
           </button>
         </div>

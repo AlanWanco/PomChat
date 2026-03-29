@@ -424,7 +424,7 @@ export function PlayerControls({
       {/* Controls Row */}
       <div className={`flex items-center gap-2 pb-2 min-w-0 ${compactMobile ? 'justify-between' : 'justify-between'}`}>
         {!compactMobile && (
-        <div className="flex items-center gap-4 flex-1 min-w-0">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
           {timeInputMode ? (
             <input
               type="text"
@@ -435,7 +435,7 @@ export function PlayerControls({
                 if (e.key === 'Enter') commitTimeJump();
                 if (e.key === 'Escape') setTimeInputMode(false);
               }}
-              className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[130px] text-lg'} font-mono font-medium tracking-wider px-2 py-1 text-center rounded-full focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[112px] text-base'} font-mono font-medium tracking-wider px-2 py-1 text-center rounded-full focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
               autoFocus
             />
@@ -446,7 +446,7 @@ export function PlayerControls({
                 setTimeInputValue(formatTime(currentTime));
                 setTimeInputMode(true);
               }}
-              className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[130px] text-lg'} font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full transition-all duration-200 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+              className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[112px] text-base'} font-mono font-medium tracking-wider inline-flex px-2 py-1 justify-center rounded-full transition-all duration-200 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ 
                 backgroundColor: `${secondaryThemeColor}20`, 
                 border: `1.5px solid ${secondaryThemeColor}55`,
@@ -465,7 +465,7 @@ export function PlayerControls({
               {formatTime(currentTime)}
             </button>
           )}
-          <span className={`${compactMobile ? 'text-sm' : 'text-lg'} font-mono ${textClass}`}>/ {formatTime(duration)}</span>
+          <span className={`${compactMobile ? 'text-sm' : 'text-xs'} font-mono ${textClass}`}>/ {formatTime(duration)}</span>
         </div>
         )}
 
@@ -605,7 +605,7 @@ export function PlayerControls({
           </div>
           <button 
             onClick={onReset}
-            className={`p-2 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+            className={`p-1.5 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = `${secondaryThemeColor}22`;
               e.currentTarget.style.color = '#ffffff';
@@ -618,17 +618,17 @@ export function PlayerControls({
             }}
             title={t('player.restart')}
           >
-            <RotateCcw size={18} />
+            <RotateCcw size={16} />
           </button>
           <button 
             onClick={onPlayPause}
-            className={`w-12 h-12 min-w-12 min-h-12 aspect-square shrink-0 flex items-center justify-center rounded-full transition-transform hover:scale-105 text-white shadow-lg`}
+            className={`w-10 h-10 min-w-10 min-h-10 aspect-square shrink-0 flex items-center justify-center rounded-full transition-transform hover:scale-105 text-white shadow-lg`}
             style={isPlaying ? { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` } : { backgroundColor: secondaryThemeColor, boxShadow: `0 8px 18px ${secondaryThemeColor}30` }}
           >
-            {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1" />}
+            {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
           </button>
           <button 
-            className={`p-2 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+            className={`p-1.5 rounded-full shrink-0 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = `${secondaryThemeColor}22`;
               e.currentTarget.style.color = '#ffffff';
@@ -645,7 +645,7 @@ export function PlayerControls({
               onReset();
             }}
           >
-            <SquareSquare size={18} />
+            <SquareSquare size={16} />
           </button>
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ backgroundColor: `${secondaryThemeColor}10`, border: `1px solid ${secondaryThemeColor}22`, boxShadow: `0 4px 14px ${secondaryThemeColor}10` }}>
             {exportEndInputMode ? (
@@ -818,7 +818,7 @@ export function PlayerControls({
           </div>
         )}
 
-        <div className={`flex items-center min-w-0 ${textClass} ${compactMobile ? 'order-2 ml-auto justify-end gap-1 flex-nowrap overflow-visible [&>*]:shrink-0' : 'gap-3 flex-1 justify-end'}`}>
+        <div className={`flex items-center min-w-0 ${textClass} ${compactMobile ? 'order-2 ml-auto justify-end gap-1 flex-nowrap overflow-x-auto overflow-y-hidden whitespace-nowrap pb-0.5 [&>*]:shrink-0' : 'gap-3 flex-1 justify-end'}`}>
           <button 
             onClick={() => onLoopChange(!loop)}
             className={`p-1 rounded transition-colors ${loop ? '' : (isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100')}`}
