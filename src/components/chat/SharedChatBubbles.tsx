@@ -184,7 +184,7 @@ export function ChatMessageBubble({
   const avatarPx = (chatLayout?.avatarSize ?? 80) * combinedScale;
   const avatarBorderWidth = Math.max(2, 4 * combinedScale);
   const speakerNameSize = (chatLayout?.speakerNameSize ?? 22) * combinedScale;
-  const timestampSize = (chatLayout?.timestampSize ?? 10) * combinedScale;
+  const timestampSize = (chatLayout?.timestampSize ?? 16) * combinedScale;
   const timestampFontFamily = chatLayout?.timestampFontFamily || 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
   const timestampColor = chatLayout?.timestampColor || 'rgba(255,255,255,0.65)';
   const fontSize = (speaker.style?.fontSize ?? 30) * combinedScale;

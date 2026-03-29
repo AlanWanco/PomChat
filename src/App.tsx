@@ -61,7 +61,7 @@ const DEFAULT_CHAT_LAYOUT = {
   avatarSize: 80,
   speakerNameSize: 22,
   timestampFontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  timestampSize: 10,
+  timestampSize: 16,
   timestampColor: '#FFFFFFA6',
   animationStyle: 'rise',
   animationDuration: 0.2
@@ -71,6 +71,7 @@ const DEFAULT_UI_CONFIG = {
   isDarkMode: true,
   themeColor: DARK_THEME_DEFAULT,
   secondaryThemeColor: SECONDARY_THEME_DEFAULT,
+  proxy: '',
   settingsPosition: 'right' as 'left' | 'right',
   recentProject: null as string | null,
   playbackPositions: {} as Record<string, number>,
@@ -191,6 +192,7 @@ const sanitizeProjectConfig = (parsed: any) => {
       secondaryThemeColor: typeof parsed?.ui?.secondaryThemeColor === 'string' && THEME_COLOR_VALUES.includes(parsed.ui.secondaryThemeColor)
         ? parsed.ui.secondaryThemeColor
         : DEFAULT_UI_CONFIG.secondaryThemeColor,
+      proxy: typeof parsed?.ui?.proxy === 'string' ? parsed.ui.proxy : '',
       settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       playbackPositions: parsed?.ui?.playbackPositions && typeof parsed.ui.playbackPositions === 'object' ? parsed.ui.playbackPositions : {},
@@ -403,6 +405,7 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(() => getSystemPrefersDark());
   const [themeColorState, setThemeColorState] = useState(() => config.ui?.themeColor ?? DEFAULT_UI_CONFIG.themeColor);
   const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => config.ui?.secondaryThemeColor ?? DEFAULT_UI_CONFIG.secondaryThemeColor);
+  const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
   
@@ -1140,6 +1143,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const ui = config.ui || DEFAULT_UI_CONFIG;
     setThemeColorState((prev: string) => (prev === ui.themeColor ? prev : ui.themeColor));
     setSecondaryThemeColorState((prev: string) => (prev === ui.secondaryThemeColor ? prev : ui.secondaryThemeColor));
+    setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
     if (window.electron) {
       setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
@@ -1154,6 +1158,7 @@ const [previewScale, setPreviewScale] = useState(1);
         isDarkMode,
         themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
         secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
+        proxy: proxyState.trim(),
         settingsPosition,
         recentProject,
         presets
@@ -1165,7 +1170,14 @@ const [previewScale, setPreviewScale] = useState(1);
 
       return { ...prev, ui: nextUi };
     });
-  }, [isDarkMode, themeColorState, secondaryThemeColorState, settingsPosition, recentProject, presets]);
+  }, [isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, recentProject, presets]);
+
+  useEffect(() => {
+    if (!window.electron) return;
+    window.electron.setProxy(proxyState.trim()).catch((err: any) => {
+      console.error('Failed to apply proxy settings:', err);
+    });
+  }, [proxyState]);
 
    // Save config explicitly
    const handleSaveConfig = () => {
@@ -1801,6 +1813,23 @@ const [previewScale, setPreviewScale] = useState(1);
     window.addEventListener('pointercancel', onPointerUp);
   };
 
+  const toFileUrl = (localPath: string) => {
+    const normalized = localPath.replace(/\\/g, '/');
+
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `file:///${drive}/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+    }
+
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `file://${host}/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+    }
+
+    const segments = normalized.split('/');
+    return `file://${segments.map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment))).join('/')}`;
+  };
+
   const resolvePath = (path: string | undefined): string | undefined => {
     if (!path) return undefined;
 
@@ -1808,7 +1837,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!trimmed) return undefined;
 
     if (cachedRemoteAssets[trimmed]) {
-      return encodeURI(`file:///${cachedRemoteAssets[trimmed].replace(/\\/g, '/')}`);
+      return toFileUrl(cachedRemoteAssets[trimmed]);
     }
 
     if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) {
@@ -1820,15 +1849,15 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
-      return encodeURI(`file:///${trimmed.replace(/\\/g, '/')}`);
+      return toFileUrl(trimmed);
     }
 
     if (trimmed.startsWith('\\\\')) {
-      return encodeURI(`file:${trimmed.replace(/\\/g, '/')}`);
+      return toFileUrl(trimmed);
     }
 
     if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) {
-      return encodeURI(`file://${trimmed}`);
+      return toFileUrl(trimmed);
     }
 
     return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
@@ -2624,8 +2653,10 @@ const [previewScale, setPreviewScale] = useState(1);
                 language={language}
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
+                proxy={proxyState}
                 onThemeColorChange={setThemeColorState}
                 onSecondaryThemeColorChange={setSecondaryThemeColorState}
+                onProxyChange={setProxyState}
                 onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
                 onThemeChange={setIsDarkMode}
                 settingsPosition={settingsPosition}
@@ -2778,8 +2809,10 @@ const [previewScale, setPreviewScale] = useState(1);
                 language={language}
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
+                proxy={proxyState}
                 onThemeColorChange={setThemeColorState}
                 onSecondaryThemeColorChange={setSecondaryThemeColorState}
+                onProxyChange={setProxyState}
                 onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
                 onThemeChange={setIsDarkMode}
                 settingsPosition={settingsPosition}
@@ -2919,13 +2952,15 @@ const [previewScale, setPreviewScale] = useState(1);
                   config={config}
                   onConfigChange={setConfig}
                   isDarkMode={isDarkMode}
-                  language={language}
-                  themeColor={themeColor}
-                  secondaryThemeColor={secondaryThemeColor}
-                  onThemeColorChange={setThemeColorState}
-                  onSecondaryThemeColorChange={setSecondaryThemeColorState}
-                  onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
-                  onThemeChange={setIsDarkMode}
+                   language={language}
+                   themeColor={themeColor}
+                   secondaryThemeColor={secondaryThemeColor}
+                   proxy={proxyState}
+                   onThemeColorChange={setThemeColorState}
+                   onSecondaryThemeColorChange={setSecondaryThemeColorState}
+                   onProxyChange={setProxyState}
+                   onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
+                   onThemeChange={setIsDarkMode}
                   settingsPosition={settingsPosition}
                   onPositionChange={setSettingsPosition}
                   onClose={() => setShowSettings(false)}
@@ -3112,8 +3147,10 @@ const [previewScale, setPreviewScale] = useState(1);
                 language={language}
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
+                proxy={proxyState}
                 onThemeColorChange={setThemeColorState}
                 onSecondaryThemeColorChange={setSecondaryThemeColorState}
+                onProxyChange={setProxyState}
                 onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
                 onThemeChange={setIsDarkMode}
                 settingsPosition={settingsPosition}
@@ -3198,8 +3235,10 @@ const [previewScale, setPreviewScale] = useState(1);
             language={language}
             themeColor={themeColor}
             secondaryThemeColor={secondaryThemeColor}
+            proxy={proxyState}
             onThemeColorChange={setThemeColorState}
             onSecondaryThemeColorChange={setSecondaryThemeColorState}
+            onProxyChange={setProxyState}
             onLanguageChange={(nextLanguage: Language) => setConfig((prev: any) => ({ ...prev, language: nextLanguage }))}
             onThemeChange={setIsDarkMode}
             settingsPosition={settingsPosition}

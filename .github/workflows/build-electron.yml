@@ -55,6 +55,9 @@ jobs:
       - name: Build renderer and Electron bundles
         run: npm run build
 
+      - name: Prepare offline Remotion browser
+        run: npm run prepare-remotion-offline
+
       - name: Package Electron app
         run: npx electron-builder ${{ matrix.build_args }} --publish never
 

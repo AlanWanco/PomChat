@@ -9,6 +9,36 @@ const { fileURLToPath } = require('node:url');
 let cachedBundle = null;
 let cachedPatchedBinariesDir = null;
 
+const getBundledBrowserExecutable = () => {
+  const manifestPaths = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'remotion-browser', 'manifest.json') : null,
+    path.join(process.env.APP_ROOT || process.cwd(), 'build', 'remotion-browser', 'manifest.json'),
+  ].filter(Boolean);
+
+  for (const manifestPath of manifestPaths) {
+    try {
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const executablePath = path.join(
+        path.dirname(manifestPath),
+        manifest.bundleDir || '',
+        ...(typeof manifest.executableSubpath === 'string' ? manifest.executableSubpath.split('/') : []),
+      );
+
+      if (fs.existsSync(executablePath)) {
+        return executablePath;
+      }
+    } catch (error) {
+      console.warn('Failed to resolve bundled Remotion browser:', error);
+    }
+  }
+
+  return null;
+};
+
 const resolveAppFilePath = (filePath) => {
   if (!filePath) {
     return filePath;
@@ -240,6 +270,7 @@ const runRender = async (config) => {
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
   const mediaServer = await createLocalMediaServer();
   const binariesDirectory = patchMacCompositorBinaries();
+  const browserExecutable = getBundledBrowserExecutable();
 
   try {
     const inputProps = prepareInputProps(config, mediaServer);
@@ -268,6 +299,7 @@ const runRender = async (config) => {
       inputProps,
       logLevel: 'error',
       binariesDirectory,
+      browserExecutable,
       chromiumOptions: {
         disableWebSecurity: true,
         gl: 'angle',
@@ -291,6 +323,7 @@ const runRender = async (config) => {
       crf: config.crf || 20,
       pixelFormat: 'yuv420p',
       binariesDirectory,
+      browserExecutable,
       chromiumOptions: {
         disableWebSecurity: true,
         gl: 'angle',

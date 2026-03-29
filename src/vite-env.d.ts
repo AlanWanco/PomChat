@@ -16,6 +16,7 @@ interface Window {
     captureRectToClipboard: (rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
     loadConfig: () => Promise<any>;
     saveConfig: (config: any) => Promise<boolean>;
+    setProxy: (proxy: string) => Promise<boolean>;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
   };
 }

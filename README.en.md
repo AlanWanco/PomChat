@@ -102,7 +102,9 @@ PomChat Studio uses two kinds of data:
 
 The local config directory is currently:
 
-- `~/.config/pomchat`
+- Windows: `%USERPROFILE%\\.config\\pomchat`
+- Linux: `~/.config/pomchat`
+- macOS: `~/.config/pomchat`
 
 This means local preferences can differ per machine, while project files can still be saved and shared separately.
 
@@ -211,10 +213,10 @@ On Windows, the workflow produces both:
 
 ### v0.1.3
 
-- Added `SRT/LRC` subtitle import support, using the default non-annotation speaker and saving edits into project `content`
-- Added ASS style mapping and preset generation on import (color, opacity, and border width)
-- Improved mobile web layout: adaptive preview scaling, collapsible/expandable/resizable bottom panel, and compact playback controls
-- Refactored waveform into a dedicated container that appears only after audio is successfully loaded
+- Improved chat rendering performance: both preview and export now use time-windowed virtual rendering to reduce load in long conversation scenes
+- Clarified project setting copy and behavior: “top range limit” is now explicitly described as “Top chat inset” to reduce confusion
+- Improved Windows installer experience: the NSIS installer now supports choosing an installation directory instead of one-click only
+- Cleaned up release asset naming: removed duplicated platform suffixes such as `win-windows-x64` and `mac-macos-arm64`
 
 ## Todo
 

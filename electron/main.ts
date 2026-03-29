@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { app, BrowserWindow, ipcMain, dialog, clipboard, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -37,6 +37,34 @@ function getRemoteAssetCacheDir() {
   const dir = path.join(os.homedir(), '.config', 'pomchat', 'cache', 'remote-assets');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+async function applyProxySettings(proxy: unknown) {
+  const proxyRules = typeof proxy === 'string' ? proxy.trim() : '';
+
+  if (proxyRules) {
+    process.env.HTTP_PROXY = proxyRules;
+    process.env.HTTPS_PROXY = proxyRules;
+    process.env.http_proxy = proxyRules;
+    process.env.https_proxy = proxyRules;
+  } else {
+    delete process.env.HTTP_PROXY;
+    delete process.env.HTTPS_PROXY;
+    delete process.env.http_proxy;
+    delete process.env.https_proxy;
+  }
+
+  await session.defaultSession.setProxy({
+    proxyRules,
+    proxyBypassRules: '<local>'
+  });
+
+  if (win) {
+    await win.webContents.session.setProxy({
+      proxyRules,
+      proxyBypassRules: '<local>'
+    });
+  }
 }
 
 function guessExtensionFromContentType(contentType: string | null) {
@@ -130,7 +158,22 @@ app.on('activate', () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  try {
+    const configPath = getConfigFilePath();
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      await applyProxySettings(parsed?.ui?.proxy);
+    } else {
+      await applyProxySettings('');
+    }
+  } catch (error) {
+    console.error('Failed to apply proxy on startup:', error);
+  }
+
+  createWindow();
+});
 
 // IPC Handlers
 ipcMain.handle('ping', () => 'pong');
@@ -358,9 +401,20 @@ ipcMain.handle('save-config', async (_event, config) => {
     const userConfigDir = path.join(os.homedir(), '.config', 'pomchat');
     const configPath = path.join(userConfigDir, 'config.json');
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    await applyProxySettings(config?.ui?.proxy);
     return true;
   } catch (error: any) {
     console.error('Failed to save config:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('set-proxy', async (_event, proxy) => {
+  try {
+    await applyProxySettings(proxy);
+    return true;
+  } catch (error: any) {
+    console.error('Failed to set proxy:', error);
     return false;
   }
 });

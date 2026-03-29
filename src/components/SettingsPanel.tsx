@@ -26,8 +26,10 @@ interface SettingsPanelProps {
   language: Language;
   themeColor: string;
   secondaryThemeColor: string;
+  proxy: string;
   onThemeColorChange: (color: string) => void;
   onSecondaryThemeColorChange: (color: string) => void;
+  onProxyChange: (proxy: string) => void;
   onLanguageChange: (language: Language) => void;
   onThemeChange: (isDark: boolean) => void;
   settingsPosition: 'left' | 'right';
@@ -53,7 +55,7 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ 
   config, onConfigChange, 
-  isDarkMode, language, themeColor, secondaryThemeColor, onThemeColorChange, onSecondaryThemeColorChange, onLanguageChange, onThemeChange, 
+  isDarkMode, language, themeColor, secondaryThemeColor, proxy, onThemeColorChange, onSecondaryThemeColorChange, onProxyChange, onLanguageChange, onThemeChange, 
   settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
   onSelectImage, globalOnly = false, showSubtitleTab = false, subtitleContent = null,
@@ -63,12 +65,37 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const toFsPreviewPath = (localPath: string) => {
+    const normalized = localPath.replace(/\\/g, '/');
+
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `/@fs/${drive}/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+    }
+
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `/@fs//${host}/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+    }
+
+    const segments = normalized.split('/');
+    return `/@fs${segments.map((segment, index) => (index === 0 ? segment : `/${encodeURIComponent(segment)}`)).join('')}`;
+  };
+
   const resolveLocalPreviewPath = (path: string | undefined) => {
     if (!path) return path;
     if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
-    if (path.startsWith('file://')) return `/@fs${path.replace(/^file:\/\/?/, '/')}`;
-    if (/^[a-zA-Z]:[\\/]/.test(path)) return `/@fs/${path.replace(/\\/g, '/')}`;
-    if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return `/@fs${path}`;
+    if (path.startsWith('file://')) {
+      try {
+        const url = new URL(path);
+        const host = url.host ? `//${url.host}` : '';
+        return `/@fs${host}${url.pathname}`;
+      } catch {
+        return toFsPreviewPath(path.replace(/^file:\/\/?/, '/'));
+      }
+    }
+    if (/^[a-zA-Z]:[\\/]/.test(path)) return toFsPreviewPath(path);
+    if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return toFsPreviewPath(path);
     return path.startsWith('/') ? path : `/${path}`;
   };
   const [presetPromptKey, setPresetPromptKey] = useState<string | null>(null);
@@ -491,6 +518,21 @@ export function SettingsPanel({
                 </button>
               </div>
             </div>
+
+            {window.electron && (
+              <div className="space-y-2">
+                <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.proxy')}</label>
+                <input
+                  type="text"
+                  value={proxy}
+                  onChange={(e) => onProxyChange(e.target.value)}
+                  placeholder={t('global.proxyPlaceholder')}
+                  className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
+                  style={inputSurfaceStyle}
+                />
+                <div className="text-xs opacity-60">{t('global.proxyHelp')}</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -672,7 +714,7 @@ export function SettingsPanel({
                     <span className="text-xs opacity-70">{t('project.timestampSize')}</span>
                     <input
                       type="number"
-                      value={config.chatLayout?.timestampSize ?? 10}
+                      value={config.chatLayout?.timestampSize ?? 16}
                       onChange={(e) => updateChatLayout('timestampSize', parseInt(e.target.value))}
                       className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
                       style={inputSurfaceStyle}
