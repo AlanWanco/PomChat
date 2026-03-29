@@ -1771,6 +1771,58 @@ const [previewScale, setPreviewScale] = useState(1);
     event.target.value = '';
   };
 
+  const importWebFile = useCallback(async (file: File, currentProjectPath: string | null) => {
+    const normalizedName = file.name.toLowerCase();
+    const isJson = normalizedName.endsWith('.json');
+    const isAss = normalizedName.endsWith('.ass');
+    const isAudio = /\.(mp3|wav|aac|m4a|flac|mp4|ogg|opus)$/i.test(normalizedName);
+
+    if (isJson) {
+      try {
+        const content = await file.text();
+        const parsed = JSON.parse(content);
+        const validatedConfig = validateProjectConfig(parsed);
+        setProjectPath('web-demo');
+        setRecentProject(file.name);
+        setConfig(validatedConfig);
+        setWebAssContent(null);
+        savedSpeakerNamesRef.current = getSpeakerNameSnapshot(validatedConfig.speakers);
+        setShowSettings(true);
+        showToast(t('app.projectLoaded'));
+      } catch (e: any) {
+        alert('加载失败: ' + e.message);
+      }
+      return;
+    }
+
+    if (isAss) {
+      const content = await file.text();
+      if (!currentProjectPath) {
+        setProjectPath('web-demo');
+        setShowSettings(true);
+      }
+      setImportAssData({ path: file.name, content });
+      return;
+    }
+
+    if (isAudio) {
+      const nextObjectUrl = URL.createObjectURL(file);
+      if (webAudioObjectUrl) {
+        URL.revokeObjectURL(webAudioObjectUrl);
+      }
+      if (!currentProjectPath) {
+        setProjectPath('web-demo');
+        setShowSettings(true);
+      }
+      setWebAudioObjectUrl(nextObjectUrl);
+      setConfig((prev: any) => ({ ...prev, audioPath: nextObjectUrl }));
+      showToast(t('app.audioImported'));
+      return;
+    }
+
+    showToast(t('app.dropUnsupported'));
+  }, [showToast, t, validateProjectConfig, webAudioObjectUrl]);
+
   const handleSaveProject = async () => {
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
       const finalConfig = getExportConfig();
@@ -1837,7 +1889,6 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleAppDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!window.electron) return;
     e.dataTransfer.dropEffect = 'copy';
     setIsDragOver(true);
   };
@@ -1851,9 +1902,18 @@ const [previewScale, setPreviewScale] = useState(1);
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    
-    if (!window.electron) return;
     const droppedFiles = Array.from(e.dataTransfer.files || []);
+
+    if (!window.electron) {
+      const firstFile = droppedFiles[0];
+      if (firstFile) {
+        void importWebFile(firstFile, projectPath);
+      } else {
+        showToast(t('app.dropUnsupported'));
+      }
+      return;
+    }
+
     const firstFile = droppedFiles[0];
     const firstPath = firstFile ? window.electron.getDroppedFilePath(firstFile) : '';
 
