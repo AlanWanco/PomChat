@@ -548,7 +548,7 @@ export function SettingsPanel({
                     <span className="text-xs opacity-70">{t('project.topLimit')}</span>
                     <input
                       type="number"
-                      value={config.chatLayout?.paddingTop || 48}
+                      value={config.chatLayout?.paddingTop ?? 48}
                       onChange={(e) => updateChatLayout('paddingTop', parseInt(e.target.value))}
                       className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
                       style={inputSurfaceStyle}

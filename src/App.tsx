@@ -2982,66 +2982,76 @@ const [previewScale, setPreviewScale] = useState(1);
               )}
 
               {/* Chat Stream */}
-              <div 
-                ref={scrollRef}
-                className="preview-scroll-hidden relative z-20 flex-1 overflow-y-auto flex flex-col"
+              <div
+                className="absolute inset-0 z-20 flex flex-col overflow-hidden"
                 style={{
                   paddingTop: `${(previewChatLayout?.paddingTop ?? 48) * Math.max(0.35, previewScale)}px`,
-                  paddingBottom: `${(previewChatLayout?.paddingBottom ?? 80) * Math.max(0.35, previewScale)}px`,
                   paddingLeft: `${(previewChatLayout?.paddingLeft ?? previewChatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`,
                   paddingRight: `${(previewChatLayout?.paddingRight ?? previewChatLayout?.paddingX ?? 48) * Math.max(0.35, previewScale)}px`
                 }}
               >
-                {subtitlesLoading ? (
-                  <div className="text-center opacity-50 my-auto">{t('app.loadSubtitle')}</div>
-                ) : (
-                  visibleMessages.map((item) => {
-                    const speaker = config.speakers[item.speakerId];
-                    if (!speaker || speaker.type === 'annotation') return null;
+                <div
+                  ref={scrollRef}
+                  className="preview-scroll-hidden flex-1 min-h-0 overflow-y-auto"
+                >
+                  <div
+                    className="flex min-h-full flex-col justify-end"
+                    style={{
+                      paddingBottom: `${(previewChatLayout?.paddingBottom ?? 80) * Math.max(0.35, previewScale)}px`
+                    }}
+                  >
+                    {subtitlesLoading ? (
+                      <div className="text-center opacity-50 my-auto">{t('app.loadSubtitle')}</div>
+                    ) : (
+                      visibleMessages.map((item) => {
+                        const speaker = config.speakers[item.speakerId];
+                        if (!speaker || speaker.type === 'annotation') return null;
 
-                    return (
-                      <ChatMessageBubble
-                        key={item.id}
-                        item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
-                        speaker={speaker}
-                        currentTime={currentTime}
-                        canvasWidth={canvasWidth}
-                        layoutScale={previewScale}
-                        chatLayout={previewChatLayout}
-                        fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
-                        renderAvatar={({ src, alt, style }) => (
-                          <img
-                            src={resolvePath(src)}
-                            alt={alt}
-                            referrerPolicy="no-referrer"
-                            className={`rounded-full shrink-0 shadow-lg object-cover ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-white bg-gray-200'}`}
-                            style={{ ...style, backgroundColor: style.borderColor as string }}
+                        return (
+                          <ChatMessageBubble
+                            key={item.id}
+                            item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
+                            speaker={speaker}
+                            currentTime={currentTime}
+                            canvasWidth={canvasWidth}
+                            layoutScale={previewScale}
+                            chatLayout={previewChatLayout}
+                            fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
+                            renderAvatar={({ src, alt, style }) => (
+                              <img
+                                src={resolvePath(src)}
+                                alt={alt}
+                                referrerPolicy="no-referrer"
+                                className={`rounded-full shrink-0 shadow-lg object-cover ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-white bg-gray-200'}`}
+                                style={{ ...style, backgroundColor: style.borderColor as string }}
+                              />
+                            )}
+                            renderBubble={({ outerStyle, contentStyle, children }) => {
+                              const tintColor = typeof outerStyle.backgroundColor === 'string' ? outerStyle.backgroundColor : '#ffffff';
+                              const bubbleStyle = { ...outerStyle };
+                              delete bubbleStyle.backgroundColor;
+                              return (
+                                <SnapshotBubble
+                                  canvasRef={previewFrameRef}
+                                  backgroundSrc={resolvePath(config.background?.image)}
+                                  backgroundBrightness={config.background?.brightness ?? 1}
+                                  backgroundBaseBlur={config.background?.blur || 0}
+                                  blurPx={0}
+                                  tintColor={tintColor}
+                                  className="break-words"
+                                  outerStyle={bubbleStyle}
+                                  contentStyle={contentStyle}
+                                >
+                                  <p className="leading-relaxed whitespace-pre-wrap">{children}</p>
+                                </SnapshotBubble>
+                              );
+                            }}
                           />
-                        )}
-                        renderBubble={({ outerStyle, contentStyle, children }) => {
-                          const tintColor = typeof outerStyle.backgroundColor === 'string' ? outerStyle.backgroundColor : '#ffffff';
-                          const bubbleStyle = { ...outerStyle };
-                          delete bubbleStyle.backgroundColor;
-                          return (
-                            <SnapshotBubble
-                              canvasRef={previewFrameRef}
-                              backgroundSrc={resolvePath(config.background?.image)}
-                              backgroundBrightness={config.background?.brightness ?? 1}
-                              backgroundBaseBlur={config.background?.blur || 0}
-                              blurPx={0}
-                              tintColor={tintColor}
-                              className="break-words"
-                              outerStyle={bubbleStyle}
-                              contentStyle={contentStyle}
-                            >
-                              <p className="leading-relaxed whitespace-pre-wrap">{children}</p>
-                            </SnapshotBubble>
-                          );
-                        }}
-                      />
-                    );
-                  })
-                )}
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
 
               {visibleAnnotations.length > 0 && (

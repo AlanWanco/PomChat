@@ -69,7 +69,6 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
       <AbsoluteFill
         style={{
           paddingTop: topPadding,
-          paddingBottom: bottomPadding,
           paddingLeft: horizontalPadding,
           paddingRight: horizontalPadding,
           display: 'flex',
@@ -77,8 +76,8 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
           justifyContent: 'space-between'
         }}
       >
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'flex-end' }}>
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ width: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: bottomPadding }}>
             {visibleMessages.map((item) => {
               const speaker = props.speakers[item.speaker];
               if (!speaker) {
