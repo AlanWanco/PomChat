@@ -544,8 +544,8 @@ export const PlayerControls = memo(function PlayerControls({
             title={t('player.waveformTitle')}
             style={{ visibility: isWaveformReady ? 'visible' : 'hidden' }}
           />
-          {showWaveformContainer && regionTooltip && (
-            <div className={`absolute top-1 right-2 px-2 py-1 rounded-md text-[10px] font-mono z-[70] pointer-events-none ${isDarkMode ? 'bg-gray-950/95' : 'bg-white/95 shadow-sm'}`} style={{ color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55` }}>
+          {showWaveformContainer && editingSub && regionTooltip && (
+            <div className="absolute top-1 right-2 px-2 py-1 rounded-md text-[10px] font-mono z-[70] pointer-events-none bg-gray-950/95" style={{ color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}55` }}>
               {formatTime(regionTooltip.start)} - {formatTime(regionTooltip.end)}
             </div>
           )}
