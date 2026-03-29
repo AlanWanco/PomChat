@@ -52,7 +52,7 @@ const DEFAULT_BUBBLE_STYLE = {
 };
 
 const DEFAULT_CHAT_LAYOUT = {
-  paddingTop: 48,
+  paddingTop: 0,
   paddingBottom: 80,
   paddingX: 48,
   paddingLeft: 48,
