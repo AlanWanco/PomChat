@@ -122,6 +122,8 @@ export const PlayerControls = memo(function PlayerControls({
   const [waveformOverlayMetrics, setWaveformOverlayMetrics] = useState({ scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 });
   const [dragPreviewRange, setDragPreviewRange] = useState<{ start: number; end: number } | null>(null);
 
+  const zoomRangeRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     hasUserAdjustedZoomRef.current = false;
   }, [audioPath]);
@@ -445,35 +447,53 @@ export const PlayerControls = memo(function PlayerControls({
       scrollElement?.removeEventListener('scroll', updateOverlayMetrics);
       resizeObserver?.disconnect();
     };
-  }, [audioPath, getWaveformOverlayElements, isWaveformReady, zoomLevel]);
+  }, [audioPath, getWaveformOverlayElements, isWaveformReady]);
 
+  // Sync zoomLevel to slider DOM when it changes externally (auto-fit, waveform load, etc.)
   useEffect(() => {
-    if (wavesurfer.current && isWaveformReady) {
-      wavesurfer.current.zoom(zoomLevel);
+    if (zoomRangeRef.current && Number(zoomRangeRef.current.value) !== zoomLevel) {
+      zoomRangeRef.current.value = String(zoomLevel);
     }
-  }, [isWaveformReady, zoomLevel]);
+  }, [zoomLevel]);
 
-  // Handle Waveform Zoom via scroll
+  // Handle Waveform Zoom via scroll — pure RAF, no direct WaveSurfer manipulation
   useEffect(() => {
     const container = waveformRef.current;
     if (!container) return;
 
+    let rafId: number | null = null;
+
     const handleWheel = (e: WheelEvent) => {
-      if (!wavesurfer.current || !isWaveformReady) return;
+      if (!isWaveformReady) return;
       e.preventDefault();
-      
-      const currentZoom = wavesurfer.current.options.minPxPerSec || 50;
-      const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
-      const newZoom = Math.max(minZoom, Math.min(1000, currentZoom * zoomFactor));
-      
-      hasUserAdjustedZoomRef.current = true;
-      wavesurfer.current.zoom(newZoom);
-      setZoomLevel(newZoom);
+      e.stopPropagation();
+
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        if (!wavesurfer.current || !isWaveformReady) return;
+
+        const currentZoom = zoomLevel; // use React state as source of truth
+        const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
+        const newZoom = Math.max(minZoom, Math.min(1000, currentZoom * zoomFactor));
+
+        hasUserAdjustedZoomRef.current = true;
+        setZoomLevel(newZoom);
+        wavesurfer.current.zoom(newZoom);
+      });
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [isWaveformReady, minZoom]);
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [isWaveformReady, minZoom, zoomLevel]);
 
   // Update WaveSurfer playback rate
   useEffect(() => {
@@ -565,7 +585,7 @@ export const PlayerControls = memo(function PlayerControls({
     return () => {
       window.clearTimeout(tooltipResetTimer);
     };
-  }, [editingSub, nearbySubtitles, rangeSubtitle, secondaryThemeColor, isDarkMode, zoomLevel]);
+  }, [editingSub, nearbySubtitles, rangeSubtitle, secondaryThemeColor, isDarkMode]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -1254,12 +1274,16 @@ export const PlayerControls = memo(function PlayerControls({
               hasUserAdjustedZoomRef.current = true;
               setZoomLevel(z);
             }} />
-            <input 
-              type="range" min={minZoom} max="1000" 
-              value={zoomLevel} 
+            <input
+              ref={zoomRangeRef}
+              type="range" min={minZoom} max="1000"
+              defaultValue={zoomLevel}
               onChange={e => {
                 const z = Number(e.target.value);
                 hasUserAdjustedZoomRef.current = true;
+                if (wavesurfer.current) {
+                  wavesurfer.current.zoom(z);
+                }
                 setZoomLevel(z);
               }}
               className="w-16 h-1" style={{ accentColor: secondaryThemeColor }}
