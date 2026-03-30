@@ -224,6 +224,7 @@ On Windows, the workflow produces both:
 - [ ] Add information text blocks that can be placed at the top, left, right, or bottom for program title, update time, and similar context
 - [ ] Add support for inserting a single image either inside the message flow or as a freely positioned element
 - [ ] Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
+- [ ] Add rotating background image support, allowing multiple backgrounds to switch or crossfade over time
 - [ ] Add undo/redo support (subtitle edits, style changes, and layout adjustments)
 - [x] Support importing ASS styles into speaker/bubble styles (including color, opacity, and border width)
 - [x] Add a GitHub Pages version with basic subtitle and audio import preview capabilities
