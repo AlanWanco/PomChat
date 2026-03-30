@@ -1272,6 +1272,9 @@ export const PlayerControls = memo(function PlayerControls({
             <ZoomOut size={14} className="opacity-50 cursor-pointer hover:opacity-100" onClick={() => {
               const z = Math.max(minZoom, zoomLevel * 0.8);
               hasUserAdjustedZoomRef.current = true;
+              if (wavesurfer.current) {
+                wavesurfer.current.zoom(z);
+              }
               setZoomLevel(z);
             }} />
             <input
@@ -1291,6 +1294,9 @@ export const PlayerControls = memo(function PlayerControls({
             <ZoomIn size={14} className="opacity-50 cursor-pointer hover:opacity-100" onClick={() => {
               const z = Math.min(1000, zoomLevel * 1.2);
               hasUserAdjustedZoomRef.current = true;
+              if (wavesurfer.current) {
+                wavesurfer.current.zoom(z);
+              }
               setZoomLevel(z);
             }} />
           </div>
@@ -1301,6 +1307,9 @@ export const PlayerControls = memo(function PlayerControls({
               <ZoomOut size={11} className="opacity-60 cursor-pointer hover:opacity-100 shrink-0" onClick={() => {
                 const z = Math.max(minZoom, zoomLevel * 0.8);
                 hasUserAdjustedZoomRef.current = true;
+                if (wavesurfer.current) {
+                  wavesurfer.current.zoom(z);
+                }
                 setZoomLevel(z);
               }} />
               <div className="text-[9px] font-mono leading-none min-w-[28px] text-center" style={{ color: uiTheme.textMuted }}>
@@ -1309,6 +1318,9 @@ export const PlayerControls = memo(function PlayerControls({
               <ZoomIn size={11} className="opacity-60 cursor-pointer hover:opacity-100 shrink-0" onClick={() => {
                 const z = Math.min(1000, zoomLevel * 1.2);
                 hasUserAdjustedZoomRef.current = true;
+                if (wavesurfer.current) {
+                  wavesurfer.current.zoom(z);
+                }
                 setZoomLevel(z);
               }} />
             </div>
