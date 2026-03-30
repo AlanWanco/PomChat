@@ -1746,39 +1746,35 @@ const [previewScale, setPreviewScale] = useState(1);
 
   useEffect(() => {
     exportRangeTouchedRef.current = false;
-    setExportRange({ start: 0, end: 0 });
     setExportOutputPath('');
     setExportStatusMessage(null);
     setLastExportSucceeded(false);
-  }, [projectPath, config.assPath, config.audioPath]);
+  }, [config.projectId]);
 
   useEffect(() => {
     const defaults = getDefaultExportRange();
     
-    // Try to restore from config if available
-    if (config.exportRangeCustomized && config.exportRange && config.exportRange.start !== undefined && config.exportRange.end !== undefined) {
-      const saved = config.exportRange;
-      const nextStart = Number(Math.max(0, Math.min(saved.start, defaults.end)).toFixed(2));
-      const nextEnd = Number(Math.max(nextStart, Math.min(saved.end, Math.max(defaults.end, saved.end))).toFixed(2));
-      setExportRange((prev) => {
-        const nextRange = { start: nextStart, end: nextEnd };
-        return isSameRange(prev, nextRange) ? prev : nextRange;
-      });
-      exportRangeTouchedRef.current = true;
+    if (exportRangeTouchedRef.current || config.exportRangeCustomized) {
+      const sourceRange = exportRangeTouchedRef.current ? undefined : config.exportRange;
+      
+      if (sourceRange && sourceRange.start !== undefined && sourceRange.end !== undefined) {
+        setExportRange((prev) => {
+          const nextStart = Math.max(0, sourceRange.start);
+          const nextEnd = Math.max(nextStart, sourceRange.end);
+          const nextRange = { start: nextStart, end: nextEnd };
+          return isSameRange(prev, nextRange) ? prev : nextRange;
+        });
+        exportRangeTouchedRef.current = true;
+      } else {
+        setExportRange((prev) => {
+          if (prev.start <= prev.end) return prev;
+          return { start: prev.start, end: prev.start };
+        });
+      }
       return;
     }
     
-    if (!exportRangeTouchedRef.current) {
-      setExportRange((prev) => (isSameRange(prev, defaults) ? prev : defaults));
-      return;
-    }
-
-    setExportRange((prev) => {
-      const nextStart = Number(Math.max(0, Math.min(prev.start, defaults.end)).toFixed(2));
-      const nextEnd = Number(Math.max(nextStart, Math.min(prev.end, Math.max(defaults.end, prev.end))).toFixed(2));
-      const nextRange = { start: nextStart, end: nextEnd };
-      return isSameRange(prev, nextRange) ? prev : nextRange;
-    });
+    setExportRange((prev) => isSameRange(prev, defaults) ? prev : defaults);
   }, [getDefaultExportRange, config.exportRange, config.exportRangeCustomized]);
 
   useEffect(() => {
