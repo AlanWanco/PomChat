@@ -877,6 +877,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
     try {
       await window.electron.writeFile(nextAssPath, createEmptyAssContent());
+      pushHistorySnapshot();
       setConfig((prev: any) => ({ ...prev, assPath: nextAssPath }));
       return nextAssPath;
     } catch (error) {
