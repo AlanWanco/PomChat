@@ -66,6 +66,7 @@ type StylePreviewRow = {
   borderColor: AssColorInfo;
   textColor: AssColorInfo;
   borderWidth: number | null;
+  fontName?: string;
 };
 
 const PREVIEW_ROWS_PER_TAB = 8;
@@ -107,6 +108,7 @@ const getImportedSpeakerStyle = (assStyle: ParsedAssStyle | undefined, isAnnotat
   const outlineColor = parseAssColor(assStyle?.OutlineColour);
   const backColor = parseAssColor(assStyle?.BackColour);
   const outlineWidth = Number(assStyle?.Outline);
+  const fontFamily = assStyle?.Fontname && assStyle.Fontname.trim() ? assStyle.Fontname : undefined;
 
   return {
     bgColor: outlineColor?.hex || (isAnnotation ? '#111827' : '#2563eb'),
@@ -115,7 +117,8 @@ const getImportedSpeakerStyle = (assStyle: ParsedAssStyle | undefined, isAnnotat
     borderColor: backColor?.hex || '#ffffff',
     borderOpacity: backColor?.opacity ?? 1,
     opacity: outlineColor?.opacity ?? 0.9,
-    borderWidth: Number.isFinite(outlineWidth) && outlineWidth > 0 ? Math.round(outlineWidth) : 0
+    borderWidth: Number.isFinite(outlineWidth) && outlineWidth > 0 ? Math.round(outlineWidth) : 0,
+    ...(fontFamily && { fontFamily })
   };
 };
 
@@ -299,7 +302,8 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       bubbleColor: parseAssColor(matchedStyle?.OutlineColour),
       borderColor: parseAssColor(matchedStyle?.BackColour),
       textColor: parseAssColor(matchedStyle?.PrimaryColour),
-      borderWidth: Number.isFinite(outlineWidth) ? Math.max(0, Math.round(outlineWidth)) : null
+      borderWidth: Number.isFinite(outlineWidth) ? Math.max(0, Math.round(outlineWidth)) : null,
+      fontName: matchedStyle?.Fontname
     };
   });
   const totalPreviewTabs = Math.max(1, Math.ceil(previewRows.length / PREVIEW_ROWS_PER_TAB));
@@ -435,6 +439,7 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
                       <th className="text-left px-3 py-2">{t('import.previewBorderWidth')}</th>
                       <th className="text-left px-3 py-2">{t('import.previewBubbleOpacity')}</th>
                       <th className="text-left px-3 py-2">{t('import.previewBorderOpacity')}</th>
+                      <th className="text-left px-3 py-2">{t('import.previewFontName')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -448,6 +453,7 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
                         <td className="px-3 py-2">{typeof row.borderWidth === 'number' ? `${row.borderWidth}px` : '--'}</td>
                         <td className="px-3 py-2">{row.bubbleColor ? `${Math.round(row.bubbleColor.opacity * 100)}%` : '--'}</td>
                         <td className="px-3 py-2">{row.borderColor ? `${Math.round(row.borderColor.opacity * 100)}%` : '--'}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{row.fontName || '--'}</td>
                       </tr>
                     ))}
                   </tbody>
