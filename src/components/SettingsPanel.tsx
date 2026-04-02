@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, type ReactNode } from 'react';
-import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen } from 'lucide-react';
+import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
@@ -1099,17 +1099,19 @@ export function SettingsPanel({
                               showToast(`预设 "${presetNameInput.trim()}" 已保存`);
                               setPresetPromptKey(null);
                             }}
-                            className="text-xs px-2 py-1 rounded text-white"
+                            className="h-7 w-7 rounded text-white inline-flex items-center justify-center"
                             style={{ backgroundColor: secondaryThemeColor }}
+                            title={t('common.confirm')}
                           >
-                            {t('common.confirm')}
+                            <Check size={14} />
                           </button>
                           <button 
                             onClick={() => setPresetPromptKey(null)}
-                            className="text-xs px-2 py-1 rounded"
+                            className="h-7 w-7 rounded inline-flex items-center justify-center"
                             style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}
+                            title={t('common.cancel')}
                           >
-                            {t('common.cancel')}
+                            <X size={14} />
                           </button>
                         </div>
                       )}

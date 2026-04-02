@@ -76,6 +76,9 @@ export function useAssSubtitle(
   const [subtitles, setSubtitles] = useState<SubtitleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const speakerNameSignature = JSON.stringify(
+    Object.entries(speakerConfig || {}).map(([speakerId, speaker]) => [speakerId, speaker?.name || ''])
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -180,7 +183,7 @@ export function useAssSubtitle(
     return () => {
       cancelled = true;
     };
-  }, [assPath, assContentOverride, projectContent, speakerConfig, subtitleFormat]);
+  }, [assPath, assContentOverride, projectContent, speakerNameSignature, subtitleFormat]);
 
   return { subtitles, setSubtitles, loading, error };
 }
