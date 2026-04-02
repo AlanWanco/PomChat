@@ -138,6 +138,23 @@ const DEFAULT_PROJECT_CONFIG = {
         textColor: '#111827',
         nameColor: '#ffffff'
       }
+    },
+    ANNOTATION: {
+      name: '注释',
+      avatar: '',
+      side: 'center',
+      type: 'annotation',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#111827',
+        textColor: '#ffffff',
+        borderRadius: 999,
+        paddingX: 18,
+        paddingY: 10,
+        maxWidth: 720,
+        fontSize: 24,
+        annotationPosition: 'bottom'
+      }
     }
   }
 };
@@ -233,6 +250,23 @@ const createBlankProjectConfig = (projectTitle: string) => ({
       avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
       side: 'left',
       style: { ...DEFAULT_BUBBLE_STYLE }
+    },
+    ANNOTATION: {
+      name: '注释',
+      avatar: '',
+      side: 'center',
+      type: 'annotation',
+      style: {
+        ...DEFAULT_BUBBLE_STYLE,
+        bgColor: '#111827',
+        textColor: '#ffffff',
+        borderRadius: 999,
+        paddingX: 18,
+        paddingY: 10,
+        maxWidth: 720,
+        fontSize: 24,
+        annotationPosition: 'bottom'
+      }
     }
   },
   ui: { ...DEFAULT_UI_CONFIG }
