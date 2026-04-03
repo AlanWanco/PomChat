@@ -1286,11 +1286,23 @@ const [previewScale, setPreviewScale] = useState(1);
     if (window.electron) return;
 
     const saveTimer = setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      const webPersistedConfig = {
+        ...config,
+        content: [...subtitles]
+          .sort((a, b) => a.start - b.start || a.end - b.end)
+          .map((s) => ({
+            start: s.start,
+            end: s.end,
+            speaker: s.speakerId,
+            type: 'text',
+            text: s.text
+          }))
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(webPersistedConfig));
     }, 250);
 
     return () => clearTimeout(saveTimer);
-  }, [config]);
+  }, [config, subtitles]);
 
   useEffect(() => {
     const isNarrowOrPortrait = windowWidth < 700;
