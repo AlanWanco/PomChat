@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
+import pkg from './package.json'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => {
@@ -46,6 +47,9 @@ export default defineConfig(({ command }) => {
       alias: {
         '@': path.resolve(__dirname, 'src'),
       }
+    },
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
     }
   }
 })

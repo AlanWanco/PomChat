@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+declare const __APP_VERSION__: string;
+
 interface Window {
   electron: {
     ping: () => Promise<string>;
