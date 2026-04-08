@@ -79,19 +79,20 @@ export function useAssSubtitle(
 
   useEffect(() => {
     let cancelled = false;
+    const hasAssOverride = Boolean(assContentOverride && assContentOverride.trim().length > 0);
 
     const shouldUseProjectContent = Array.isArray(projectContent)
       && projectContent.length > 0
-      && (!window.electron || subtitleFormat === 'srt' || subtitleFormat === 'lrc' || !assPath);
+      && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || (!window.electron && !hasAssOverride) || !assPath);
 
-    if (assContentOverride && !shouldUseProjectContent) {
+    if (hasAssOverride && !shouldUseProjectContent) {
       Promise.resolve().then(() => {
         if (!cancelled) {
           setLoading(true);
         }
       });
 
-      Promise.resolve(assContentOverride)
+      Promise.resolve(assContentOverride as string)
         .then((text: string) => {
           if (cancelled) return;
           const parsed = parse(text);
