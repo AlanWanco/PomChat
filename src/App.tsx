@@ -59,6 +59,9 @@ type ExportProgressState = {
 const DEFAULT_BUBBLE_STYLE = {
   bgColor: '#2563eb',
   textColor: '#ffffff',
+  nameColor: '#ffffff',
+  nameStrokeWidth: 0,
+  nameStrokeColor: '#000000',
   borderRadius: 28,
   opacity: 0.9,
   borderWidth: 0,

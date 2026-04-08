@@ -12,6 +12,8 @@ export interface SharedChatSpeakerStyle {
   bgColor?: string;
   textColor?: string;
   nameColor?: string;
+  nameStrokeWidth?: number;
+  nameStrokeColor?: string;
   borderRadius?: number;
   opacity?: number;
   borderWidth?: number;
@@ -204,6 +206,8 @@ export function ChatMessageBubble({
   const fontSize = snapPx((speaker.style?.fontSize ?? 30) * combinedScale);
   const bubbleMaxWidthPercent = Math.max(15, Math.min(95, chatLayout?.bubbleMaxWidthPercent ?? 70));
   const bubbleMaxWidthPx = canvasWidth * layoutScaleSafe * (bubbleMaxWidthPercent / 100);
+  const speakerNameStrokeWidth = Math.max(0, Math.round((speaker.style?.nameStrokeWidth ?? 0) * combinedScale * 100) / 100);
+  const speakerNameStrokeColor = speaker.style?.nameStrokeColor || '#000000';
   const opacity = speaker.style?.opacity ?? 0.9;
   const hexBg = bgColor.startsWith('#') ? bgColor : '#ffffff';
   const finalBgColor = `${hexBg}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
@@ -270,7 +274,7 @@ export function ChatMessageBubble({
                 marginBottom: `${4 * combinedScale}px`
               }}
             >
-              <span style={{ fontSize: `${speakerNameSize}px`, fontFamily: speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui', fontWeight: speaker.style?.nameFontWeight || 700, color: speaker.style?.nameColor || '#ffffff' }}>
+              <span style={{ fontSize: `${speakerNameSize}px`, fontFamily: speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui', fontWeight: speaker.style?.nameFontWeight || 700, color: speaker.style?.nameColor || '#ffffff', WebkitTextStroke: speakerNameStrokeWidth > 0 ? `${speakerNameStrokeWidth}px ${speakerNameStrokeColor}` : undefined }}>
                 {speaker.name}
               </span>
               <span style={{ fontSize: `${timestampSize}px`, fontFamily: timestampFontFamily, color: timestampColor }}>

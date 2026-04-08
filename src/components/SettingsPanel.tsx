@@ -184,7 +184,7 @@ export function SettingsPanel({
         name: `${t('speakers.add')} ${newId}`, 
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${newId}`, 
         side: "left", 
-        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 7, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal' }
+        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", nameStrokeWidth: 0, nameStrokeColor: "#000000", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 7, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal' }
       } 
     };
     updateConfig('speakers', newSpeakers);
@@ -1302,6 +1302,14 @@ export function SettingsPanel({
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.nameColor')}</span>
                           {renderColorInput(speaker.style?.nameColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'nameColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.nameStrokeColor')}</span>
+                          {renderColorInput(speaker.style?.nameStrokeColor || '#000000', (value) => updateSpeakerStyle(key, 'nameStrokeColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameStrokeWidth')}</span>
+                          {renderNumberInput(speaker.style?.nameStrokeWidth ?? 0, (value) => updateSpeakerStyle(key, 'nameStrokeWidth', value), { min: 0, max: 12, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>

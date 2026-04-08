@@ -379,7 +379,9 @@ const runRender = async (config) => {
 
     if (mode === 'gpu') {
       if (process.platform === 'win32') {
-        return { hardwareAcceleration: 'required', gl: 'angle' };
+        // Remotion h264 on Windows does not support "required".
+        // Keep GPU preference but allow fallback.
+        return { hardwareAcceleration: 'if-possible', gl: 'angle' };
       }
       if (process.platform === 'darwin') {
         return { hardwareAcceleration: 'if-possible', gl: 'angle' };
@@ -398,6 +400,16 @@ const runRender = async (config) => {
   };
 
   const hardwareStrategy = resolveHardwareStrategy();
+  const cpuFallbackStrategy = { hardwareAcceleration: 'disable', gl: 'swiftshader' };
+  const isHardwareAccelerationError = (error) => {
+    const message = (error && error.message ? error.message : '').toLowerCase();
+    return (
+      message.includes('hardware acceleration') ||
+      message.includes('gpu process') ||
+      message.includes('angle') ||
+      message.includes('swiftshader')
+    );
+  };
 
   try {
     const inputProps = prepareInputProps(config, mediaServer, binariesDirectory);
@@ -419,55 +431,74 @@ const runRender = async (config) => {
     sendProgress(0.02, 'Bundling Remotion composition');
     const serveUrl = await getBundle(bundle);
 
-    sendProgress(0.12, 'Resolving composition');
-    const composition = await selectComposition({
-      serveUrl,
-      id: 'PodchatRender',
-      inputProps,
-      logLevel: 'error',
-      binariesDirectory,
-      browserExecutable,
-      chromiumOptions: {
-        disableWebSecurity: true,
-        gl: hardwareStrategy.gl,
-        hardwareAcceleration: hardwareStrategy.hardwareAcceleration,
-      },
-    });
+    const renderOnce = async (strategy) => {
+      sendProgress(0.12, 'Resolving composition');
+      const composition = await selectComposition({
+        serveUrl,
+        id: 'PodchatRender',
+        inputProps,
+        logLevel: 'error',
+        binariesDirectory,
+        browserExecutable,
+        chromiumOptions: {
+          disableWebSecurity: true,
+          gl: strategy.gl,
+          hardwareAcceleration: strategy.hardwareAcceleration,
+        },
+      });
 
-    sendProgress(0.2, 'Rendering frames');
-    const qualityOptions = hardwareStrategy.hardwareAcceleration === 'disable'
-      ? {
-          x264Preset: config.x264Preset || 'veryfast',
-          crf: config.crf || 20,
-        }
-      : {};
+      sendProgress(0.2, 'Rendering frames');
+      const qualityOptions = strategy.hardwareAcceleration === 'disable'
+        ? {
+            x264Preset: config.x264Preset || 'veryfast',
+            crf: config.crf || 20,
+          }
+        : {};
 
-    await renderMedia({
-      serveUrl,
-      composition,
-      codec: 'h264',
-      audioCodec: 'aac',
-      outputLocation: config.outputPath,
-      inputProps,
-      overwrite: true,
-      logLevel: 'error',
-      concurrency: getRenderConcurrency(),
-      imageFormat: 'jpeg',
-      jpegQuality: 92,
-      ...qualityOptions,
-      pixelFormat: 'yuv420p',
-      binariesDirectory,
-      browserExecutable,
-      chromiumOptions: {
-        disableWebSecurity: true,
-        gl: hardwareStrategy.gl,
-        hardwareAcceleration: hardwareStrategy.hardwareAcceleration,
-      },
-      hardwareAcceleration: hardwareStrategy.hardwareAcceleration,
-      onProgress: ({ progress }) => {
-        sendProgress(0.2 + progress * 0.78, progress >= 1 ? 'Finalizing video' : 'Rendering frames');
-      },
-    });
+      await renderMedia({
+        serveUrl,
+        composition,
+        codec: 'h264',
+        audioCodec: 'aac',
+        outputLocation: config.outputPath,
+        inputProps,
+        overwrite: true,
+        logLevel: 'error',
+        concurrency: getRenderConcurrency(),
+        imageFormat: 'jpeg',
+        jpegQuality: 92,
+        ...qualityOptions,
+        pixelFormat: 'yuv420p',
+        binariesDirectory,
+        browserExecutable,
+        chromiumOptions: {
+          disableWebSecurity: true,
+          gl: strategy.gl,
+          hardwareAcceleration: strategy.hardwareAcceleration,
+        },
+        hardwareAcceleration: strategy.hardwareAcceleration,
+        onProgress: ({ progress }) => {
+          sendProgress(0.2 + progress * 0.78, progress >= 1 ? 'Finalizing video' : 'Rendering frames');
+        },
+      });
+
+      return composition;
+    };
+
+    let composition;
+    let usedStrategy = hardwareStrategy;
+    try {
+      composition = await renderOnce(usedStrategy);
+    } catch (error) {
+      if (usedStrategy.hardwareAcceleration !== 'disable' && isHardwareAccelerationError(error)) {
+        console.warn('GPU strategy failed, retrying CPU fallback:', error && error.message ? error.message : error);
+        sendProgress(0.15, 'GPU unavailable, retrying with CPU');
+        usedStrategy = cpuFallbackStrategy;
+        composition = await renderOnce(usedStrategy);
+      } else {
+        throw error;
+      }
+    }
 
     const elapsedMs = Date.now() - startedAt;
     const realTimeFactor = elapsedMs / (durationSeconds * 1000);

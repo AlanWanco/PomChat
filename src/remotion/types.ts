@@ -15,6 +15,8 @@ export interface SpeakerStyle {
   bgColor?: string;
   textColor?: string;
   nameColor?: string;
+  nameStrokeWidth?: number;
+  nameStrokeColor?: string;
   borderRadius?: number;
   opacity?: number;
   borderWidth?: number;
