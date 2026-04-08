@@ -2736,7 +2736,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   if (!projectPath) {
     return (
-      <div className="relative w-full h-[100dvh]" style={{ background: appBackground, color: uiTheme.text, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
+      <div className="relative w-full h-[100dvh]" style={{ background: appBackground, color: uiTheme.text, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA`, ['--pomchat-number-spin-color' as any]: secondaryThemeColor }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
         {!window.electron && (
           <>
             <input
@@ -2846,7 +2846,7 @@ const [previewScale, setPreviewScale] = useState(1);
   return (
     <div
       className={`w-full h-[100dvh] flex flex-col font-sans ${textClass} overflow-hidden transition-colors duration-300 relative`}
-      style={{ background: appBackground, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA` }}
+      style={{ background: appBackground, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA`, ['--pomchat-number-spin-color' as any]: secondaryThemeColor }}
       onDragOver={handleAppDragOver}
       onDragLeave={handleAppDragLeave}
       onDrop={handleAppDrop}

@@ -340,6 +340,64 @@ export function SettingsPanel({
     </div>
   );
 
+  const renderNumberInput = (
+    value: number,
+    onValueChange: (value: number) => void,
+    options?: { min?: number; max?: number; step?: number; className?: string; style?: React.CSSProperties }
+  ) => {
+    const step = options?.step ?? 1;
+    const min = options?.min;
+    const max = options?.max;
+    const className = options?.className || `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`;
+    const style = options?.style || inputSurfaceStyle;
+    const safeValue = Number.isFinite(value) ? value : 0;
+
+    const applyDelta = (delta: number) => {
+      let next = Number((safeValue + delta).toFixed(4));
+      if (typeof min === 'number') next = Math.max(min, next);
+      if (typeof max === 'number') next = Math.min(max, next);
+      onValueChange(next);
+    };
+
+    return (
+      <div className="relative">
+        <input
+          type="number"
+          value={safeValue}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            if (Number.isFinite(next)) {
+              onValueChange(next);
+            }
+          }}
+          className={`${className} pr-8`}
+          style={style}
+        />
+        <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-0.5">
+          <button
+            type="button"
+            className="h-3.5 w-4 rounded text-[9px] leading-none border"
+            style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}
+            onClick={() => applyDelta(step)}
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            className="h-3.5 w-4 rounded text-[9px] leading-none border"
+            style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}
+            onClick={() => applyDelta(-step)}
+          >
+            ▼
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
       {!hideHeader && (
@@ -584,33 +642,15 @@ export function SettingsPanel({
                       <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                     </Tooltip>
                   </span>
-                  <input
-                    type="number"
-                    value={config.fps || 60}
-                    onChange={(e) => updateConfig('fps', parseInt(e.target.value))}
-                    className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                    style={inputSurfaceStyle}
-                  />
+                  {renderNumberInput(config.fps || 60, (value) => updateConfig('fps', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-xs opacity-70">{t('project.width')}</span>
-                  <input
-                    type="number"
-                    value={config.dimensions?.width || 1920}
-                    onChange={(e) => updateConfig('dimensions', { ...config.dimensions, width: parseInt(e.target.value) })}
-                    className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                    style={inputSurfaceStyle}
-                  />
+                  {renderNumberInput(config.dimensions?.width || 1920, (value) => updateConfig('dimensions', { ...config.dimensions, width: value }), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-xs opacity-70">{t('project.height')}</span>
-                  <input
-                    type="number"
-                    value={config.dimensions?.height || 1080}
-                    onChange={(e) => updateConfig('dimensions', { ...config.dimensions, height: parseInt(e.target.value) })}
-                    className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                    style={inputSurfaceStyle}
-                  />
+                  {renderNumberInput(config.dimensions?.height || 1080, (value) => updateConfig('dimensions', { ...config.dimensions, height: value }), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                 </div>
               </div>
 
@@ -621,48 +661,22 @@ export function SettingsPanel({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.topLimit')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.paddingTop ?? 48}
-                      onChange={(e) => updateChatLayout('paddingTop', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                      title={t('project.topLimit.title')}
-                    />
+                    {renderNumberInput(config.chatLayout?.paddingTop ?? 48, (value) => updateChatLayout('paddingTop', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                     <p className="text-[11px] opacity-60 leading-relaxed">
                       {t('project.topLimit.help')}
                     </p>
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.bottomPosition')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.paddingBottom ?? 80}
-                      onChange={(e) => updateChatLayout('paddingBottom', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                      title={t('project.bottomPosition.title')}
-                    />
+                    {renderNumberInput(config.chatLayout?.paddingBottom ?? 80, (value) => updateChatLayout('paddingBottom', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.paddingLeft')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.paddingLeft ?? config.chatLayout?.paddingX ?? 48}
-                      onChange={(e) => updateChatLayout('paddingLeft', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                    />
+                    {renderNumberInput(config.chatLayout?.paddingLeft ?? config.chatLayout?.paddingX ?? 48, (value) => updateChatLayout('paddingLeft', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.paddingRight')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.paddingRight ?? config.chatLayout?.paddingX ?? 48}
-                      onChange={(e) => updateChatLayout('paddingRight', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                    />
+                    {renderNumberInput(config.chatLayout?.paddingRight ?? config.chatLayout?.paddingX ?? 48, (value) => updateChatLayout('paddingRight', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                 </div>
                 <div className="flex justify-end">
@@ -713,13 +727,7 @@ export function SettingsPanel({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.avatarSize')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.avatarSize ?? 80}
-                      onChange={(e) => updateChatLayout('avatarSize', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                    />
+                    {renderNumberInput(config.chatLayout?.avatarSize ?? 80, (value) => updateChatLayout('avatarSize', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.applyAvatarBorderColor')}</span>
@@ -727,13 +735,7 @@ export function SettingsPanel({
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.speakerNameSize')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.speakerNameSize ?? 22}
-                      onChange={(e) => updateChatLayout('speakerNameSize', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                    />
+                    {renderNumberInput(config.chatLayout?.speakerNameSize ?? 22, (value) => updateChatLayout('speakerNameSize', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                 </div>
               </div>
@@ -745,13 +747,7 @@ export function SettingsPanel({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.timestampSize')}</span>
-                    <input
-                      type="number"
-                      value={config.chatLayout?.timestampSize ?? 16}
-                      onChange={(e) => updateChatLayout('timestampSize', parseInt(e.target.value))}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
-                    />
+                    {renderNumberInput(config.chatLayout?.timestampSize ?? 16, (value) => updateChatLayout('timestampSize', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.timestampColor')}</span>
@@ -1133,13 +1129,7 @@ export function SettingsPanel({
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
-                          <input 
-                            type="number" 
-                            value={speaker.style?.fontSize ?? 30}
-                            onChange={(e) => updateSpeakerStyle(key, 'fontSize', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.fontSize ?? 30, (value) => updateSpeakerStyle(key, 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
@@ -1272,23 +1262,11 @@ export function SettingsPanel({
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderWidth')}</span>
-                          <input 
-                            type="number" min="0" max="10"
-                            value={speaker.style?.borderWidth ?? 0}
-                            onChange={(e) => updateSpeakerStyle(key, 'borderWidth', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.borderWidth ?? 0, (value) => updateSpeakerStyle(key, 'borderWidth', value), { min: 0, max: 10, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderRadius')}</span>
-                          <input 
-                            type="number" min="0" max="64"
-                            value={speaker.style?.borderRadius ?? 28}
-                            onChange={(e) => updateSpeakerStyle(key, 'borderRadius', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.borderRadius ?? 28, (value) => updateSpeakerStyle(key, 'borderRadius', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1 col-span-2">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderOpacity')}</span>
@@ -1314,43 +1292,19 @@ export function SettingsPanel({
                        <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
-                          <input 
-                            type="number" 
-                            value={speaker.style?.paddingX ?? 20}
-                            onChange={(e) => updateSpeakerStyle(key, 'paddingX', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.paddingX ?? 20, (value) => updateSpeakerStyle(key, 'paddingX', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
-                          <input 
-                            type="number" 
-                            value={speaker.style?.paddingY ?? 12}
-                            onChange={(e) => updateSpeakerStyle(key, 'paddingY', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.paddingY ?? 12, (value) => updateSpeakerStyle(key, 'paddingY', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.margin')}</span>
-                          <input 
-                            type="number" 
-                            value={speaker.style?.margin ?? 14}
-                            onChange={(e) => updateSpeakerStyle(key, 'margin', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.margin ?? 14, (value) => updateSpeakerStyle(key, 'margin', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
-                          <input 
-                            type="number" min="0" max="64"
-                            value={speaker.style?.shadowSize ?? 7}
-                            onChange={(e) => updateSpeakerStyle(key, 'shadowSize', parseInt(e.target.value))}
-                            className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          />
+                          {renderNumberInput(speaker.style?.shadowSize ?? 7, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                       </div>
                     </div>
@@ -1389,13 +1343,7 @@ export function SettingsPanel({
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
-                        <input
-                          type="number"
-                          value={annotation.style?.fontSize ?? 24}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'fontSize', parseInt(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.fontSize ?? 24, (value) => updateSpeakerStyle('ANNOTATION', 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
@@ -1440,24 +1388,12 @@ export function SettingsPanel({
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
-                        <input
-                          type="number"
-                          value={annotation.style?.shadowSize ?? 7}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'shadowSize', parseInt(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.shadowSize ?? 7, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
-                      <input
-                        type="number"
-                        value={annotation.style?.maxWidth ?? 720}
-                        onChange={(e) => updateSpeakerStyle('ANNOTATION', 'maxWidth', parseInt(e.target.value))}
-                        className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                        style={inputSurfaceStyle}
-                      />
+                      {renderNumberInput(annotation.style?.maxWidth ?? 720, (value) => updateSpeakerStyle('ANNOTATION', 'maxWidth', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
@@ -1472,48 +1408,25 @@ export function SettingsPanel({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
-                        <input
-                          type="number"
-                          value={annotation.style?.paddingX ?? 18}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'paddingX', parseInt(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.paddingX ?? 18, (value) => updateSpeakerStyle('ANNOTATION', 'paddingX', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
-                        <input
-                          type="number"
-                          value={annotation.style?.paddingY ?? 10}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'paddingY', parseInt(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.paddingY ?? 10, (value) => updateSpeakerStyle('ANNOTATION', 'paddingY', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.roundness')}</span>
+                        {renderNumberInput(annotation.style?.annotationBorderRadius ?? 999, (value) => updateSpeakerStyle('ANNOTATION', 'annotationBorderRadius', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                      </div>
+                      <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.margin')}</span>
-                        <input
-                          type="number"
-                          value={annotation.style?.margin ?? 12}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'margin', parseInt(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.margin ?? 12, (value) => updateSpeakerStyle('ANNOTATION', 'margin', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={annotation.style?.opacity ?? 0.9}
-                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'opacity', parseFloat(e.target.value))}
-                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                          style={inputSurfaceStyle}
-                        />
+                        {renderNumberInput(annotation.style?.opacity ?? 0.9, (value) => updateSpeakerStyle('ANNOTATION', 'opacity', value), { min: 0, max: 1, step: 0.05, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                   </div>

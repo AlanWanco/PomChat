@@ -21,6 +21,7 @@ export interface SharedChatSpeakerStyle {
   margin?: number;
   paddingX?: number;
   paddingY?: number;
+  annotationBorderRadius?: number;
   shadowSize?: number;
   fontFamily?: string;
   fontSize?: number;
@@ -329,7 +330,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
     outerStyle: {
       alignSelf: 'center',
       maxWidth: `${maxWidth}px`,
-      borderRadius: `${(speaker.style?.borderRadius ?? 999) * combinedScale}px`,
+      borderRadius: `${(speaker.style?.annotationBorderRadius ?? speaker.style?.borderRadius ?? 999) * combinedScale}px`,
       backgroundColor: finalBgColor,
       color: textColor,
       boxShadow: formatBubbleShadow(shadowSize),

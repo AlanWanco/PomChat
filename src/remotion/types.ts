@@ -24,6 +24,7 @@ export interface SpeakerStyle {
   margin?: number;
   paddingX?: number;
   paddingY?: number;
+  annotationBorderRadius?: number;
   shadowSize?: number;
   fontFamily?: string;
   fontSize?: number;

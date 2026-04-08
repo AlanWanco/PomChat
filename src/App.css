@@ -1,13 +1,15 @@
 
 
-/* Hide Number Input Arrows */
+input[type="number"] {
+  accent-color: var(--pomchat-number-spin-color, #3b82f6);
+  -moz-appearance: textfield;
+}
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
+  opacity: 0;
   margin: 0;
-}
-input[type="number"] {
-  -moz-appearance: textfield;
 }
 
 .preview-scroll-hidden {
