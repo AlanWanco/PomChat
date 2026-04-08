@@ -58,6 +58,9 @@ export interface PodchatExportInput {
     image?: string;
     blur?: number;
     brightness?: number;
+    fit?: 'cover' | 'contain' | 'fill';
+    position?: 'center' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+    duration?: number;
   };
   chatLayout?: {
     paddingTop?: number;

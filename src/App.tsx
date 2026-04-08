@@ -113,7 +113,9 @@ const DEFAULT_PROJECT_CONFIG = {
   background: {
     image: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1920&q=80',
     blur: 8,
-    brightness: 1
+    brightness: 1,
+    fit: 'cover',
+    position: 'center'
   },
   audioPath: '',
   assPath: '',
@@ -1943,6 +1945,47 @@ const [previewScale, setPreviewScale] = useState(1);
     return `file://${segments.map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment))).join('/')}`;
   };
 
+  const detectVideoMediaInfo = async (src: string) => {
+    return await new Promise<{ hasAudio: boolean; duration: number | null }>((resolve) => {
+      const video = document.createElement('video');
+      let done = false;
+      const finish = (value: boolean) => {
+        if (done) return;
+        done = true;
+        const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null;
+        video.src = '';
+        resolve({ hasAudio: value, duration });
+      };
+
+      const timeout = window.setTimeout(() => finish(false), 2500);
+      video.preload = 'metadata';
+      video.muted = true;
+      video.onloadedmetadata = () => {
+        window.clearTimeout(timeout);
+        const directTrack = Boolean((video as any).mozHasAudio)
+          || ((video as any).audioTracks && (video as any).audioTracks.length > 0)
+          || ((video as any).webkitAudioDecodedByteCount && (video as any).webkitAudioDecodedByteCount > 0);
+
+        if (directTrack) {
+          finish(true);
+          return;
+        }
+
+        try {
+          const stream = (video as any).captureStream?.();
+          finish(Boolean(stream && stream.getAudioTracks().length > 0));
+        } catch (_error) {
+          finish(false);
+        }
+      };
+      video.onerror = () => {
+        window.clearTimeout(timeout);
+        finish(false);
+      };
+      video.src = src;
+    });
+  };
+
   const resolvePath = (path: string | undefined): string | undefined => {
     if (!path) return undefined;
 
@@ -2016,6 +2059,27 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [config.background?.image, config.speakers, cachedRemoteAssets]);
 
   const resolvedAudioPath = webAudioObjectUrl || resolvePath(config.audioPath) || '';
+
+  const getBackgroundObjectPosition = (position?: string) => {
+    switch (position) {
+      case 'top': return 'center top';
+      case 'bottom': return 'center bottom';
+      case 'left': return 'left center';
+      case 'right': return 'right center';
+      case 'top-left': return 'left top';
+      case 'top-right': return 'right top';
+      case 'bottom-left': return 'left bottom';
+      case 'bottom-right': return 'right bottom';
+      default: return 'center center';
+    }
+  };
+
+  const getBackgroundObjectFit = (fit?: string) => {
+    if (fit === 'contain' || fit === 'fill') {
+      return fit;
+    }
+    return 'cover';
+  };
 
   const validateProjectConfig = (parsed: any) => {
     if (!parsed || typeof parsed !== 'object') {
@@ -2175,7 +2239,9 @@ const [previewScale, setPreviewScale] = useState(1);
     const isAss = normalizedPath.endsWith('.ass');
     const isSrt = normalizedPath.endsWith('.srt');
     const isLrc = normalizedPath.endsWith('.lrc');
-    const isAudio = /(\.mp3|\.wav|\.aac|\.m4a|\.flac|\.mp4)$/i.test(normalizedPath);
+    const isVideo = /\.(mp4|webm|mov)$/i.test(normalizedPath);
+    const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(normalizedPath);
+    const isAudio = /(\.mp3|\.wav|\.aac|\.m4a|\.flac|\.ogg|\.opus)$/i.test(normalizedPath);
 
     if (isJson) {
       await loadProjectFromPath(filePath);
@@ -2183,7 +2249,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (!isAss && !isSrt && !isLrc && !isAudio) {
+    if (!isAss && !isSrt && !isLrc && !isAudio && !isImage && !isVideo) {
       showToast(t('app.dropUnsupported'));
       return;
     }
@@ -2192,6 +2258,7 @@ const [previewScale, setPreviewScale] = useState(1);
       // 位于欢迎页时，先询问新建项目，然后注入对应的路径
       const overrides: any = {};
       if (isAudio) overrides.audioPath = filePath;
+      if (isImage || isVideo) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
       
       const result = await window.electron.showSaveDialog({
         title: t('dialog.newProjectTitle'),
@@ -2238,6 +2305,42 @@ const [previewScale, setPreviewScale] = useState(1);
           showToast(t('app.subtitleImported'));
         }
       }
+
+      if (isImage || isVideo) {
+        setConfig((prev: any) => ({
+            ...prev,
+            background: {
+              ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+              image: filePath,
+              duration: isVideo ? prev?.background?.duration : undefined
+            },
+          ui: {
+            ...(prev?.ui || DEFAULT_UI_CONFIG),
+            recentProject: result.filePath
+          }
+        }));
+        showToast(t('app.imageImported'));
+
+        if (isVideo) {
+          const mediaInfo = await detectVideoMediaInfo(toFileUrl(filePath));
+          if (mediaInfo.duration) {
+            setConfig((prev: any) => ({
+              ...prev,
+              background: {
+                ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+                duration: mediaInfo.duration
+              }
+            }));
+          }
+          if (mediaInfo.hasAudio) {
+            const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
+            if (shouldUseVideoAudio) {
+              setConfig((prev: any) => ({ ...prev, audioPath: filePath }));
+              showToast(t('app.audioImported'));
+            }
+          }
+        }
+      }
       return;
     }
 
@@ -2268,7 +2371,40 @@ const [previewScale, setPreviewScale] = useState(1);
       showToast(t('app.audioImported'));
       return;
     }
-  }, [config.speakers, presets, showToast, t]);
+
+    if (isImage || isVideo) {
+      applyTrackedConfigUpdater((prev: any) => ({
+        ...prev,
+        background: {
+          ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+          image: filePath,
+          duration: isVideo ? prev?.background?.duration : undefined
+        }
+      }));
+      showToast(t('app.imageImported'));
+
+      if (isVideo) {
+        const mediaInfo = await detectVideoMediaInfo(toFileUrl(filePath));
+        applyTrackedConfigUpdater((prev: any) => ({
+          ...prev,
+          background: {
+            ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+            image: filePath,
+            duration: mediaInfo.duration ?? prev?.background?.duration
+          }
+        }));
+
+        if (mediaInfo.hasAudio) {
+          const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
+          if (shouldUseVideoAudio) {
+            applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: filePath }));
+            showToast(t('app.audioImported'));
+          }
+        }
+      }
+      return;
+    }
+  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, presets, showToast, t]);
 
 
   const handleSelectImage = async (): Promise<string | null> => {
@@ -2279,7 +2415,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const res = await window.electron.showOpenDialog({
         title: t('dialog.selectImageTitle'),
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+        filters: [{ name: 'Media', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov'] }],
         properties: ['openFile']
       });
       if (!res.canceled && res.filePaths.length > 0) {
@@ -2466,7 +2602,9 @@ const [previewScale, setPreviewScale] = useState(1);
     const isAss = normalizedName.endsWith('.ass');
     const isSrt = normalizedName.endsWith('.srt');
     const isLrc = normalizedName.endsWith('.lrc');
-    const isAudio = /\.(mp3|wav|aac|m4a|flac|mp4|ogg|opus)$/i.test(normalizedName);
+    const isVideo = /\.(mp4|webm|mov)$/i.test(normalizedName);
+    const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(normalizedName);
+    const isAudio = /\.(mp3|wav|aac|m4a|flac|ogg|opus)$/i.test(normalizedName);
 
     if (isJson) {
       try {
@@ -2547,8 +2685,46 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    if (isImage || isVideo) {
+      const mediaObjectUrl = URL.createObjectURL(file);
+      if (!currentProjectPath) {
+        setProjectPath('web-demo');
+        setShowSettings(true);
+      }
+      applyTrackedConfigUpdater((prev: any) => ({
+        ...prev,
+        background: {
+          ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+          image: mediaObjectUrl,
+          duration: isVideo ? prev?.background?.duration : undefined
+        }
+      }));
+      showToast(t('app.imageImported'));
+
+      if (isVideo) {
+        const mediaInfo = await detectVideoMediaInfo(mediaObjectUrl);
+        applyTrackedConfigUpdater((prev: any) => ({
+          ...prev,
+          background: {
+            ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+            image: mediaObjectUrl,
+            duration: mediaInfo.duration ?? prev?.background?.duration
+          }
+        }));
+
+        if (mediaInfo.hasAudio) {
+          const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
+          if (shouldUseVideoAudio) {
+            applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: mediaObjectUrl }));
+            showToast(t('app.audioImported'));
+          }
+        }
+      }
+      return;
+    }
+
     showToast(t('app.dropUnsupported'));
-  }, [config.speakers, showToast, t, validateProjectConfig, webAudioObjectUrl]);
+  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, showToast, t, validateProjectConfig, webAudioObjectUrl]);
 
   const handleSaveProject = useCallback(async (options?: { silent?: boolean }) => {
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
@@ -3220,17 +3396,41 @@ const [previewScale, setPreviewScale] = useState(1);
               {/* Background Image Wrapper */}
               {config.background?.image && (
                 <div className="absolute inset-0 z-10 overflow-hidden">
-                  <img 
-                    src={resolvePath(config.background.image)}
-                    alt="Background"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                    style={{ 
+                  {(() => {
+                    const resolvedBackground = resolvePath(config.background.image) || '';
+                    const isVideoBackground = /\.(mp4|webm|mov)(\?|$)/i.test(resolvedBackground);
+                    const objectFit = getBackgroundObjectFit(config.background?.fit);
+                    const objectPosition = getBackgroundObjectPosition(config.background?.position);
+                    const sharedStyle: React.CSSProperties = {
+                      width: '100%',
+                      height: '100%',
+                      objectFit,
+                      objectPosition,
                       filter: `blur(${config.background.blur || 0}px) brightness(${config.background.brightness ?? 1.0})`,
-                      transform: 'scale(1.05)', // prevent white edges when blurred
-                      transformOrigin: 'center center'
-                    }}
-                  />
+                      transform: objectFit === 'cover' ? 'scale(1.05)' : undefined,
+                      transformOrigin: objectPosition
+                    };
+
+                    return isVideoBackground ? (
+                      <video
+                        src={resolvedBackground}
+                        muted
+                        autoPlay
+                        loop
+                        playsInline
+                        className="w-full h-full"
+                        style={sharedStyle}
+                      />
+                    ) : (
+                      <img
+                        src={resolvedBackground}
+                        alt="Background"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full"
+                        style={sharedStyle}
+                      />
+                    );
+                  })()}
                 </div>
               )}
 

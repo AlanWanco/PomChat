@@ -158,6 +158,7 @@ export function ChatMessageBubble({
   renderAvatar,
   renderBubble
 }: ChatMessageBubbleProps) {
+  const snapPx = (value: number) => Math.round(value);
   const isLeft = (speaker.side ?? 'left') === 'left';
   const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
   const combinedScale = Math.max(MIN_LAYOUT_SCALE, layoutScale) * bubbleScale;
@@ -176,23 +177,23 @@ export function ChatMessageBubble({
   const textColor = speaker.style?.textColor || fallbackText;
   const borderColor = speaker.style?.borderColor || '#ffffff';
   const borderOpacity = speaker.style?.borderOpacity ?? 1;
-  const radius = (speaker.style?.borderRadius ?? 28) * combinedScale;
-  const sharpCornerRadius = Math.max(3, 4 * combinedScale);
+  const radius = snapPx((speaker.style?.borderRadius ?? 28) * combinedScale);
+  const sharpCornerRadius = Math.max(3, snapPx(4 * combinedScale));
   const topLeftRadius = isLeft ? sharpCornerRadius : radius;
   const topRightRadius = isLeft ? radius : sharpCornerRadius;
-  const shadowSize = (speaker.style?.shadowSize ?? 7) * combinedScale;
-  const margin = (speaker.style?.margin ?? 14) * combinedScale;
-  const paddingX = (speaker.style?.paddingX ?? 20) * combinedScale;
-  const paddingY = (speaker.style?.paddingY ?? 12) * combinedScale;
-  const bubbleGap = 16 * combinedScale;
-  const metaGap = 8 * combinedScale;
-  const avatarPx = (chatLayout?.avatarSize ?? 80) * combinedScale;
-  const avatarBorderWidth = Math.max(2, 4 * combinedScale);
-  const speakerNameSize = (chatLayout?.speakerNameSize ?? 22) * combinedScale;
-  const timestampSize = (chatLayout?.timestampSize ?? 16) * combinedScale;
+  const shadowSize = snapPx((speaker.style?.shadowSize ?? 7) * combinedScale);
+  const margin = snapPx((speaker.style?.margin ?? 14) * combinedScale);
+  const paddingX = snapPx((speaker.style?.paddingX ?? 20) * combinedScale);
+  const paddingY = snapPx((speaker.style?.paddingY ?? 12) * combinedScale);
+  const bubbleGap = snapPx(16 * combinedScale);
+  const metaGap = snapPx(8 * combinedScale);
+  const avatarPx = snapPx((chatLayout?.avatarSize ?? 80) * combinedScale);
+  const avatarBorderWidth = Math.max(2, snapPx(4 * combinedScale));
+  const speakerNameSize = snapPx((chatLayout?.speakerNameSize ?? 22) * combinedScale);
+  const timestampSize = snapPx((chatLayout?.timestampSize ?? 16) * combinedScale);
   const timestampFontFamily = chatLayout?.timestampFontFamily || 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
   const timestampColor = chatLayout?.timestampColor || 'rgba(255,255,255,0.65)';
-  const fontSize = (speaker.style?.fontSize ?? 30) * combinedScale;
+  const fontSize = snapPx((speaker.style?.fontSize ?? 30) * combinedScale);
   const bubbleMaxWidth = canvasWidth * 0.75;
   const opacity = speaker.style?.opacity ?? 0.9;
   const hexBg = bgColor.startsWith('#') ? bgColor : '#ffffff';

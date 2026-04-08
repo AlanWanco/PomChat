@@ -847,6 +847,40 @@ export function SettingsPanel({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
+                  <span className="text-xs opacity-70">{t('project.backgroundFit')}</span>
+                  <select
+                    value={config.background?.fit || 'cover'}
+                    onChange={(e) => updateBackground('fit', e.target.value)}
+                    className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
+                    style={inputSurfaceStyle}
+                  >
+                    <option value="cover">{t('project.fitCover')}</option>
+                    <option value="contain">{t('project.fitContain')}</option>
+                    <option value="fill">{t('project.fitFill')}</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-xs opacity-70">{t('project.backgroundPosition')}</span>
+                  <select
+                    value={config.background?.position || 'center'}
+                    onChange={(e) => updateBackground('position', e.target.value)}
+                    className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
+                    style={inputSurfaceStyle}
+                  >
+                    <option value="center">{t('project.posCenter')}</option>
+                    <option value="top">{t('project.posTop')}</option>
+                    <option value="bottom">{t('project.posBottom')}</option>
+                    <option value="left">{t('project.posLeft')}</option>
+                    <option value="right">{t('project.posRight')}</option>
+                    <option value="top-left">{t('project.posTopLeft')}</option>
+                    <option value="top-right">{t('project.posTopRight')}</option>
+                    <option value="bottom-left">{t('project.posBottomLeft')}</option>
+                    <option value="bottom-right">{t('project.posBottomRight')}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-xs opacity-70 inline-flex items-center gap-1">
                       {t('project.blur')}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import { Gif } from '@remotion/gif';
 import type { PodchatExportInput } from './types';
 import { ChatAnnotationBubble, ChatMessageBubble } from '../components/chat/SharedChatBubbles';
@@ -17,7 +17,7 @@ const parseSizePx = (value: string | number | undefined, fallback: number) => {
 
 export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const frame = useCurrentFrame();
-  const { fps, width } = useVideoConfig();
+  const { fps, width, durationInFrames } = useVideoConfig();
   const currentTime = props.exportRange.start + frame / fps;
   const sortedContent = [...props.content].sort((a, b) => a.start - b.start || a.end - b.end);
   const layoutScale = width / (props.dimensions.width || width);
@@ -26,6 +26,20 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const horizontalPadding = (props.chatLayout?.paddingLeft ?? props.chatLayout?.paddingX ?? 48) * effectiveScale;
   const topPadding = (props.chatLayout?.paddingTop ?? 48) * effectiveScale;
   const bottomPadding = (props.chatLayout?.paddingBottom ?? 80) * effectiveScale;
+  const backgroundObjectFit = props.background?.fit === 'contain' || props.background?.fit === 'fill' ? props.background.fit : 'cover';
+  const backgroundObjectPosition = (() => {
+    switch (props.background?.position) {
+      case 'top': return 'center top';
+      case 'bottom': return 'center bottom';
+      case 'left': return 'left center';
+      case 'right': return 'right center';
+      case 'top-left': return 'left top';
+      case 'top-right': return 'right top';
+      case 'bottom-left': return 'left bottom';
+      case 'bottom-right': return 'right bottom';
+      default: return 'center center';
+    }
+  })();
 
   const appearedMessages = sortedContent.filter((item) => {
     const speaker = props.speakers[item.speaker];
@@ -49,16 +63,52 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     <AbsoluteFill style={{ backgroundColor: '#111111', overflow: 'hidden', fontFamily: 'system-ui' }}>
       {props.background?.image ? (
         <AbsoluteFill>
-          <Img
-            src={props.background.image}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
-              transform: 'scale(1.05)'
-            }}
-          />
+          {/\.gif(\?|$)/i.test(props.background.image) ? (
+            <Gif
+              src={props.background.image}
+              width={props.dimensions.width || width}
+              height={props.dimensions.height || width}
+              fit={backgroundObjectFit as 'fill' | 'contain' | 'cover'}
+              delayRenderTimeoutInMilliseconds={120000}
+              style={{
+                width: '100%',
+                height: '100%',
+                filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
+                transform: backgroundObjectFit === 'cover' ? 'scale(1.05)' : undefined,
+                transformOrigin: backgroundObjectPosition,
+                display: 'block'
+              }}
+            />
+          ) : /\.(mp4|webm|mov)(\?|$)/i.test(props.background.image) ? (
+            <Loop durationInFrames={Math.max(1, Math.min(durationInFrames, Math.round((props.background?.duration || (props.exportRange.end - props.exportRange.start) || 1) * fps)))}>
+              <OffthreadVideo
+                src={props.background.image}
+                muted
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: backgroundObjectFit,
+                  objectPosition: backgroundObjectPosition,
+                  filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
+                  transform: backgroundObjectFit === 'cover' ? 'scale(1.05)' : undefined,
+                  transformOrigin: backgroundObjectPosition
+                }}
+              />
+            </Loop>
+          ) : (
+            <Img
+              src={props.background.image}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: backgroundObjectFit,
+                objectPosition: backgroundObjectPosition,
+                filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
+                transform: backgroundObjectFit === 'cover' ? 'scale(1.05)' : undefined,
+                transformOrigin: backgroundObjectPosition
+              }}
+            />
+          )}
         </AbsoluteFill>
       ) : null}
       <AbsoluteFill style={{ backgroundColor: props.background?.image ? 'rgba(0,0,0,0.06)' : '#111111' }} />
