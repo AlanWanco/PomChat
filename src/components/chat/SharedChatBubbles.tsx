@@ -202,7 +202,7 @@ export function ChatMessageBubble({
   const timestampFontFamily = chatLayout?.timestampFontFamily || 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
   const timestampColor = chatLayout?.timestampColor || 'rgba(255,255,255,0.65)';
   const fontSize = snapPx((speaker.style?.fontSize ?? 30) * combinedScale);
-  const bubbleMaxWidthPercent = Math.max(25, Math.min(95, chatLayout?.bubbleMaxWidthPercent ?? 70));
+  const bubbleMaxWidthPercent = Math.max(15, Math.min(95, chatLayout?.bubbleMaxWidthPercent ?? 70));
   const bubbleMaxWidthPx = canvasWidth * layoutScaleSafe * (bubbleMaxWidthPercent / 100);
   const opacity = speaker.style?.opacity ?? 0.9;
   const hexBg = bgColor.startsWith('#') ? bgColor : '#ffffff';

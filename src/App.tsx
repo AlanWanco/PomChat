@@ -68,7 +68,7 @@ const DEFAULT_BUBBLE_STYLE = {
   margin: 14,
   paddingX: 20,
   paddingY: 12,
-  shadowSize: 7,
+  shadowSize: 2,
   fontFamily: 'system-ui',
   fontSize: 30,
   fontWeight: 'normal'
@@ -76,7 +76,7 @@ const DEFAULT_BUBBLE_STYLE = {
 
 const DEFAULT_CHAT_LAYOUT = {
   paddingTop: 0,
-  paddingBottom: 80,
+  paddingBottom: 40,
   paddingX: 48,
   paddingLeft: 48,
   paddingRight: 48,

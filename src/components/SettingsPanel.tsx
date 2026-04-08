@@ -102,6 +102,7 @@ export function SettingsPanel({
     return path.startsWith('/') ? path : `/${path}`;
   };
   const [presetPromptKey, setPresetPromptKey] = useState<string | null>(null);
+  const [presetPromptMode, setPresetPromptMode] = useState<'save' | 'rename'>('save');
   const [presetNameInput, setPresetNameInput] = useState("");
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const speakerKeys = Object.keys(config.speakers).filter((key) => config.speakers[key]?.type !== 'annotation');
@@ -668,7 +669,7 @@ export function SettingsPanel({
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.bottomPosition')}</span>
-                    {renderNumberInput(config.chatLayout?.paddingBottom ?? 80, (value) => updateChatLayout('paddingBottom', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                    {renderNumberInput(config.chatLayout?.paddingBottom ?? 40, (value) => updateChatLayout('paddingBottom', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.paddingLeft')}</span>
@@ -725,7 +726,7 @@ export function SettingsPanel({
                   </div>
                   <input
                     type="range"
-                    min="25"
+                    min="15"
                     max="95"
                     step="1"
                     value={config.chatLayout?.bubbleMaxWidthPercent ?? 70}
@@ -1107,7 +1108,9 @@ export function SettingsPanel({
                             </button>
                           )}
                         </div>
-                        <button 
+                      </div>
+                      <div className="mt-1 flex gap-1.5 justify-end">
+                        <button
                           onClick={() => {
                             if (speaker.preset) {
                               const existing = { ...presets };
@@ -1118,13 +1121,40 @@ export function SettingsPanel({
                             }
 
                             setPresetPromptKey(key);
+                            setPresetPromptMode('save');
                             setPresetNameInput(`${key} preset`);
                           }}
-                          className="text-xs px-2 py-1 rounded transition-colors shrink-0"
+                          className="text-xs px-2 py-1 rounded transition-colors"
                           style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}
                         >
                           {speaker.preset ? t('speakers.updatePreset') : t('speakers.savePreset')}
                         </button>
+                        {speaker.preset && (
+                          <button
+                            onClick={() => {
+                              setPresetPromptKey(key);
+                              setPresetPromptMode('save');
+                              setPresetNameInput(`${speaker.preset} copy`);
+                            }}
+                            className="text-xs px-2 py-1 rounded transition-colors"
+                            style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}
+                          >
+                            {t('speakers.saveAsPreset')}
+                          </button>
+                        )}
+                        {speaker.preset && (
+                          <button
+                            onClick={() => {
+                              setPresetPromptKey(key);
+                              setPresetPromptMode('rename');
+                              setPresetNameInput(speaker.preset || '');
+                            }}
+                            className="text-xs px-2 py-1 rounded transition-colors"
+                            style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}
+                          >
+                            {t('speakers.renamePreset')}
+                          </button>
+                        )}
                       </div>
                       {presetPromptKey === key && (
                         <div className="mt-2 p-2 rounded border flex gap-2 items-center" style={{ backgroundColor: uiTheme.panelBgSubtle, borderColor: uiTheme.border }}>
@@ -1140,11 +1170,33 @@ export function SettingsPanel({
                           <button 
                             onClick={() => {
                               if (!presetNameInput.trim()) return;
-                              const existing = { ...presets };
-                              existing[presetNameInput.trim()] = buildPresetPayload(speaker);
-                              onPresetsChange(existing);
-                              showToast(`预设 "${presetNameInput.trim()}" 已保存`);
+                              if (presetPromptMode === 'rename' && speaker.preset) {
+                                const oldName = speaker.preset;
+                                const newName = presetNameInput.trim();
+                                const existing = { ...presets };
+                                const payload = existing[oldName] || buildPresetPayload(speaker);
+                                if (oldName !== newName) {
+                                  delete existing[oldName];
+                                }
+                                existing[newName] = payload;
+                                onPresetsChange(existing);
+
+                                const nextSpeakers = Object.fromEntries(
+                                  Object.entries(config.speakers || {}).map(([sid, sp]: [string, any]) => [
+                                    sid,
+                                    sp?.preset === oldName ? { ...sp, preset: newName } : sp,
+                                  ])
+                                );
+                                updateConfig('speakers', nextSpeakers);
+                                showToast(`预设 "${oldName}" 已重命名为 "${newName}"`);
+                              } else {
+                                const existing = { ...presets };
+                                existing[presetNameInput.trim()] = buildPresetPayload(speaker);
+                                onPresetsChange(existing);
+                                showToast(`预设 "${presetNameInput.trim()}" 已保存`);
+                              }
                               setPresetPromptKey(null);
+                              setPresetPromptMode('save');
                             }}
                             className="h-7 w-7 rounded text-white inline-flex items-center justify-center"
                             style={{ backgroundColor: secondaryThemeColor }}
@@ -1153,7 +1205,10 @@ export function SettingsPanel({
                             <Check size={14} />
                           </button>
                           <button 
-                            onClick={() => setPresetPromptKey(null)}
+                            onClick={() => {
+                              setPresetPromptKey(null);
+                              setPresetPromptMode('save');
+                            }}
                             className="h-7 w-7 rounded inline-flex items-center justify-center"
                             style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}
                             title={t('common.cancel')}
@@ -1355,7 +1410,7 @@ export function SettingsPanel({
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
-                          {renderNumberInput(speaker.style?.shadowSize ?? 7, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                          {renderNumberInput(speaker.style?.shadowSize ?? 2, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                       </div>
                     </div>
@@ -1439,7 +1494,7 @@ export function SettingsPanel({
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
-                        {renderNumberInput(annotation.style?.shadowSize ?? 7, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                        {renderNumberInput(annotation.style?.shadowSize ?? 2, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="space-y-1">
