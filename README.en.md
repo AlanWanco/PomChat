@@ -39,6 +39,8 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Detect ASS Name/Style on import, with optional style-to-bubble mapping (outline color -> bubble color, shadow/back color -> border color, primary color -> text color, Outline -> border width), including font name import/preview and select-all/select-none controls
 - Edit subtitle text, start and end time, and speaker assignment; subtitle panel includes a lightweight compact mode (read-only with auto-follow for large subtitle sets)
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
+- Support image / GIF / video as background media, with fit modes (Cover/Contain/Fill) and alignment controls
+- When dropping a background video, detect embedded audio and optionally reuse it as the project audio track
 - Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
 - Mobile web layout is optimized with adaptive preview scaling, a collapsible/resizable bottom panel, and compact playback controls
 - Switch freely between light and dark mode, with up to 13 theme and secondary color combinations
@@ -217,6 +219,16 @@ On Windows, the workflow produces both:
 - Some exported videos may show slight 1-2 pixel jitter on certain elements, likely caused by sub-pixel layout values and per-frame rounding during rendering
 
 ## Release Notes
+
+### v0.1.6-beta2
+
+- Added media background support: image / GIF / video backgrounds now work with aligned preview/export behavior
+- Added background fit and alignment controls: Cover / Contain / Fill plus 9-position alignment
+- Added drag-and-drop background video audio detection with one-click option to adopt it as project audio
+- Export now aligns background video playback to export start timestamps and loops consistently
+- Added global bubble max-width control (default 70%, minimum 25%)
+- Fixed export range start being reset when audio is reloaded
+- Reduced residual bubble jitter and improved export error-copy ergonomics
 
 ### v0.1.5
 
