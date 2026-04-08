@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('electron', {
   exportVideo: (config: any) => ipcRenderer.invoke('export-video', config),
   getExportPaths: (options: any) => ipcRenderer.invoke('get-export-paths', options),
   showOpenDialog: (options: any) => ipcRenderer.invoke('show-open-dialog', options),
+  getRenderCacheInfo: () => ipcRenderer.invoke('get-render-cache-info'),
+  clearRenderCache: (type: 'remote-assets' | 'remotion-temp') => ipcRenderer.invoke('clear-render-cache', type),
   cacheRemoteAsset: (assetUrl: string) => ipcRenderer.invoke('cache-remote-asset', assetUrl),
   showSaveDialog: (options: any) => ipcRenderer.invoke('show-save-dialog', options),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),

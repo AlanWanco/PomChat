@@ -39,6 +39,53 @@ function getRemoteAssetCacheDir() {
   return dir;
 }
 
+function getPomchatRemotionTempEntries() {
+  const tempDir = os.tmpdir();
+  if (!fs.existsSync(tempDir)) {
+    return [];
+  }
+
+  const SAFE_PREFIXES = ['pomchat-remotion-', 'remotion-'];
+  return fs.readdirSync(tempDir)
+    .filter((name) => SAFE_PREFIXES.some((prefix) => name.startsWith(prefix)))
+    .map((name) => path.join(tempDir, name));
+}
+
+function getPathSizeStats(targetPath: string): { bytes: number; files: number } {
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return { bytes: 0, files: 0 };
+  }
+
+  const stat = fs.statSync(targetPath);
+  if (stat.isFile()) {
+    return { bytes: stat.size, files: 1 };
+  }
+
+  if (!stat.isDirectory()) {
+    return { bytes: 0, files: 0 };
+  }
+
+  let bytes = 0;
+  let files = 0;
+  const stack = [targetPath];
+
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    for (const name of fs.readdirSync(current)) {
+      const child = path.join(current, name);
+      const childStat = fs.statSync(child);
+      if (childStat.isDirectory()) {
+        stack.push(child);
+      } else if (childStat.isFile()) {
+        bytes += childStat.size;
+        files += 1;
+      }
+    }
+  }
+
+  return { bytes, files };
+}
+
 async function applyProxySettings(proxy: unknown) {
   const proxyRules = typeof proxy === 'string' ? proxy.trim() : '';
 
@@ -297,6 +344,56 @@ ipcMain.handle('get-export-paths', async (_event, options) => {
     suggestedPath: projectDir,
     suggestedFilename: `${fileStem}.mp4`
   };
+});
+
+ipcMain.handle('get-render-cache-info', async () => {
+  const remoteAssetsDir = getRemoteAssetCacheDir();
+  const remoteStats = getPathSizeStats(remoteAssetsDir);
+
+  const remotionEntries = getPomchatRemotionTempEntries();
+  const remotionStats = remotionEntries.reduce((acc, entryPath) => {
+    const stat = getPathSizeStats(entryPath);
+    return {
+      bytes: acc.bytes + stat.bytes,
+      files: acc.files + stat.files,
+    };
+  }, { bytes: 0, files: 0 });
+
+  return {
+    remoteAssets: {
+      path: remoteAssetsDir,
+      files: remoteStats.files,
+      bytes: remoteStats.bytes,
+    },
+    remotionTemp: {
+      path: os.tmpdir(),
+      entries: remotionEntries,
+      files: remotionStats.files,
+      bytes: remotionStats.bytes,
+    }
+  };
+});
+
+ipcMain.handle('clear-render-cache', async (_event, type: 'remote-assets' | 'remotion-temp') => {
+  if (type === 'remote-assets') {
+    const dir = getRemoteAssetCacheDir();
+    if (fs.existsSync(dir)) {
+      for (const name of fs.readdirSync(dir)) {
+        fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+      }
+    }
+    return { cleared: true, type };
+  }
+
+  if (type === 'remotion-temp') {
+    const targets = getPomchatRemotionTempEntries();
+    targets.forEach((entryPath) => {
+      fs.rmSync(entryPath, { recursive: true, force: true });
+    });
+    return { cleared: true, type, targets };
+  }
+
+  return { cleared: false, type };
 });
 
 ipcMain.handle('show-open-dialog', async (_event, options) => {

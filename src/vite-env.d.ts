@@ -9,6 +9,11 @@ interface Window {
     exportVideo: (config: any) => Promise<{ success: boolean; error?: string; message?: string; placeholder?: boolean; outputPath?: string; manifestPath?: string | null; elapsedMs?: number; realTimeFactor?: number }>;
     getExportPaths: (options: any) => Promise<{ runtimeDir: string; quickSavePath: string; suggestedPath: string }>;
     showOpenDialog: (options: any) => Promise<any>;
+    getRenderCacheInfo: () => Promise<{
+      remoteAssets: { path: string; files: number; bytes: number };
+      remotionTemp: { path: string; entries: string[]; files: number; bytes: number };
+    }>;
+    clearRenderCache: (type: 'remote-assets' | 'remotion-temp') => Promise<{ cleared: boolean; type: string; targets?: string[] }>;
     cacheRemoteAsset: (assetUrl: string) => Promise<string | null>;
     showSaveDialog: (options: any) => Promise<any>;
     showItemInFolder: (filePath: string) => Promise<boolean>;

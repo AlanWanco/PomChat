@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, FolderOpen, Sparkles, Timer, X } from 'lucide-react';
+import { Download, FolderOpen, Sparkles, Timer, Trash2, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { Tooltip } from './ui/Tooltip';
@@ -27,6 +27,10 @@ interface ExportModalProps {
   exportSucceeded: boolean;
   progress: ExportProgressState | null;
   statusMessage: string | null;
+  renderCacheInfo?: {
+    remoteAssets: { path: string; files: number; bytes: number };
+    remotionTemp: { path: string; entries: string[]; files: number; bytes: number };
+  } | null;
    exportQuality?: 'fast' | 'balance' | 'high';
    filenameTemplate?: 'default' | 'timestamp' | 'unix' | 'custom';
    customFilename?: string;
@@ -37,6 +41,7 @@ interface ExportModalProps {
   onRangeChange: (next: { start?: number; end?: number }) => void;
   onStartExport: () => void | Promise<void>;
   onRevealOutput: () => void | Promise<void>;
+  onClearRenderCache?: (type: 'remote-assets' | 'remotion-temp') => void | Promise<void>;
   onQualityChange?: (quality: 'fast' | 'balance' | 'high') => void;
   onFilenameTemplateChange?: (template: 'default' | 'timestamp' | 'unix' | 'custom') => void;
   onCustomFilenameChange?: (filename: string) => void;
@@ -94,6 +99,18 @@ const formatDuration = (ms: number | null) => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+};
+
 export function ExportModal({
   isOpen,
   isDarkMode,
@@ -110,6 +127,7 @@ export function ExportModal({
   exportSucceeded,
   progress,
   statusMessage,
+  renderCacheInfo,
   exportQuality = 'balance',
    filenameTemplate = 'default',
    customFilename = '',
@@ -120,6 +138,7 @@ export function ExportModal({
   onRangeChange,
   onStartExport,
   onRevealOutput,
+  onClearRenderCache,
   onQualityChange,
   onFilenameTemplateChange,
   onCustomFilenameChange
@@ -176,9 +195,9 @@ export function ExportModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/55 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 backdrop-blur-sm px-4 py-4 overflow-y-auto">
       <div
-        className="w-full max-w-3xl overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm"
+        className="w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
         style={{
           background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`,
           borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26),
@@ -207,9 +226,9 @@ export function ExportModal({
           </button>
         </div>
 
-        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.2fr_0.8fr] overflow-y-auto">
           <div className="space-y-5">
-            <section className="rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
+              <section className="rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium">{t('export.path')}</div>
@@ -336,7 +355,7 @@ export function ExportModal({
                  </div>
                </div>
 
-               <div className="flex gap-2">
+                <div className="flex gap-2">
                  {(['fast', 'balance', 'high'] as const).map((quality) => (
                    <button
                      key={quality}
@@ -353,9 +372,48 @@ export function ExportModal({
                      {t(`export.quality${quality.charAt(0).toUpperCase()}${quality.slice(1)}`)}
                    </button>
                  ))}
-               </div>
-             </section>
-           </div>
+                </div>
+              </section>
+
+              {window.electron && renderCacheInfo ? (
+                <section className="rounded-2xl border p-4" style={{ borderColor: rgba(secondaryThemeColor, 0.2), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04) }}>
+                  <div className="mb-2 text-sm font-medium" style={{ color: uiTheme.text }}>{t('export.cacheSectionTitle')}</div>
+                  <div className="space-y-2 text-xs" style={{ color: uiTheme.textMuted }}>
+                    <div className="rounded-xl border p-2" style={{ borderColor: uiTheme.border }}>
+                      <div className="font-medium" style={{ color: uiTheme.text }}>{t('export.cacheRemoteAssets')}</div>
+                      <div className="font-mono break-all mt-1">{renderCacheInfo.remoteAssets.path}</div>
+                      <div className="mt-1">{t('export.cacheStats', { files: renderCacheInfo.remoteAssets.files, size: formatBytes(renderCacheInfo.remoteAssets.bytes) })}</div>
+                      <button
+                        type="button"
+                        disabled={isExporting}
+                        onClick={() => void onClearRenderCache?.('remote-assets')}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border disabled:opacity-50"
+                        style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+                      >
+                        <Trash2 size={12} />
+                        {t('export.clearRemoteAssetsCache')}
+                      </button>
+                    </div>
+
+                    <div className="rounded-xl border p-2" style={{ borderColor: uiTheme.border }}>
+                      <div className="font-medium" style={{ color: uiTheme.text }}>{t('export.cacheRemotionTemp')}</div>
+                      <div className="font-mono break-all mt-1">{renderCacheInfo.remotionTemp.path}</div>
+                      <div className="mt-1">{t('export.cacheStats', { files: renderCacheInfo.remotionTemp.files, size: formatBytes(renderCacheInfo.remotionTemp.bytes) })}</div>
+                      <button
+                        type="button"
+                        disabled={isExporting}
+                        onClick={() => void onClearRenderCache?.('remotion-temp')}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border disabled:opacity-50"
+                        style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+                      >
+                        <Trash2 size={12} />
+                        {t('export.clearRemotionTempCache')}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+            </div>
 
            <section className="rounded-[24px] border p-4 flex flex-col" style={{ borderColor: uiTheme.border, background: `linear-gradient(180deg, ${rgba(secondaryThemeColor, isDarkMode ? 0.14 : 0.08)} 0%, ${uiTheme.panelBgSubtle} 100%)` }}>
              {/* Filename Template Section - at the top */}
@@ -463,9 +521,9 @@ export function ExportModal({
                    </div>
                  </div>
 
-                <div className="mt-3 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(themeColor, 0.16), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04), color: uiTheme.textMuted }}>
-                  {t('export.previewDiffNotice')}
-                </div>
+                 <div className="mt-3 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(themeColor, 0.16), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04), color: uiTheme.textMuted }}>
+                   {t('export.previewDiffNotice')}
+                 </div>
 
                 {exportSucceeded && !isExporting && outputPath ? (
                  <button

@@ -41,6 +41,11 @@ type SpeakerReplaceDialogState = {
   affectedCount: number;
 };
 
+type RenderCacheInfo = {
+  remoteAssets: { path: string; files: number; bytes: number };
+  remotionTemp: { path: string; entries: string[]; files: number; bytes: number };
+};
+
 // Web-only local storage key
 const STORAGE_KEY = 'pomchat_config';
 
@@ -467,6 +472,7 @@ function App() {
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
   const [lastExportOutputPath, setLastExportOutputPath] = useState('');
   const [lastExportSucceeded, setLastExportSucceeded] = useState(false);
+  const [renderCacheInfo, setRenderCacheInfo] = useState<RenderCacheInfo | null>(null);
   const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
   const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
   const [customFilename, setCustomFilename] = useState('');
@@ -1736,9 +1742,32 @@ const [previewScale, setPreviewScale] = useState(1);
     if (paths?.suggestedPath && !exportOutputPath) {
       setExportOutputPath(paths.suggestedPath);
     }
+    if (window.electron) {
+      try {
+        const info = await window.electron.getRenderCacheInfo();
+        setRenderCacheInfo(info);
+      } catch (error) {
+        console.error('Failed to load render cache info:', error);
+      }
+    }
     setExportStatusMessage(t('export.statusIdle'));
     setShowExportModal(true);
   }, [exportOutputPath, getDefaultExportRange, loadExportPaths, t]);
+
+  const handleClearRenderCache = useCallback(async (type: 'remote-assets' | 'remotion-temp') => {
+    if (!window.electron || isExporting) {
+      return;
+    }
+    try {
+      await window.electron.clearRenderCache(type);
+      const info = await window.electron.getRenderCacheInfo();
+      setRenderCacheInfo(info);
+      setExportStatusMessage(type === 'remote-assets' ? t('export.cacheClearedRemote') : t('export.cacheClearedTemp'));
+    } catch (error) {
+      console.error('Failed to clear render cache:', error);
+      setExportStatusMessage(t('export.cacheClearFailed'));
+    }
+  }, [isExporting, t]);
 
   const handleChooseExportPath = useCallback(async () => {
     if (!window.electron) return;
@@ -3500,9 +3529,10 @@ const [previewScale, setPreviewScale] = useState(1);
          exportSucceeded={lastExportSucceeded}
          progress={exportProgress}
          statusMessage={exportStatusMessage}
-          exportQuality={exportQuality}
-          filenameTemplate={filenameTemplate}
-          customFilename={customFilename}
+         renderCacheInfo={renderCacheInfo}
+           exportQuality={exportQuality}
+           filenameTemplate={filenameTemplate}
+           customFilename={customFilename}
           onClose={() => {
            if (!isExporting) {
              setShowExportModal(false);
@@ -3517,7 +3547,8 @@ const [previewScale, setPreviewScale] = useState(1);
          onCustomFilenameChange={handleCustomFilenameChange}
          onStartExport={handleStartExport}
          onRevealOutput={handleRevealExport}
-       />
+         onClearRenderCache={handleClearRenderCache}
+        />
 
       {speakerReplaceDialog && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
