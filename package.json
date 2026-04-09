@@ -50,7 +50,12 @@
   "build": {
     "appId": "com.alanwanco.pomchat",
     "productName": "PomChat",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "electron/remotion-worker.cjs",
+      "src/remotion/**",
+      "src/components/chat/**"
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"

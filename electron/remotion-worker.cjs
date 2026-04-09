@@ -340,9 +340,11 @@ const getBundle = async (bundleFn) => {
   if (!cachedBundle) {
     const root = process.env.APP_ROOT || process.cwd();
     const candidates = [
-      path.join(root, 'src/remotion/Root.tsx'),
-      path.join(root, 'app.asar.unpacked', 'src/remotion/Root.tsx'),
+      // asar unpacked paths (priority when asar: true)
       process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'src/remotion/Root.tsx') : null,
+      path.join(root, 'app.asar.unpacked', 'src/remotion/Root.tsx'),
+      // direct paths (dev mode or asar: false)
+      path.join(root, 'src/remotion/Root.tsx'),
       process.resourcesPath ? path.join(process.resourcesPath, 'app', 'src/remotion/Root.tsx') : null,
     ].filter(Boolean);
 

@@ -286,11 +286,19 @@ ipcMain.handle('export-video', async (_event, config) => {
       startedAt: new Date(exportStartedAt).toISOString(),
     };
 
-    const workerPath = path.join(process.env.APP_ROOT || process.cwd(), 'electron', 'remotion-worker.cjs');
+    const appRoot = process.env.APP_ROOT || process.cwd();
+    const workerCandidates = [
+      // asar unpacked path (when asar: true)
+      process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs') : null,
+      path.join(appRoot, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs'),
+      // direct path (when asar: false or dev mode)
+      path.join(appRoot, 'electron', 'remotion-worker.cjs'),
+    ].filter(Boolean) as string[];
+    const workerPath = workerCandidates.find((p) => fs.existsSync(p)) || workerCandidates[workerCandidates.length - 1];
     if (!fs.existsSync(workerPath)) {
       return {
         success: false,
-        error: `Export worker not found: ${workerPath}`,
+        error: `Export worker not found. Tried: ${workerCandidates.join(', ')}`,
       };
     }
     const result = await new Promise<any>((resolve, reject) => {
