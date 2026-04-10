@@ -2434,6 +2434,29 @@ const [previewScale, setPreviewScale] = useState(1);
     return `/@fs${segments.map((segment, index) => (index === 0 ? segment : `/${encodeURIComponent(segment)}`)).join('')}`;
   };
 
+  const resolveLocalPreviewPath = (path: string | undefined): string | undefined => {
+    if (!path) return path;
+    const trimmed = path.trim();
+    if (!trimmed) return undefined;
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+    if (trimmed.startsWith('file://')) {
+      try {
+        const url = new URL(trimmed);
+        const host = url.host ? `//${url.host}` : '';
+        const pathname = decodeURIComponent(url.pathname);
+        const normalizedPath = /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+        return toFsServePath(`${host}${normalizedPath}`);
+      } catch {
+        return toFsServePath(trimmed.replace(/^file:\/\/?/, '/'));
+      }
+    }
+    if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return toFsServePath(trimmed);
+    if (trimmed.startsWith('\\\\')) return toFsServePath(trimmed);
+    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) return toFsServePath(trimmed);
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  };
+
   const detectVideoMediaInfo = useCallback(async (src: string) => {
     return await new Promise<{ hasAudio: boolean; duration: number | null }>((resolve) => {
       const video = document.createElement('video');
@@ -2482,40 +2505,10 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!trimmed) return undefined;
 
     if (cachedRemoteAssets[trimmed]) {
-      return toFsServePath(cachedRemoteAssets[trimmed]);
+      return resolveLocalPreviewPath(cachedRemoteAssets[trimmed]);
     }
 
-    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-      return trimmed;
-    }
-
-    if (trimmed.startsWith('file://')) {
-      try {
-        const url = new URL(trimmed);
-        const host = url.host ? `//${url.host}` : '';
-        return `/@fs${host}${url.pathname}`;
-      } catch {
-        return toFsServePath(trimmed.replace(/^file:\/\/?/, '/'));
-      }
-    }
-
-    if (/^www\./i.test(trimmed)) {
-      return `https://${trimmed}`;
-    }
-
-    if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
-      return toFsServePath(trimmed);
-    }
-
-    if (trimmed.startsWith('\\\\')) {
-      return toFsServePath(trimmed);
-    }
-
-    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) {
-      return toFsServePath(trimmed);
-    }
-
-    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return resolveLocalPreviewPath(trimmed);
   };
 
   useEffect(() => {
