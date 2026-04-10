@@ -55,7 +55,11 @@
       "electron/remotion-worker.cjs",
       "src/remotion/**",
       "src/components/chat/**",
-      "node_modules/**"
+      "node_modules/esbuild/bin/esbuild",
+      "node_modules/@esbuild/*/esbuild.exe",
+      "node_modules/@esbuild/*/bin/esbuild",
+      "node_modules/@rspack/binding-*/**/*.node",
+      "node_modules/@rspack/binding-*/**/*.exe"
     ],
     "directories": {
       "buildResources": "build",
