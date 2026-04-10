@@ -21,6 +21,7 @@ const importPackagedModule = async (packageName) => {
   const packageCandidates = candidateRoots.flatMap((root) => [
     path.join(root, 'node_modules', packageName, 'dist', 'esm', 'index.mjs'),
     path.join(root, 'node_modules', packageName, 'dist', 'esm', 'index.js'),
+    path.join(root, 'node_modules', packageName, 'dist', 'index.js'),
     path.join(root, 'node_modules', packageName, 'index.js'),
   ]);
 
