@@ -4095,26 +4095,8 @@ const [previewScale, setPreviewScale] = useState(1);
                       canvasWidth={canvasWidth}
                       canvasHeight={canvasHeight}
                       onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
-                      onDoubleClick={() => {
-                        setActiveInsertImageId(slide.id);
-                        setIsInsertImageEditMode(true);
-                      }}
-                      onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        insertImageDragRef.current = {
-                          id: slide.id,
-                          mode: 'move',
-                          startX: event.clientX,
-                          startY: event.clientY,
-                          initialOffsetX: slide.offsetX ?? 0,
-                          initialOffsetY: slide.offsetY ?? 0,
-                          initialScale: slide.scale ?? 1,
-                          initialRotation: slide.rotation ?? 0,
-                        };
-                        document.body.style.userSelect = 'none';
-                        document.body.style.cursor = 'grabbing';
-                      } : undefined}
+                      onDoubleClick={undefined}
+                      onPointerDown={undefined}
                     editOverlay={undefined}
                     />
                   ) : <PreviewBackgroundAsset
@@ -4134,30 +4116,58 @@ const [previewScale, setPreviewScale] = useState(1);
                     end={slide.end}
                     draggable={activeInsertImageId === slide.id && isInsertImageEditMode}
                     onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
-                    onDoubleClick={() => {
-                      setActiveInsertImageId(slide.id);
-                      setIsInsertImageEditMode(true);
-                    }}
-                    onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      insertImageDragRef.current = {
-                        id: slide.id,
-                        mode: 'move',
-                        startX: event.clientX,
-                        startY: event.clientY,
-                        initialOffsetX: slide.offsetX ?? 0,
-                        initialOffsetY: slide.offsetY ?? 0,
-                        initialScale: slide.scale ?? 1,
-                        initialRotation: slide.rotation ?? 0,
-                      };
-                      document.body.style.userSelect = 'none';
-                      document.body.style.cursor = 'grabbing';
-                    } : undefined}
+                    onDoubleClick={undefined}
+                    onPointerDown={undefined}
                     editOverlay={undefined}
                   />}
                 </div>
               ))}
+
+              <div className="absolute inset-0 z-[35] pointer-events-none">
+                {backgroundSlidesBelowChat.map((slide: BackgroundSlideItem) => {
+                  const box = slideEditBoxes[slide.id];
+                  if (!box) return null;
+                  return (
+                    <div
+                      key={`below-hit-${slide.id}`}
+                      className="absolute pointer-events-auto"
+                      style={{
+                        left: `${box.centerX - box.width / 2}px`,
+                        top: `${box.centerY - box.height / 2}px`,
+                        width: `${box.width}px`,
+                        height: `${box.height}px`,
+                        transform: `rotate(${slide.rotation ?? 0}deg)`,
+                        transformOrigin: '50% 50%',
+                        cursor: activeInsertImageId === slide.id && isInsertImageEditMode ? 'grab' : 'pointer',
+                        touchAction: 'none',
+                        backgroundColor: 'transparent',
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setActiveInsertImageId(slide.id);
+                        setIsInsertImageEditMode(true);
+                      }}
+                      onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        insertImageDragRef.current = {
+                          id: slide.id,
+                          mode: 'move',
+                          startX: event.clientX,
+                          startY: event.clientY,
+                          initialOffsetX: slide.offsetX ?? 0,
+                          initialOffsetY: slide.offsetY ?? 0,
+                          initialScale: slide.scale ?? 1,
+                          initialRotation: slide.rotation ?? 0,
+                        };
+                        document.body.style.userSelect = 'none';
+                        document.body.style.cursor = 'grabbing';
+                      } : undefined}
+                    />
+                  );
+                })}
+              </div>
 
               {/* Chat Stream */}
               <div
@@ -4214,6 +4224,7 @@ const [previewScale, setPreviewScale] = useState(1);
                                   className="rounded-full shrink-0 object-cover"
                                   style={{
                                     ...style,
+                                    pointerEvents: 'none',
                                     boxSizing: 'border-box',
                                     border: `${borderWidth}px solid ${borderColor}`,
                                     backgroundColor: borderColor
@@ -4222,8 +4233,8 @@ const [previewScale, setPreviewScale] = useState(1);
                               );
                             }}
                             renderBubble={({ outerStyle, contentStyle, children }) => (
-                              <div style={outerStyle}>
-                                <div style={contentStyle}>{children}</div>
+                              <div style={{ ...outerStyle, pointerEvents: 'none' }}>
+                                <div style={{ ...contentStyle, pointerEvents: 'none' }}>{children}</div>
                               </div>
                             )}
                           />
