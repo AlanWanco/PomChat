@@ -680,6 +680,17 @@ export const PlayerControls = memo(function PlayerControls({
     backdropFilter: 'blur(14px) saturate(140%)',
     WebkitBackdropFilter: 'blur(14px) saturate(140%)'
   };
+  const handlePlaceholderWaveformSeek = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (waveformDuration <= 0) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const relativeX = event.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, relativeX / rect.width));
+    onSeek(ratio * waveformDuration);
+  }, [onSeek, waveformDuration]);
+
   return (
     <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto px-2.5 py-1.5' : 'h-auto px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
@@ -800,12 +811,15 @@ export const PlayerControls = memo(function PlayerControls({
             ) : (
               <div
                 className="w-full rounded-md border"
+                onClick={handlePlaceholderWaveformSeek}
                 style={{
                   height: `${waveformHeight}px`,
                   borderColor: rgba(secondaryThemeColor, 0.2),
                   background: `linear-gradient(180deg, ${rgba(themeColor, isDarkMode ? 0.08 : 0.04)} 0%, ${rgba(themeColor, isDarkMode ? 0.05 : 0.02)} 100%)`,
                   position: 'relative',
+                  cursor: waveformDuration > 0 ? 'pointer' : 'default',
                 }}
+                title={waveformDuration > 0 ? t('player.waveformTitle') : undefined}
               >
                 <div
                   style={{

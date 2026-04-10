@@ -28,6 +28,7 @@ interface MenuBarProps {
   onCloseProject: () => void;
   onExportVideo: () => void;
   onExportConfig: () => void;
+  onOpenAbout: () => void;
 }
 
 export function MenuBar({
@@ -53,7 +54,8 @@ export function MenuBar({
   canRedo,
   onCloseProject,
   onExportVideo,
-  onExportConfig
+  onExportConfig,
+  onOpenAbout
 }: MenuBarProps) {
   const isWebMode = !window.electron;
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -85,10 +87,16 @@ export function MenuBar({
     <div className={`h-10 border-b flex items-center justify-between px-2 shrink-0 z-50 relative ${textClass}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border }}>
       <div className="flex items-center gap-1">
         {/* App Title */}
-        <div className="font-bold px-3 py-1 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenAbout}
+          className="font-bold px-3 py-1 flex items-center gap-2 rounded transition-colors"
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = uiTheme.hoverBg; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryThemeColor }}></span>
           PomChat Studio
-        </div>
+        </button>
 
         {/* File Menu */}
         <div className="relative">

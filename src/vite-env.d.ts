@@ -25,6 +25,8 @@ interface Window {
     loadConfig: () => Promise<any>;
     saveConfig: (config: any) => Promise<boolean>;
     setProxy: (proxy: string) => Promise<boolean>;
+    openExternal: (url: string) => Promise<boolean>;
+    checkForUpdates: () => Promise<{ ok: boolean; latestVersion?: string; currentVersion?: string; htmlUrl?: string; publishedAt?: string; hasUpdate?: boolean; error?: string }>;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
   };
 }

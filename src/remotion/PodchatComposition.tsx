@@ -149,6 +149,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
               }
               const prevSpeakerId = index > 0 ? visibleMessages[index - 1].speaker : undefined;
               const nextSpeakerId = index < visibleMessages.length - 1 ? visibleMessages[index + 1].speaker : undefined;
+              const isLatestVisible = index === visibleMessages.length - 1;
 
               return (
                 <ChatMessageBubble
@@ -161,11 +162,15 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                   chatLayout={props.chatLayout}
                   prevSpeakerId={prevSpeakerId}
                   nextSpeakerId={nextSpeakerId}
+                  isLatestVisible={isLatestVisible}
                   renderAvatar={({ src, alt, style }) => (
                     (() => {
                       const outerWidth = parseSizePx(style.width, 80);
                       const outerHeight = parseSizePx(style.height, 80);
-                      const borderWidth = parseSizePx(style.borderWidth as string | number | undefined, 0);
+                      const bubbleScale = props.chatLayout?.bubbleScale ?? 1.5;
+                      const combinedScale = Math.max(0.1, layoutScale) * bubbleScale;
+                      const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                      const borderColor = speaker.style?.avatarBorderColor || 'rgba(255,255,255,0.12)';
                       const innerWidth = Math.max(1, outerWidth - borderWidth * 2);
                       const innerHeight = Math.max(1, outerHeight - borderWidth * 2);
 
@@ -178,9 +183,10 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                             position: 'relative',
                             borderRadius: style.borderRadius,
                             overflow: 'hidden',
-                            backgroundColor: (style.borderColor as string) || 'rgba(255,255,255,0.12)',
+                            boxSizing: 'border-box',
+                            backgroundColor: borderColor,
                             boxShadow: style.boxShadow,
-                            border: `${style.borderWidth || '0px'} solid ${style.borderColor || '#ffffff'}`
+                            border: `${borderWidth}px solid ${borderColor}`
                           }}
                         >
                           {/\.gif(\?|$)/i.test(src)

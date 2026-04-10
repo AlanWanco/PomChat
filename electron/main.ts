@@ -7,6 +7,9 @@ import { fork } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 
+const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
+const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/AlanWanco/PomChat/releases/latest';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 process.env.APP_ROOT = path.join(__dirname, '..');
@@ -187,6 +190,34 @@ function sanitizeFileStem(value: string) {
   return base.replace(/[<>:"/\\|?*]+/g, '-').replace(/\s+/g, '-');
 }
 
+function normalizeVersionTag(version: string) {
+  return (version || '').trim().replace(/^v/i, '');
+}
+
+function compareVersions(a: string, b: string) {
+  const tokenize = (value: string) => normalizeVersionTag(value).split(/[-.]/g).map((part) => {
+    const numeric = Number(part);
+    return Number.isFinite(numeric) ? numeric : part;
+  });
+  const left = tokenize(a);
+  const right = tokenize(b);
+  const length = Math.max(left.length, right.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const l = left[index] ?? 0;
+    const r = right[index] ?? 0;
+    if (typeof l === 'number' && typeof r === 'number') {
+      if (l !== r) return l > r ? 1 : -1;
+      continue;
+    }
+    const ls = String(l);
+    const rs = String(r);
+    if (ls !== rs) return ls > rs ? 1 : -1;
+  }
+
+  return 0;
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1400,
@@ -256,6 +287,41 @@ app.whenReady().then(async () => {
 
 // IPC Handlers
 ipcMain.handle('ping', () => 'pong');
+
+ipcMain.handle('open-external', async (_event, url: string) => {
+  if (!url) return false;
+  await shell.openExternal(url);
+  return true;
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'PomChat-Studio'
+      }
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `HTTP ${response.status}` };
+    }
+
+    const release = await response.json() as { tag_name?: string; html_url?: string; published_at?: string };
+    const currentVersion = app.getVersion();
+    const latestVersion = normalizeVersionTag(release.tag_name || currentVersion);
+    return {
+      ok: true,
+      currentVersion,
+      latestVersion,
+      htmlUrl: release.html_url || `${GITHUB_REPO_URL}/releases`,
+      publishedAt: release.published_at,
+      hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
 
 ipcMain.handle('export-video', async (_event, config) => {
   const outputPath = typeof config?.outputPath === 'string' ? config.outputPath : '';

@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electron', {
   loadConfig: () => ipcRenderer.invoke('load-config'),
   saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
   setProxy: (proxy: string) => ipcRenderer.invoke('set-proxy', proxy),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   onExportProgress: (callback: (progress: any) => void) => {
     const listener = (_event: any, value: any) => callback(value);
     ipcRenderer.on('export-progress', listener);

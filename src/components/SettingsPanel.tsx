@@ -1478,10 +1478,6 @@ export function SettingsPanel({
                           {renderNumberInput(speaker.style?.paddingY ?? 12, (value) => updateSpeakerStyle(key, 'paddingY', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.margin')}</span>
-                          {renderNumberInput(speaker.style?.margin ?? 14, (value) => updateSpeakerStyle(key, 'margin', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
-                        </div>
-                        <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                           {renderNumberInput(speaker.style?.shadowSize ?? 2, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>

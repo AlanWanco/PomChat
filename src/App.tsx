@@ -8,6 +8,7 @@ import { MenuBar } from './components/MenuBar';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
+import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
 import { ChatAnnotationBubble, ChatMessageBubble } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
@@ -1051,6 +1052,9 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const language = (config.language || 'zh-CN') as Language;
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const themeColor = themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT);
@@ -1063,6 +1067,51 @@ const [previewScale, setPreviewScale] = useState(1);
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
+
+  const openExternalUrl = useCallback(async (url: string) => {
+    if (window.electron) {
+      await window.electron.openExternal(url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleCheckForUpdates = useCallback(async () => {
+    setIsCheckingUpdates(true);
+    try {
+      if (window.electron) {
+        const result = await window.electron.checkForUpdates();
+        setUpdateResult(result);
+        showToast(result.ok ? (result.hasUpdate ? `${t('about.updateAvailable')}: v${result.latestVersion}` : t('about.upToDate')) : t('about.updateCheckFailed'));
+        return;
+      }
+
+      const response = await fetch('https://api.github.com/repos/AlanWanco/PomChat/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' }
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const release = await response.json() as { tag_name?: string; html_url?: string; published_at?: string };
+      const latestVersion = (release.tag_name || __APP_VERSION__).replace(/^v/i, '');
+      const result: UpdateCheckResult = {
+        ok: true,
+        latestVersion,
+        currentVersion: __APP_VERSION__,
+        htmlUrl: release.html_url,
+        publishedAt: release.published_at,
+        hasUpdate: latestVersion !== __APP_VERSION__,
+      };
+      setUpdateResult(result);
+      showToast(result.hasUpdate ? `${t('about.updateAvailable')}: v${latestVersion}` : t('about.upToDate'));
+    } catch (error) {
+      setUpdateResult({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' });
+      showToast(t('about.updateCheckFailed'));
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  }, [showToast, t]);
 
   const handleRequestRemoveSpeaker = useCallback((speakerKey: string) => {
     const speaker = config.speakers?.[speakerKey];
@@ -3280,6 +3329,7 @@ const [previewScale, setPreviewScale] = useState(1);
           void handleOpenExportModal();
         }}
         onExportConfig={exportConfig}
+        onOpenAbout={() => setShowAboutModal(true)}
       />
 
       {!window.electron && (
@@ -3650,6 +3700,7 @@ const [previewScale, setPreviewScale] = useState(1);
                         if (!speaker || speaker.type === 'annotation') return null;
                         const prevSpeakerId = index > 0 ? visibleMessages[index - 1].speakerId : undefined;
                         const nextSpeakerId = index < visibleMessages.length - 1 ? visibleMessages[index + 1].speakerId : undefined;
+                        const isLatestVisible = index === visibleMessages.length - 1;
 
                         return (
                           <ChatMessageBubble
@@ -3663,15 +3714,27 @@ const [previewScale, setPreviewScale] = useState(1);
                             fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
                             prevSpeakerId={prevSpeakerId}
                             nextSpeakerId={nextSpeakerId}
-                            renderAvatar={({ src, alt, style }) => (
-                              <img
-                                src={resolvePath(src)}
-                                alt={alt}
-                                referrerPolicy="no-referrer"
-                                className={`rounded-full shrink-0 shadow-lg object-cover ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-white bg-gray-200'}`}
-                                style={{ ...style, backgroundColor: style.borderColor as string }}
-                              />
-                            )}
+                            isLatestVisible={isLatestVisible}
+                            renderAvatar={({ src, alt, style }) => {
+                              const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
+                              const combinedScale = Math.max(0.1, previewScale) * bubbleScale;
+                              const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                              const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
+                              return (
+                                <img
+                                  src={resolvePath(src)}
+                                  alt={alt}
+                                  referrerPolicy="no-referrer"
+                                  className="rounded-full shrink-0 object-cover"
+                                  style={{
+                                    ...style,
+                                    boxSizing: 'border-box',
+                                    border: `${borderWidth}px solid ${borderColor}`,
+                                    backgroundColor: borderColor
+                                  }}
+                                />
+                              );
+                            }}
                             renderBubble={({ outerStyle, contentStyle, children }) => {
                               const tintColor = typeof outerStyle.backgroundColor === 'string' ? outerStyle.backgroundColor : '#ffffff';
                               const bubbleStyle = { ...outerStyle };
@@ -3906,7 +3969,7 @@ const [previewScale, setPreviewScale] = useState(1);
         </div>
       )}
 
-       <ExportModal
+      <ExportModal
          isOpen={showExportModal}
          isDarkMode={isDarkMode}
          language={language}
@@ -3948,6 +4011,20 @@ const [previewScale, setPreviewScale] = useState(1);
          onRevealOutput={handleRevealExport}
          onClearRenderCache={handleClearRenderCache}
         />
+
+      <AboutModal
+        isOpen={showAboutModal}
+        isDarkMode={isDarkMode}
+        language={language}
+        themeColor={themeColor}
+        secondaryThemeColor={secondaryThemeColor}
+        onClose={() => setShowAboutModal(false)}
+        onOpenGithub={() => { void openExternalUrl('https://github.com/AlanWanco/PomChat'); }}
+        onOpenReleases={() => { void openExternalUrl('https://github.com/AlanWanco/PomChat/releases'); }}
+        onCheckUpdates={() => { void handleCheckForUpdates(); }}
+        isCheckingUpdates={isCheckingUpdates}
+        updateResult={updateResult}
+      />
 
       {speakerReplaceDialog && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
