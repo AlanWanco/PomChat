@@ -4,36 +4,10 @@ const http = require('node:http');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
-const { fileURLToPath, pathToFileURL } = require('node:url');
+const { fileURLToPath } = require('node:url');
 
 let cachedBundle = null;
 let cachedPatchedBinariesDir = null;
-
-const importPackagedModule = async (packageName) => {
-  const candidateRoots = [
-    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked') : null,
-    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : null,
-    process.resourcesPath ? path.join(process.resourcesPath, 'app') : null,
-    process.env.APP_ROOT || null,
-    process.cwd(),
-  ].filter(Boolean);
-
-  const packageCandidates = candidateRoots.flatMap((root) => [
-    path.join(root, 'node_modules', packageName, 'dist', 'esm', 'index.mjs'),
-    path.join(root, 'node_modules', packageName, 'dist', 'esm', 'index.js'),
-    path.join(root, 'node_modules', packageName, 'dist', 'index.js'),
-    path.join(root, 'node_modules', packageName, 'index.js'),
-  ]);
-
-  for (const candidate of packageCandidates) {
-    if (!fs.existsSync(candidate)) {
-      continue;
-    }
-    return import(pathToFileURL(candidate).href);
-  }
-
-  return import(packageName);
-};
 
 const getBundledBrowserExecutable = () => {
   const manifestPaths = [
@@ -405,8 +379,8 @@ const getBundle = async (bundleFn) => {
 
 const runRender = async (config) => {
   const startedAt = Date.now();
-  const { bundle } = await importPackagedModule('@remotion/bundler');
-  const { renderMedia, selectComposition } = await importPackagedModule('@remotion/renderer');
+  const { bundle } = await import('@remotion/bundler');
+  const { renderMedia, selectComposition } = await import('@remotion/renderer');
   const mediaServer = await createLocalMediaServer();
   const binariesDirectory = patchMacCompositorBinaries();
   const browserExecutable = getBundledBrowserExecutable();
