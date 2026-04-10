@@ -55,6 +55,7 @@
       "electron/remotion-worker.cjs",
       "src/remotion/**",
       "src/components/chat/**",
+      "node_modules/@remotion/**",
       "node_modules/esbuild/**",
       "node_modules/@esbuild/**",
       "node_modules/@rspack/**"
