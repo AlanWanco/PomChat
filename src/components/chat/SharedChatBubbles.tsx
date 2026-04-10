@@ -161,6 +161,92 @@ export const getBubbleMotionState = (progress: number, style: SharedChatLayout['
   }
 };
 
+function SvgStrokeText({
+  text,
+  fontSize,
+  fontFamily,
+  fontWeight,
+  color,
+  strokeWidth,
+  strokeColor,
+  align = 'left',
+  style,
+}: {
+  text: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: string | number;
+  color: string;
+  strokeWidth: number;
+  strokeColor: string;
+  align?: 'left' | 'right' | 'center';
+  style?: React.CSSProperties;
+}) {
+  const textRef = React.useRef<SVGTextElement | null>(null);
+  const [box, setBox] = React.useState<{ width: number; height: number; minX: number; minY: number; rawWidth: number; rawHeight: number } | null>(null);
+
+  React.useLayoutEffect(() => {
+    const node = textRef.current;
+    if (!node) return;
+    try {
+      const bbox = node.getBBox();
+      const padding = strokeWidth + 2;
+      const nextBox = {
+        width: Math.max(1, bbox.width + padding * 2),
+        height: Math.max(1, bbox.height + padding * 2),
+        minX: bbox.x,
+        minY: bbox.y,
+        rawWidth: bbox.width,
+        rawHeight: bbox.height,
+      };
+      setBox((prev) => (
+        prev && prev.width === nextBox.width && prev.height === nextBox.height && prev.minX === nextBox.minX && prev.minY === nextBox.minY && prev.rawWidth === nextBox.rawWidth && prev.rawHeight === nextBox.rawHeight
+          ? prev
+          : nextBox
+      ));
+    } catch {
+      setBox((prev) => prev ?? {
+        width: Math.max(1, text.length * fontSize * 0.62 + strokeWidth * 2 + 4),
+        height: Math.max(1, fontSize * 1.2 + strokeWidth * 2 + 4),
+        minX: 0,
+        minY: 0,
+        rawWidth: Math.max(1, text.length * fontSize * 0.62),
+        rawHeight: Math.max(1, fontSize * 1.2),
+      });
+    }
+  }, [color, fontFamily, fontSize, fontWeight, strokeColor, strokeWidth, text]);
+
+  const width = box?.width ?? Math.max(1, text.length * fontSize * 0.62 + strokeWidth * 2 + 4);
+  const height = box?.height ?? Math.max(1, fontSize * 1.2 + strokeWidth * 2 + 4);
+  const minX = box?.minX ?? 0;
+  const minY = box?.minY ?? 0;
+  const rawWidth = box?.rawWidth ?? Math.max(1, text.length * fontSize * 0.62);
+  const rawHeight = box?.rawHeight ?? Math.max(1, fontSize * 1.2);
+
+  return (
+    <div style={{ display: 'inline-block', lineHeight: 0, textAlign: align, ...style }}>
+      <svg width={width} height={height} overflow="visible" style={{ display: 'block' }}>
+        <text
+          ref={textRef}
+          x={width / 2 - (minX + rawWidth / 2)}
+          y={height / 2 - (minY + rawHeight / 2)}
+          textAnchor="start"
+          dominantBaseline="hanging"
+          fontFamily={fontFamily}
+          fontSize={fontSize}
+          fontWeight={fontWeight}
+          fill={color}
+          stroke={strokeWidth > 0 ? strokeColor : 'none'}
+          strokeWidth={strokeWidth}
+          paintOrder="stroke"
+        >
+          {text}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
 const formatBubbleShadow = (shadowSize: number) => {
   if (shadowSize <= 0) {
     return 'none';
@@ -412,9 +498,15 @@ export function ChatMessageBubble({
                 marginBottom: `${4 * combinedScale}px`
               }}
             >
-              <span style={{ fontSize: `${speakerNameSize}px`, fontFamily: speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui', fontWeight: speaker.style?.nameFontWeight || 700, color: speaker.style?.nameColor || '#ffffff', WebkitTextStroke: speakerNameStrokeWidth > 0 ? `${speakerNameStrokeWidth}px ${speakerNameStrokeColor}` : undefined }}>
-                {speaker.name}
-              </span>
+              <SvgStrokeText
+                text={speaker.name}
+                fontSize={speakerNameSize}
+                fontFamily={speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui'}
+                fontWeight={speaker.style?.nameFontWeight || 700}
+                color={speaker.style?.nameColor || '#ffffff'}
+                strokeWidth={speakerNameStrokeWidth}
+                strokeColor={speakerNameStrokeColor}
+              />
               <span style={{ fontSize: `${timestampSize}px`, fontFamily: timestampFontFamily, color: timestampColor }}>
                 {formatTimestamp(item.start)}
               </span>
@@ -489,22 +581,21 @@ export function ChatMessageBubble({
             marginTop: `${snapPx(4 * combinedScale)}px`
           }}
         >
-          <span
+          <SvgStrokeText
+            text={speaker.name}
+            fontSize={speakerNameSize}
+            fontFamily={speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui'}
+            fontWeight={speaker.style?.nameFontWeight || 700}
+            color={speaker.style?.nameColor || '#ffffff'}
+            strokeWidth={speakerNameStrokeWidth}
+            strokeColor={speakerNameStrokeColor}
+            align={isLeft ? 'left' : 'right'}
             style={{
-              display: 'block',
-              fontSize: `${speakerNameSize}px`,
-              fontFamily: speaker.style?.nameFontFamily || speaker.style?.fontFamily || 'system-ui',
-              fontWeight: speaker.style?.nameFontWeight || 700,
-              color: speaker.style?.nameColor || '#ffffff',
-              textAlign: isLeft ? 'left' : 'right',
               whiteSpace: 'nowrap',
               paddingLeft: isLeft ? `${snapPx(6 * combinedScale)}px` : undefined,
               paddingRight: !isLeft ? `${snapPx(6 * combinedScale)}px` : undefined,
-              WebkitTextStroke: speakerNameStrokeWidth > 0 ? `${speakerNameStrokeWidth}px ${speakerNameStrokeColor}` : undefined
             }}
-          >
-            {speaker.name}
-          </span>
+          />
         </div>
       ) : null}
     </div>

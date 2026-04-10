@@ -54,7 +54,9 @@
     "asarUnpack": [
       "electron/remotion-worker.cjs",
       "src/remotion/**",
-      "src/components/chat/**"
+      "src/components/chat/**",
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**"
     ],
     "directories": {
       "buildResources": "build",
