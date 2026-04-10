@@ -40,6 +40,7 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Edit subtitle text, start and end time, and speaker assignment; subtitle panel includes a lightweight compact mode (read-only with auto-follow for large subtitle sets)
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
 - Support image / GIF / video as background media, with fit modes (Cover/Contain/Fill) and alignment controls
+- Support inserted image / text layers with per-layer ordering, timing, scale, rotation, offset, animation, text stroke, and shadow controls
 - When dropping a background video, detect embedded audio and optionally reuse it as the project audio track
 - Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
 - Mobile web layout is optimized with adaptive preview scaling, a collapsible/resizable bottom panel, and compact playback controls
@@ -76,6 +77,7 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Tune chat area padding and annotation positions
 - Preview the layout with audio-driven timing
 - Preview and export now try to share the same chat rendering logic to reduce styling mismatches
+- Inserted image / text layers now try to share the same transform and layering logic between preview and export to reduce positional drift
 
 ### 4. Playback and Export
 

@@ -917,7 +917,7 @@ export const PlayerControls = memo(function PlayerControls({
                           const widthPercent = Number.parseFloat(slide.width) || 0;
                           const centerPercent = leftPercent + widthPercent / 2;
                           const x = (centerPercent / 100) * (waveformOverlayMetrics.viewportWidth || waveformOverlayMetrics.wrapperWidth || 0);
-                          setInsertImageHoverLabel({ x, label: slide.name, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
+                          setInsertImageHoverLabel({ x, label: `${slide.type === 'text' ? '文' : '图'} ${slide.name}`, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
                         }
                       }}
                       onMouseLeave={() => {
@@ -937,13 +937,15 @@ export const PlayerControls = memo(function PlayerControls({
                         pointerEvents: isBackgroundSlideTrackCollapsed ? 'none' : 'auto',
                       }}
                     >
-                      <div
-                        className="absolute inset-0 rounded-sm"
-                        style={{
-                          backgroundColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
-                          boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.18 : 0.12)}`,
-                        }}
-                      />
+                        <div
+                          className="absolute inset-0 rounded-sm"
+                          style={{
+                            backgroundColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
+                            boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.18 : 0.12)}`,
+                            backgroundImage: slide.type === 'text' ? `linear-gradient(135deg, transparent 25%, ${rgba('#ffffff', 0.18)} 25%, ${rgba('#ffffff', 0.18)} 50%, transparent 50%, transparent 75%, ${rgba('#ffffff', 0.18)} 75%, ${rgba('#ffffff', 0.18)} 100%)` : undefined,
+                            backgroundSize: slide.type === 'text' ? '8px 8px' : undefined,
+                          }}
+                        />
                       {!isBackgroundSlideTrackCollapsed ? <button
                         type="button"
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border"

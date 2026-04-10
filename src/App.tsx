@@ -4439,11 +4439,11 @@ const [previewScale, setPreviewScale] = useState(1);
                     <button
                       type="button"
                       className="absolute rounded-full border pointer-events-auto inline-flex items-center justify-center font-bold"
-                      style={{ top: '-28px', right: '-92px', width: '56px', height: '56px', fontSize: '34px', lineHeight: 0.8, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 4px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0 }}
+                      style={{ top: '-28px', right: '-92px', width: '56px', height: '56px', fontSize: '38px', lineHeight: 1, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 4px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                       onClick={() => setIsInsertImageEditMode(false)}
                       title="退出编辑"
                     >
-                      ×
+                      <span style={{ display: 'block', transform: 'translateY(-1px)' }}>×</span>
                     </button>
                   </div>
                 </div>

@@ -976,10 +976,9 @@ export function SettingsPanel({
               <hr style={{ borderColor: uiTheme.border }} />
 
               <div className="space-y-2">
-                <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('project.animationStyle')}</span>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <span className="text-xs opacity-70 inline-flex items-center gap-1">
+                    <span className="text-xs font-semibold opacity-80 inline-flex items-center gap-1">
                       {t('project.animationStyle')}
                       <Tooltip content={t('project.animationStyleTip')} placement="bottom" width={224} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                         <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
@@ -1001,7 +1000,7 @@ export function SettingsPanel({
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs opacity-70">{t('project.animationSpeed')}</span>
+                      <span className="text-xs font-semibold opacity-80">{t('project.animationSpeed')}</span>
                       <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{(config.chatLayout?.animationDuration ?? 0.2).toFixed(2)}s</span>
                     </div>
                     <input
@@ -1192,9 +1191,12 @@ export function SettingsPanel({
                                 onSeek(slide.start);
                               }
                             }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors border"
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors border inline-flex items-center gap-1.5"
                             style={isActive ? { backgroundColor: themeColor, borderColor: themeColor, color: '#ffffff' } : { backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}
                           >
+                            <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.18)' : (slide.type === 'text' ? `${secondaryThemeColor}18` : `${themeColor}18`), color: isActive ? '#ffffff' : (slide.type === 'text' ? secondaryThemeColor : themeColor) }}>
+                              {slide.type === 'text' ? '文' : '图'}
+                            </span>
                             {label}
                           </button>
                         );
@@ -1267,23 +1269,11 @@ export function SettingsPanel({
                           </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="flex items-end">
-                            <button type="button" onClick={() => onEditInsertImage?.(currentBackgroundSlide.id)} className="w-full h-8 rounded-md border px-2.5 text-[11px] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
-                              <Pencil size={14} style={{ color: secondaryThemeColor }} />
-                              {currentBackgroundSlide.type === 'text' ? '编辑文字' : '编辑图片'}
-                            </button>
-                          </div>
-                          <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">图片层级</span>
-                            {renderNumberInput(
-                              (currentBackgroundSlide.layer || 'background') === 'overlay'
-                                ? ((currentBackgroundSlide.overlayOrder ?? 0) + 1)
-                                : ((currentBackgroundSlide.backgroundOrder ?? 0) + 1),
-                              (value) => setBackgroundSlideExplicitOrder(currentBackgroundSlide.id, Math.round(value)),
-                              { min: 1, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle }
-                            )}
-                          </div>
+                        <div className="space-y-1.5">
+                          <button type="button" onClick={() => onEditInsertImage?.(currentBackgroundSlide.id)} className="w-full h-8 rounded-md border px-2.5 text-[11px] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
+                            <Pencil size={14} style={{ color: secondaryThemeColor }} />
+                            {currentBackgroundSlide.type === 'text' ? '编辑文字' : '编辑图片'}
+                          </button>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -1380,25 +1370,24 @@ export function SettingsPanel({
                             </select>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.animationStyle')}</span>
-                            <select value={currentBackgroundSlide.animationStyle || 'blur'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationStyle: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
-                              <option value="none">{t('anim.none')}</option>
-                              <option value="fade">{t('anim.fade')}</option>
-                              <option value="rise">{t('anim.rise')}</option>
-                              <option value="pop">{t('anim.pop')}</option>
-                              <option value="slide">{t('anim.slide')}</option>
-                              <option value="blur">{t('anim.blur')}</option>
-                            </select>
+                            <span className="text-xs opacity-70">图片层级</span>
+                            {renderNumberInput(
+                              (currentBackgroundSlide.layer || 'background') === 'overlay'
+                                ? ((currentBackgroundSlide.overlayOrder ?? 0) + 1)
+                                : ((currentBackgroundSlide.backgroundOrder ?? 0) + 1),
+                              (value) => setBackgroundSlideExplicitOrder(currentBackgroundSlide.id, Math.round(value)),
+                              { min: 1, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle }
+                            )}
                           </div>
                         </div>
 
                         {currentBackgroundSlide.type === 'text' ? (
                           <>
+                            <div className="space-y-1.5">
+                              <span className="text-xs opacity-70">字体</span>
+                              {renderFontFamilyFields(currentBackgroundSlide.fontFamily || 'system-ui', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontFamily: value })))}
+                            </div>
                             <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <span className="text-xs opacity-70">字体</span>
-                                {renderFontFamilyFields(currentBackgroundSlide.fontFamily || 'system-ui', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontFamily: value })))}
-                              </div>
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">字重</span>
                                 <select value={currentBackgroundSlide.fontWeight || '700'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontWeight: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
@@ -1411,12 +1400,12 @@ export function SettingsPanel({
                                   <option value="900">900</option>
                                 </select>
                               </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">字号</span>
                                 {renderNumberInput(currentBackgroundSlide.fontSize ?? 96, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontSize: Math.max(8, value) })), { min: 8, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">透明度</span>
                                 {renderNumberInput(currentBackgroundSlide.opacity ?? 1, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, opacity: Math.max(0, Math.min(1, Number(value.toFixed(2)))) })), { min: 0, max: 1, step: 0.05, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -1454,25 +1443,36 @@ export function SettingsPanel({
 
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
+                            <span className="text-xs opacity-70">{t('project.animationStyle')}</span>
+                            <select value={currentBackgroundSlide.animationStyle || 'blur'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationStyle: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
+                              <option value="none">{t('anim.none')}</option>
+                              <option value="fade">{t('anim.fade')}</option>
+                              <option value="rise">{t('anim.rise')}</option>
+                              <option value="pop">{t('anim.pop')}</option>
+                              <option value="slide">{t('anim.slide')}</option>
+                              <option value="blur">{t('anim.blur')}</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
                             <span className="text-xs opacity-70">{t('project.animationSpeed')}</span>
                             {renderNumberInput(currentBackgroundSlide.animationDuration ?? 0.01, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationDuration: Math.max(0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="block text-xs opacity-70">{t('project.insertImageInheritFilters')}</label>
-                            <button
-                              type="button"
-                              onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, inheritBackgroundFilters: !(slide.inheritBackgroundFilters ?? true) }))}
-                              disabled={(currentBackgroundSlide.layer || 'background') === 'overlay'}
-                              className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors disabled:opacity-50"
-                              style={{
-                                backgroundColor: (currentBackgroundSlide.inheritBackgroundFilters ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBg,
-                                borderColor: (currentBackgroundSlide.inheritBackgroundFilters ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
-                                color: uiTheme.text,
-                              }}
-                            >
-                              <span>{(currentBackgroundSlide.inheritBackgroundFilters ?? true) ? t('common.enabled') : t('common.disabled')}</span>
-                            </button>
-                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs opacity-70">{t('project.insertImageInheritFilters')}</label>
+                          <button
+                            type="button"
+                            onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, inheritBackgroundFilters: !(slide.inheritBackgroundFilters ?? true) }))}
+                            disabled={(currentBackgroundSlide.layer || 'background') === 'overlay'}
+                            className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors disabled:opacity-50"
+                            style={{
+                              backgroundColor: (currentBackgroundSlide.inheritBackgroundFilters ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBg,
+                              borderColor: (currentBackgroundSlide.inheritBackgroundFilters ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
+                              color: uiTheme.text,
+                            }}
+                          >
+                            <span>{(currentBackgroundSlide.inheritBackgroundFilters ?? true) ? t('common.enabled') : t('common.disabled')}</span>
+                          </button>
                         </div>
                       </div>
                     ) : null}
