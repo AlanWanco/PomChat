@@ -888,8 +888,10 @@ export const PlayerControls = memo(function PlayerControls({
                 style={{
                   left: `${insertImageHoverLabel.x}px`,
                   top: `${insertImageHoverLabel.y}px`,
-                  backgroundColor: themeColor,
-                  color: '#ffffff',
+                  backgroundColor: isDarkMode
+                    ? `color-mix(in srgb, ${themeColor} 15%, black)`
+                    : `color-mix(in srgb, ${themeColor} 15%, white)`,
+                  color: isDarkMode ? '#ffffff' : '#1f2937',
                   border: `1px solid ${secondaryThemeColor}`,
                   boxShadow: isDarkMode ? `0 8px 22px ${secondaryThemeColor}22` : `0 8px 20px ${secondaryThemeColor}1A`,
                   transform: insertImageHoverLabel.type === 'text'
