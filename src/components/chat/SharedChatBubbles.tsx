@@ -60,31 +60,103 @@ export interface SharedChatLayout {
   compactSpacing?: number;
 }
 
+export interface InterruptedMessageRow<T> {
+  left?: T;
+  right?: T;
+}
+
+const getSpeakerSide = (
+  speaker?: { side?: 'left' | 'right' | 'center'; type?: 'speaker' | 'annotation' },
+) => (speaker?.side === 'right' ? 'right' : 'left');
+
+export const computeInterruptedMessageRows = <T extends { start: number; end: number; speakerId: string }>(
+  appearedMessages: T[],
+  speakers: Record<string, { side?: 'left' | 'right' | 'center'; type?: 'speaker' | 'annotation' }>,
+  maxVisible: number,
+): InterruptedMessageRow<T>[] => {
+  const base = appearedMessages.slice(-Math.max(1, maxVisible * 3));
+  const hostIndexes = new Map<number, number>();
+
+  for (let i = 0; i < base.length; i += 1) {
+    const candidate = base[i];
+    const candidateSpeaker = speakers[candidate.speakerId];
+    if (!candidateSpeaker || candidateSpeaker.type === 'annotation') continue;
+
+    let hostIndex = -1;
+    for (let j = i - 1; j >= 0; j -= 1) {
+      const host = base[j];
+      const hostSpeaker = speakers[host.speakerId];
+      if (!hostSpeaker || hostSpeaker.type === 'annotation') continue;
+      if (candidate.start >= host.start && candidate.end <= host.end) {
+        hostIndex = j;
+        break;
+      }
+    }
+
+    if (hostIndex >= 0) {
+      hostIndexes.set(i, hostIndex);
+    }
+  }
+
+  const rows: InterruptedMessageRow<T>[] = [];
+  const rowIndexByMessage = new Map<number, number>();
+
+  for (let i = 0; i < base.length; i += 1) {
+    const item = base[i];
+    const speaker = speakers[item.speakerId];
+    if (!speaker || speaker.type === 'annotation') continue;
+    const side = getSpeakerSide(speaker);
+    const hostIndex = hostIndexes.get(i);
+
+    if (hostIndex == null) {
+      rows.push(side === 'left' ? { left: item } : { right: item });
+      rowIndexByMessage.set(i, rows.length - 1);
+      continue;
+    }
+
+    const hostRowIndex = rowIndexByMessage.get(hostIndex);
+
+    if (hostRowIndex == null) {
+      rows.push(side === 'left' ? { left: item } : { right: item });
+      rowIndexByMessage.set(i, rows.length - 1);
+      continue;
+    }
+
+    rows.splice(hostRowIndex, 0, side === 'left' ? { left: item } : { right: item });
+    for (const [messageIndex, rowIndex] of rowIndexByMessage.entries()) {
+      if (rowIndex >= hostRowIndex) {
+        rowIndexByMessage.set(messageIndex, rowIndex + 1);
+      }
+    }
+    rowIndexByMessage.set(i, hostRowIndex);
+  }
+
+  let visibleCount = rows.reduce((count, row) => count + (row.left ? 1 : 0) + (row.right ? 1 : 0), 0);
+  while (visibleCount > maxVisible && rows.length > 0) {
+    const firstRow = rows[0];
+    if (firstRow.left) {
+      firstRow.left = undefined;
+      visibleCount -= 1;
+    } else if (firstRow.right) {
+      firstRow.right = undefined;
+      visibleCount -= 1;
+    }
+    if (!firstRow.left && !firstRow.right) {
+      rows.shift();
+    }
+  }
+
+  return rows.filter((row) => row.left || row.right);
+};
+
 export const computeInterruptedVisibleMessages = <T extends { start: number; end: number; speakerId: string }>(
   appearedMessages: T[],
   speakers: Record<string, { side?: 'left' | 'right' | 'center'; type?: 'speaker' | 'annotation' }>,
   maxVisible: number,
 ) => {
-  const base = appearedMessages.slice(-Math.max(1, maxVisible * 2));
-  const interruptionIndexes = new Set<number>();
-
-  for (let i = 0; i < base.length; i += 1) {
-    const host = base[i];
-    const hostSpeaker = speakers[host.speakerId];
-    if (!hostSpeaker || hostSpeaker.type === 'annotation') continue;
-    for (let j = i + 1; j < base.length; j += 1) {
-      const intruder = base[j];
-      const intruderSpeaker = speakers[intruder.speakerId];
-      if (!intruderSpeaker || intruderSpeaker.type === 'annotation') continue;
-      const fullyContained = intruder.start >= host.start && intruder.end <= host.end;
-      if (!fullyContained) continue;
-      interruptionIndexes.add(j);
-    }
-  }
-
-  const regular = base.filter((_, index) => !interruptionIndexes.has(index));
-  const interruptions = base.filter((_, index) => interruptionIndexes.has(index));
-  return [...regular, ...interruptions].slice(-maxVisible);
+  return computeInterruptedMessageRows(appearedMessages, speakers, maxVisible)
+    .flatMap((row) => [row.left, row.right].filter(Boolean) as T[])
+    .slice(-maxVisible);
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -255,6 +327,131 @@ const formatBubbleShadow = (shadowSize: number) => {
   return `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)`;
 };
 
+type MarkdownToken =
+  | { type: 'text'; value: string }
+  | { type: 'bold' | 'italic' | 'strike'; children: MarkdownToken[] }
+  | { type: 'color'; color: string; children: MarkdownToken[] }
+  | { type: 'image'; src: string; alt: string }
+  | { type: 'linebreak' };
+
+const MARKDOWN_PATTERNS = {
+  image: /!\[([^\]]*)\]\(([^)]+)\)/,
+  color: /<color=([^>]+)>([\s\S]*?)<\/color>/,
+  bold: /\*\*([^*][\s\S]*?)\*\*/,
+  strike: /~~([^~][\s\S]*?)~~/,
+  italic: /(^|[^*])\*([^*][\s\S]*?)\*/,
+};
+
+const tokenizeMarkdownInline = (input: string): MarkdownToken[] => {
+  const tokens: MarkdownToken[] = [];
+  let rest = input;
+
+  while (rest.length > 0) {
+    const candidates = [
+      { type: 'image' as const, match: rest.match(MARKDOWN_PATTERNS.image) },
+      { type: 'color' as const, match: rest.match(MARKDOWN_PATTERNS.color) },
+      { type: 'bold' as const, match: rest.match(MARKDOWN_PATTERNS.bold) },
+      { type: 'strike' as const, match: rest.match(MARKDOWN_PATTERNS.strike) },
+      { type: 'italic' as const, match: rest.match(MARKDOWN_PATTERNS.italic) },
+    ]
+      .filter((candidate) => candidate.match && typeof candidate.match.index === 'number')
+      .sort((a, b) => (a.match!.index ?? 0) - (b.match!.index ?? 0));
+
+    const next = candidates[0];
+    if (!next?.match) {
+      tokens.push({ type: 'text', value: rest });
+      break;
+    }
+
+    const matchIndex = next.match.index ?? 0;
+    if (matchIndex > 0) {
+      tokens.push({ type: 'text', value: rest.slice(0, matchIndex) });
+    }
+
+    if (next.type === 'image') {
+      tokens.push({ type: 'image', alt: next.match[1] || '', src: (next.match[2] || '').trim() });
+      rest = rest.slice(matchIndex + next.match[0].length);
+      continue;
+    }
+
+    if (next.type === 'color') {
+      tokens.push({ type: 'color', color: next.match[1].trim(), children: tokenizeMarkdownInline(next.match[2] || '') });
+      rest = rest.slice(matchIndex + next.match[0].length);
+      continue;
+    }
+
+    if (next.type === 'italic') {
+      const prefix = next.match[1] || '';
+      if (prefix) {
+        tokens.push({ type: 'text', value: prefix });
+      }
+      tokens.push({ type: 'italic', children: tokenizeMarkdownInline(next.match[2] || '') });
+      rest = rest.slice(matchIndex + next.match[0].length);
+      continue;
+    }
+
+    tokens.push({ type: next.type, children: tokenizeMarkdownInline(next.match[1] || '') });
+    rest = rest.slice(matchIndex + next.match[0].length);
+  }
+
+  return tokens;
+};
+
+const tokenizeMarkdown = (input: string): MarkdownToken[] => {
+  const lines = input.split('\n');
+  return lines.flatMap((line, index) => {
+    const lineTokens = tokenizeMarkdownInline(line);
+    return index < lines.length - 1 ? [...lineTokens, { type: 'linebreak' as const }] : lineTokens;
+  });
+};
+
+const renderMarkdownTokens = ({
+  tokens,
+  textColor,
+  renderInlineImage,
+  keyPrefix,
+}: {
+  tokens: MarkdownToken[];
+  textColor: string;
+  renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
+  keyPrefix: string;
+}): React.ReactNode[] => tokens.map((token, index) => {
+  const key = `${keyPrefix}-${index}`;
+  switch (token.type) {
+    case 'text':
+      return <React.Fragment key={key}>{token.value}</React.Fragment>;
+    case 'linebreak':
+      return <br key={key} />;
+    case 'bold':
+      return <strong key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, renderInlineImage, keyPrefix: key })}</strong>;
+    case 'italic':
+      return <em key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, renderInlineImage, keyPrefix: key })}</em>;
+    case 'strike':
+      return <del key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, renderInlineImage, keyPrefix: key })}</del>;
+    case 'color':
+      return <span key={key} style={{ color: token.color || textColor }}>{renderMarkdownTokens({ tokens: token.children, textColor: token.color || textColor, renderInlineImage, keyPrefix: key })}</span>;
+    case 'image':
+      return renderInlineImage({ src: token.src, alt: token.alt, key });
+    default:
+      return null;
+  }
+});
+
+const renderMarkdownContent = ({
+  text,
+  textColor,
+  renderInlineImage,
+}: {
+  text: string;
+  textColor: string;
+  renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
+}) => renderMarkdownTokens({
+  tokens: tokenizeMarkdown(text),
+  textColor,
+  renderInlineImage,
+  keyPrefix: 'md',
+});
+
 interface BubbleRenderArgs {
   outerStyle: React.CSSProperties;
   contentStyle: React.CSSProperties;
@@ -272,6 +469,8 @@ interface ChatMessageBubbleProps {
   prevSpeakerId?: string;
   nextSpeakerId?: string;
   isLatestVisible?: boolean;
+  bubbleMaxWidthOverridePx?: number | string;
+  renderInlineImage?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
   renderAvatar?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
   renderBubble: (args: BubbleRenderArgs) => React.ReactNode;
 }
@@ -287,6 +486,8 @@ export function ChatMessageBubble({
   prevSpeakerId,
   nextSpeakerId,
   isLatestVisible = false,
+  bubbleMaxWidthOverridePx,
+  renderInlineImage,
   renderAvatar,
   renderBubble
 }: ChatMessageBubbleProps) {
@@ -366,7 +567,7 @@ export function ChatMessageBubble({
   const timestampColor = chatLayout?.timestampColor || 'rgba(255,255,255,0.65)';
   const fontSize = snapPx((speaker.style?.fontSize ?? 30) * combinedScale);
   const bubbleMaxWidthPercent = Math.max(15, Math.min(95, chatLayout?.bubbleMaxWidthPercent ?? 70));
-  const bubbleMaxWidthPx = canvasWidth * layoutScaleSafe * (bubbleMaxWidthPercent / 100);
+  const bubbleMaxWidthPx = bubbleMaxWidthOverridePx ?? (canvasWidth * layoutScaleSafe * (bubbleMaxWidthPercent / 100));
   const speakerNameStrokeWidth = Math.max(0, Math.round((speaker.style?.nameStrokeWidth ?? 0) * combinedScale * 100) / 100);
   const speakerNameStrokeColor = speaker.style?.nameStrokeColor || '#000000';
   const opacity = speaker.style?.opacity ?? 0.9;
@@ -391,6 +592,25 @@ export function ChatMessageBubble({
   // Compact timestamp: shown beside bubble (outside, on the far end)
   // Normal mode: shown inline with name row above bubble
   const showTimestampBeside = compactMode && showMetaGlobal;
+  const markdownContent = renderMarkdownContent({
+    text: item.text,
+    textColor,
+    renderInlineImage: ({ src, alt, key }) => (renderInlineImage
+      ? renderInlineImage({
+          src,
+          alt,
+          style: {
+            display: 'block',
+            maxWidth: '100%',
+            maxHeight: `${Math.max(120, fontSize * 6)}px`,
+            objectFit: 'contain',
+            borderRadius: `${snapPx(12 * combinedScale)}px`,
+            marginTop: `${snapPx(6 * combinedScale)}px`,
+            marginBottom: `${snapPx(6 * combinedScale)}px`,
+          }
+        })
+      : <img key={key} src={src} alt={alt} style={{ display: 'block', maxWidth: '100%', maxHeight: `${Math.max(120, fontSize * 6)}px`, objectFit: 'contain', borderRadius: `${snapPx(12 * combinedScale)}px`, marginTop: `${snapPx(6 * combinedScale)}px`, marginBottom: `${snapPx(6 * combinedScale)}px` }} />)
+  });
 
   return (
     <div
@@ -481,7 +701,7 @@ export function ChatMessageBubble({
             display: 'flex',
             flexDirection: 'column',
             alignItems: isLeft ? 'flex-start' : 'flex-end',
-            maxWidth: `${bubbleMaxWidthPx}px`,
+            maxWidth: typeof bubbleMaxWidthPx === 'number' ? `${bubbleMaxWidthPx}px` : bubbleMaxWidthPx,
             filter: shouldEnableBlockShadow ? speakerBlockShadow : 'none',
             transform: compactMode ? motionState.transform : undefined,
             opacity: compactMode ? motionState.opacity : undefined
@@ -539,7 +759,7 @@ export function ChatMessageBubble({
                 borderBottomRightRadius: `${bottomRightRadius}px`,
                 border: (speaker.style?.borderWidth ?? 0) > 0 ? `${speaker.style?.borderWidth ?? 0}px solid ${rgba(borderColor, borderOpacity)}` : 'none',
                 boxShadow: bubbleShadow,
-                maxWidth: `${bubbleMaxWidthPx}px`
+                maxWidth: typeof bubbleMaxWidthPx === 'number' ? `${bubbleMaxWidthPx}px` : bubbleMaxWidthPx
               },
               contentStyle: {
                 position: 'relative',
@@ -550,7 +770,7 @@ export function ChatMessageBubble({
                 lineHeight: 1.35,
                 overflowWrap: 'break-word'
               },
-              children: item.text
+              children: markdownContent
             })}
 
             {/* Timestamp beside bubble (compact mode) */}
@@ -608,10 +828,11 @@ interface ChatAnnotationBubbleProps {
   currentTime: number;
   layoutScale: number;
   chatLayout?: SharedChatLayout;
+  renderInlineImage?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
   renderBubble?: (args: BubbleRenderArgs) => React.ReactNode;
 }
 
-export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, chatLayout, renderBubble }: ChatAnnotationBubbleProps) {
+export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, chatLayout, renderInlineImage, renderBubble }: ChatAnnotationBubbleProps) {
   const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
   const combinedScale = Math.max(MIN_LAYOUT_SCALE, layoutScale) * bubbleScale;
   const annotationAnimationStyle = speaker.style?.animationStyle || chatLayout?.animationStyle || 'rise';
@@ -653,7 +874,25 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       whiteSpace: 'pre-wrap' as const,
       color: textColor
     },
-    children: item.text
+    children: renderMarkdownContent({
+      text: item.text,
+      textColor,
+      renderInlineImage: ({ src, alt, key }) => (renderInlineImage
+        ? renderInlineImage({
+            src,
+            alt,
+            style: {
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: `${Math.max(120, (speaker.style?.fontSize ?? 24) * combinedScale * 6)}px`,
+              objectFit: 'contain',
+              borderRadius: `${Math.max(8, 12 * combinedScale)}px`,
+              marginTop: `${Math.max(4, 6 * combinedScale)}px`,
+              marginBottom: `${Math.max(4, 6 * combinedScale)}px`,
+            }
+          })
+        : <img key={key} src={src} alt={alt} style={{ display: 'block', maxWidth: '100%', maxHeight: `${Math.max(120, (speaker.style?.fontSize ?? 24) * combinedScale * 6)}px`, objectFit: 'contain', borderRadius: `${Math.max(8, 12 * combinedScale)}px`, marginTop: `${Math.max(4, 6 * combinedScale)}px`, marginBottom: `${Math.max(4, 6 * combinedScale)}px` }} />)
+    })
   };
 
   if (renderBubble) {

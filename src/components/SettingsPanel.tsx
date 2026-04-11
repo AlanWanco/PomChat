@@ -950,6 +950,21 @@ export function SettingsPanel({
                       <span>{(config.chatLayout?.showMeta ?? true) ? t('common.enabled') : t('common.disabled')}</span>
                     </button>
                   </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs opacity-70">{t('project.compactMode')}</label>
+                    <button
+                      type="button"
+                      onClick={() => updateChatLayout('compactMode', !(config.chatLayout?.compactMode ?? false))}
+                      className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
+                      style={{
+                        backgroundColor: (config.chatLayout?.compactMode ?? false) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                        borderColor: (config.chatLayout?.compactMode ?? false) ? `${secondaryThemeColor}55` : uiTheme.border,
+                        color: uiTheme.text,
+                      }}
+                    >
+                      <span>{(config.chatLayout?.compactMode ?? false) ? t('common.enabled') : t('common.disabled')}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1014,22 +1029,7 @@ export function SettingsPanel({
                       style={themedRangeStyle}
                     />
                   </div>
-                   <div className="space-y-1.5">
-                     <label className="block text-xs opacity-70">{t('project.compactMode')}</label>
-                     <button
-                       type="button"
-                       onClick={() => updateChatLayout('compactMode', !(config.chatLayout?.compactMode ?? false))}
-                       className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
-                       style={{
-                         backgroundColor: (config.chatLayout?.compactMode ?? false) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
-                         borderColor: (config.chatLayout?.compactMode ?? false) ? `${secondaryThemeColor}55` : uiTheme.border,
-                         color: uiTheme.text,
-                       }}
-                     >
-                       <span>{(config.chatLayout?.compactMode ?? false) ? t('common.enabled') : t('common.disabled')}</span>
-                     </button>
                    </div>
-                  </div>
                 </div>
              </div>
 
@@ -1643,7 +1643,7 @@ export function SettingsPanel({
                           {speaker.preset && presets[speaker.preset] && (
                             <button
                               onClick={() => {
-                                if (window.confirm(`确定要删除预设 "${speaker.preset}" 吗？这不会影响已经应用该预设的角色，但预设列表里将不再有它。`)) {
+                                if (window.confirm(t('speakers.deletePresetConfirm', { name: speaker.preset }))) {
                                   handleRemovePreset(speaker.preset);
                                 }
                               }}
@@ -1662,7 +1662,7 @@ export function SettingsPanel({
                               const existing = { ...presets };
                               existing[speaker.preset] = buildPresetPayload(speaker);
                               onPresetsChange(existing);
-                              showToast(`预设 "${speaker.preset}" 已更新`);
+                              showToast(t('speakers.presetUpdated', { name: speaker.preset }));
                               return;
                             }
 
@@ -1734,12 +1734,12 @@ export function SettingsPanel({
                                   ])
                                 );
                                 updateConfig('speakers', nextSpeakers);
-                                showToast(`预设 "${oldName}" 已重命名为 "${newName}"`);
+                                showToast(t('speakers.presetRenamed', { oldName, newName }));
                               } else {
                                 const existing = { ...presets };
                                 existing[presetNameInput.trim()] = buildPresetPayload(speaker);
                                 onPresetsChange(existing);
-                                showToast(`预设 "${presetNameInput.trim()}" 已保存`);
+                                showToast(t('speakers.presetSaved', { name: presetNameInput.trim() }));
                               }
                               setPresetPromptKey(null);
                               setPresetPromptMode('save');

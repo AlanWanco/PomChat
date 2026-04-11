@@ -1,5 +1,5 @@
-import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
@@ -16,11 +16,13 @@ interface SubtitlePanelProps {
   onSeek: (time: number) => void;
   onUpdateSubtitle: (id: string, updates: Partial<SubtitleItem>) => void;
   onDeleteSubtitle: (id: string) => void | Promise<void>;
+  onBulkDeleteSubtitles: (ids: string[]) => void | Promise<void>;
+  onBulkUpdateSpeaker: (ids: string[], speakerId: string) => void | Promise<void>;
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   setEditingSub?: (sub: { id: string, start: number, end: number, text: string } | null) => void;
 }
 
-export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, editingSub, setEditingSub }: SubtitlePanelProps) {
+export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, editingSub, setEditingSub }: SubtitlePanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
@@ -29,6 +31,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [selectedSubtitleIds, setSelectedSubtitleIds] = useState<string[]>([]);
+  const [lastSelectedSubtitleId, setLastSelectedSubtitleId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const compactListRef = useRef<HTMLDivElement>(null);
   const [compactScrollTop, setCompactScrollTop] = useState(0);
@@ -36,6 +41,58 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const COMPACT_ROW_HEIGHT = 34;
   const searchMatches = subtitles.filter((sub) => sub.text.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const currentSearchMatchId = searchQuery.trim() && searchMatches.length > 0 ? searchMatches[searchIndex % searchMatches.length]?.id : undefined;
+  const selectableSpeakers = useMemo(() => Object.entries(speakers).filter(([, speaker]) => speaker?.type !== 'annotation'), [speakers]);
+  const [bulkSpeakerId, setBulkSpeakerId] = useState('');
+  const [pendingBulkAction, setPendingBulkAction] = useState<null | { type: 'delete' } | { type: 'speaker'; speakerId: string }>(null);
+  const selectedSubtitleIdSet = useMemo(() => new Set(selectedSubtitleIds), [selectedSubtitleIds]);
+  const selectedSubtitles = useMemo(
+    () => subtitles.filter((sub) => selectedSubtitleIdSet.has(sub.id)),
+    [selectedSubtitleIdSet, subtitles]
+  );
+  const pendingSpeakerName = pendingBulkAction?.type === 'speaker'
+    ? (speakers[pendingBulkAction.speakerId]?.name || pendingBulkAction.speakerId)
+    : '';
+
+  useEffect(() => {
+    if (!bulkSpeakerId && selectableSpeakers.length > 0) {
+      setBulkSpeakerId(selectableSpeakers[0][0]);
+    }
+  }, [bulkSpeakerId, selectableSpeakers]);
+
+  useEffect(() => {
+    setSelectedSubtitleIds((prev) => {
+      const next = prev.filter((id) => subtitles.some((sub) => sub.id === id));
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [subtitles]);
+
+  useEffect(() => {
+    if (!multiSelectMode) {
+      setSelectedSubtitleIds([]);
+      setLastSelectedSubtitleId(null);
+      setPendingBulkAction(null);
+    }
+  }, [multiSelectMode]);
+
+  useEffect(() => {
+    if (!multiSelectMode) return;
+    const handleMultiSelectShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        const target = event.target as HTMLElement | null;
+        const tagName = target?.tagName;
+        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target?.isContentEditable) {
+          return;
+        }
+        event.preventDefault();
+        handleSelectAll();
+      }
+    };
+    window.addEventListener('keydown', handleMultiSelectShortcut);
+    return () => window.removeEventListener('keydown', handleMultiSelectShortcut);
+  }, [multiSelectMode, subtitles]);
 
   const scrollToSubtitle = (subtitleId: string) => {
     const subtitleIndex = subtitles.findIndex((sub) => sub.id === subtitleId);
@@ -114,6 +171,60 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   };
 
   const hoverClass = isDarkMode ? "hover:bg-gray-800" : "hover:bg-gray-100";
+
+  const toggleSelectedSubtitle = (subtitleId: string, extendRange = false) => {
+    setSelectedSubtitleIds((prev) => {
+      if (extendRange && lastSelectedSubtitleId) {
+        const currentIndex = subtitles.findIndex((sub) => sub.id === subtitleId);
+        const anchorIndex = subtitles.findIndex((sub) => sub.id === lastSelectedSubtitleId);
+        if (currentIndex >= 0 && anchorIndex >= 0) {
+          const start = Math.min(currentIndex, anchorIndex);
+          const end = Math.max(currentIndex, anchorIndex);
+          const rangeIds = subtitles.slice(start, end + 1).map((sub) => sub.id);
+          return Array.from(new Set([...prev, ...rangeIds]));
+        }
+      }
+
+      return prev.includes(subtitleId) ? prev.filter((id) => id !== subtitleId) : [...prev, subtitleId];
+    });
+    setLastSelectedSubtitleId(subtitleId);
+  };
+
+  const handleSelectAll = () => {
+    setSelectedSubtitleIds(subtitles.map((sub) => sub.id));
+    setLastSelectedSubtitleId(subtitles[subtitles.length - 1]?.id ?? null);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSubtitleIds([]);
+    setLastSelectedSubtitleId(null);
+  };
+
+  const handleApplyBulkSpeaker = () => {
+    if (selectedSubtitleIds.length === 0 || !bulkSpeakerId) return;
+    setPendingBulkAction({ type: 'speaker', speakerId: bulkSpeakerId });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedSubtitleIds.length === 0) return;
+    setPendingBulkAction({ type: 'delete' });
+  };
+
+  const confirmBulkAction = () => {
+    if (!pendingBulkAction || selectedSubtitleIds.length === 0) return;
+    if (pendingBulkAction.type === 'delete') {
+      void onBulkDeleteSubtitles(selectedSubtitleIds);
+    } else {
+      void onBulkUpdateSpeaker(selectedSubtitleIds, pendingBulkAction.speakerId);
+    }
+    setSelectedSubtitleIds([]);
+    setLastSelectedSubtitleId(null);
+    setPendingBulkAction(null);
+  };
+
+  const cancelBulkAction = () => {
+    setPendingBulkAction(null);
+  };
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -194,7 +305,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   }, [editingSub, inlineEditingId, setEditingSub]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}>
+    <div className="h-full flex flex-col overflow-hidden relative" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}>
       <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
         <h2 className="font-bold flex items-center gap-2 text-sm">
           <FileText size={16} />
@@ -214,10 +325,18 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           >
             <List size={14} style={{ color: compactMode ? themeColor : secondaryThemeColor }} />
           </button>
+          <button
+            type="button"
+            onClick={() => setMultiSelectMode((v) => !v)}
+            title={multiSelectMode ? t('subtitle.multiSelectClose') : t('subtitle.multiSelectOpen')}
+          >
+            <CheckSquare size={14} style={{ color: multiSelectMode ? themeColor : secondaryThemeColor }} />
+          </button>
         </h2>
         <div className="text-xs opacity-60">{t('subtitle.count', { count: subtitles.length })}</div>
       </div>
-      {searchOpen && <div className="px-3 py-2 border-b flex items-center gap-2 shrink-0" style={{ backgroundColor: uiTheme.panelBgSubtle, borderColor: uiTheme.border }}>
+      {(searchOpen || multiSelectMode) && <div className="px-3 py-2 border-b flex flex-col gap-2 shrink-0" style={{ backgroundColor: uiTheme.panelBgSubtle, borderColor: uiTheme.border }}>
+        {searchOpen && <div className="flex items-center gap-2">
         <input
           value={searchQuery}
           onChange={(e) => {
@@ -257,6 +376,56 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
         <div className="text-[10px] font-mono min-w-[3rem] text-right" style={{ color: secondaryThemeColor }}>
           {searchMatches.length > 0 ? t('subtitle.searchCount', { current: searchIndex + 1, total: searchMatches.length }) : '0/0'}
         </div>
+        </div>}
+        {multiSelectMode && <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleSelectAll}
+            className="px-2 py-1 rounded border text-[10px]"
+            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {t('common.selectAll')}
+          </button>
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="px-2 py-1 rounded border text-[10px]"
+            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {t('common.selectNone')}
+          </button>
+          <div className="text-[10px] font-mono min-w-[3.5rem]" style={{ color: secondaryThemeColor }}>
+            {t('subtitle.multiSelectCount', { count: selectedSubtitleIds.length })}
+          </div>
+          <select
+            value={bulkSpeakerId}
+            onChange={(e) => setBulkSpeakerId(e.target.value)}
+            className="px-2 py-1 rounded border text-[10px] focus:outline-none"
+            style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
+          >
+            {selectableSpeakers.map(([speakerId, speaker]) => (
+              <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={selectedSubtitleIds.length === 0 || !bulkSpeakerId}
+            onClick={handleApplyBulkSpeaker}
+            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {t('subtitle.bulkChangeSpeaker')}
+          </button>
+          <button
+            type="button"
+            disabled={selectedSubtitleIds.length === 0}
+            onClick={handleBulkDelete}
+            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {t('subtitle.bulkDelete')}
+          </button>
+        </div>}
       </div>}
       
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-2">
@@ -279,7 +448,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                       <button
                         key={`compact-${sub.id}`}
                         type="button"
-                        onClick={() => onSeek(sub.start)}
+                        onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : onSeek(sub.start)}
                         className="w-full text-left px-2 py-1 text-xs border-b transition-colors flex items-center gap-2"
                         style={{
                           height: `${COMPACT_ROW_HEIGHT}px`,
@@ -288,10 +457,17 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                             ? `${secondaryThemeColor}${isDarkMode ? '20' : '12'}`
                             : isSearchMatched
                               ? `${secondaryThemeColor}${isDarkMode ? '16' : '0E'}`
-                              : 'transparent',
+                              : selectedSubtitleIdSet.has(sub.id)
+                                ? `${secondaryThemeColor}${isDarkMode ? '20' : '12'}`
+                                : 'transparent',
                           color: uiTheme.text
                         }}
                       >
+                        {multiSelectMode ? (
+                          <span className="shrink-0" style={{ color: selectedSubtitleIdSet.has(sub.id) ? secondaryThemeColor : uiTheme.textMuted }}>
+                            {selectedSubtitleIdSet.has(sub.id) ? <CheckSquare size={14} /> : <Square size={14} />}
+                          </span>
+                        ) : null}
                         <span className="font-mono opacity-70 shrink-0">{formatTime(sub.start)}</span>
                         <span className="px-1 rounded shrink-0" style={{ color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
                           {speakers[sub.speakerId]?.name || sub.actor || sub.style}
@@ -316,9 +492,16 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               <div 
                 key={sub.id}
                 id={`sub-${sub.id}`}
-                onClick={() => !isInlineEditing && onSeek(sub.start)}
+                onClick={(e) => {
+                  if (isInlineEditing) return;
+                  if (multiSelectMode) {
+                    toggleSelectedSubtitle(sub.id, e.shiftKey);
+                    return;
+                  }
+                  onSeek(sub.start);
+                }}
                 onDoubleClick={(e) => {
-                  if (!isInlineEditing) startInlineEdit(sub, e);
+                  if (!isInlineEditing && !multiSelectMode) startInlineEdit(sub, e);
                 }}
                 className={`p-3 rounded-lg border text-xs transition-all duration-200 relative group
                   ${isInlineEditing ? (isDarkMode ? 'bg-gray-800' : 'bg-gray-50') : 
@@ -331,6 +514,21 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                   <>
                     <div className="flex justify-between items-center mb-2 opacity-70 relative gap-2">
                       <div className="flex items-center gap-2 min-w-0">
+                        {multiSelectMode ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleSelectedSubtitle(sub.id, e.shiftKey);
+                            }}
+                            className="shrink-0"
+                            title={t('subtitle.multiSelectToggle')}
+                            style={{ color: selectedSubtitleIdSet.has(sub.id) ? secondaryThemeColor : uiTheme.textMuted }}
+                          >
+                            {selectedSubtitleIdSet.has(sub.id) ? <CheckSquare size={14} /> : <Square size={14} />}
+                          </button>
+                        ) : null}
                         <div className="flex items-center gap-1 font-mono text-[10px] shrink-0">
                         <Clock size={10} />
                         <span>{formatTime(sub.start)} - {formatTime(sub.end)}</span>
@@ -341,6 +539,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        {multiSelectMode ? null : (
                         <button 
                           onClick={(e) => toggleRegionEdit(sub, e)}
                           onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -356,8 +555,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           {isRegionEditing ? <Check size={10} /> : <MousePointer2 size={10} />}
                           {isRegionEditing ? t('subtitle.adjustDone') : t('subtitle.adjust')}
                         </button>
+                        )}
 
-                        {isRegionEditing ? (
+                        {!multiSelectMode && isRegionEditing ? (
                           <button
                             onClick={(e) => {
                               e.preventDefault();
@@ -372,7 +572,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                             <X size={10} />
                             {t('subtitle.cancel')}
                           </button>
-                        ) : (
+                        ) : !multiSelectMode ? (
                           <button
                             onClick={(e) => {
                               e.preventDefault();
@@ -387,7 +587,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                             <Trash2 size={10} />
                             {t('subtitle.delete')}
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                     
@@ -452,6 +652,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         }
                       }}
                     />
+                    <div className="mt-1 text-[10px] leading-4" style={{ color: uiTheme.textMuted }}>
+                      {t('subtitle.markdownHint')}
+                    </div>
                     
                     <div className="flex justify-end gap-2 mt-1">
                       <button
@@ -480,6 +683,61 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           })
         )}
       </div>
+      {pendingBulkAction && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center p-4" style={{ backgroundColor: isDarkMode ? 'rgba(3, 7, 18, 0.55)' : 'rgba(15, 23, 42, 0.16)' }}>
+          <div
+            className="w-full max-w-md rounded-xl border shadow-2xl overflow-hidden"
+            style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
+          >
+            <div className="px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
+              <div className="text-sm font-semibold">
+                {pendingBulkAction.type === 'delete'
+                  ? t('subtitle.bulkDeleteConfirmTitle', { count: selectedSubtitleIds.length })
+                  : t('subtitle.bulkSpeakerConfirmTitle', { count: selectedSubtitleIds.length, speaker: pendingSpeakerName })}
+              </div>
+              <div className="mt-1 text-xs" style={{ color: uiTheme.textMuted }}>
+                {pendingBulkAction.type === 'delete' ? t('subtitle.bulkDeleteConfirmDesc') : t('subtitle.bulkSpeakerConfirmDesc')}
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto custom-scrollbar p-3 space-y-2" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
+              {selectedSubtitles.map((sub) => (
+                <div key={`bulk-preview-${sub.id}`} className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
+                  <div className="flex items-center gap-2 mb-1" style={{ color: uiTheme.textMuted }}>
+                    <span className="font-mono">{formatTime(sub.start)} - {formatTime(sub.end)}</span>
+                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor }}>
+                      {speakers[sub.speakerId]?.name || sub.actor || sub.style}
+                    </span>
+                    {pendingBulkAction.type === 'speaker' ? (
+                      <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: `${themeColor}14`, color: themeColor }}>
+                        {pendingSpeakerName}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="line-clamp-2 whitespace-pre-wrap">{sub.text}</div>
+                </div>
+              ))}
+            </div>
+            <div className="px-4 py-3 border-t flex justify-end gap-2" style={{ borderColor: uiTheme.border }}>
+              <button
+                type="button"
+                onClick={cancelBulkAction}
+                className="px-3 py-1.5 rounded text-xs border"
+                style={{ borderColor: uiTheme.border, color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmBulkAction}
+                className="px-3 py-1.5 rounded text-xs text-white"
+                style={{ backgroundColor: secondaryThemeColor }}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

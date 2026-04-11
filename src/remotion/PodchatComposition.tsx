@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedVisibleMessages, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
 
 const MESSAGE_FALLBACK_COUNT = 32;
@@ -207,11 +207,15 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     const appearanceTime = Math.max(0, item.start - ((props.chatLayout?.animationStyle || 'rise') === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime;
   });
-  const visibleMessages = computeInterruptedVisibleMessages(
+  const visibleMessageRows = computeInterruptedMessageRows(
     appearedMessages.map((item) => ({ ...item, speakerId: item.speaker })),
     Object.fromEntries(Object.entries(props.speakers).map(([key, value]) => [key, { side: value.side, type: value.type }])),
     props.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT,
-  ).map((item) => ({ ...item, speaker: item.speakerId }));
+  ).map((row) => ({
+    left: row.left ? { ...row.left, speaker: row.left.speakerId } : undefined,
+    right: row.right ? { ...row.right, speaker: row.right.speakerId } : undefined,
+  }));
+  const flatVisibleMessages = visibleMessageRows.flatMap((row) => [row.left, row.right].filter(Boolean));
 
   const visibleAnnotations = sortedContent.filter((item) => {
     const speaker = props.speakers[item.speaker];
@@ -332,75 +336,99 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
       >
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: bottomPadding, display: 'flex', flexDirection: 'column' }}>
-            {visibleMessages.map((item, index) => {
-              const speaker = props.speakers[item.speaker];
-              if (!speaker) {
-                return null;
-              }
-              const prevSpeakerId = index > 0 ? visibleMessages[index - 1].speaker : undefined;
-              const nextSpeakerId = index < visibleMessages.length - 1 ? visibleMessages[index + 1].speaker : undefined;
-              const isLatestVisible = index === visibleMessages.length - 1;
+            {visibleMessageRows.map((row, rowIndex) => {
+              const isLatestRow = rowIndex === visibleMessageRows.length - 1;
+
+              const renderRowBubble = (side: 'left' | 'right') => {
+                const item = row[side];
+                if (!item) return null;
+                const speaker = props.speakers[item.speaker];
+                if (!speaker) return null;
+                const flatIndex = flatVisibleMessages.findIndex((candidate) => candidate?.speaker === item.speaker && candidate?.start === item.start && candidate?.text === item.text);
+                const prevSpeakerId = flatIndex > 0 ? flatVisibleMessages[flatIndex - 1]?.speaker : undefined;
+                const nextSpeakerId = flatIndex < flatVisibleMessages.length - 1 ? flatVisibleMessages[flatIndex + 1]?.speaker : undefined;
+
+                return (
+                  <div
+                    key={`${item.speaker}-${item.start}-${item.text}-${side}`}
+                    style={{
+                      flex: '0 1 auto',
+                      minWidth: 0,
+                      display: 'flex',
+                      justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
+                      marginLeft: side === 'right' ? 'auto' : undefined,
+                    }}
+                  >
+                    <ChatMessageBubble
+                      item={{ key: `${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
+                      speaker={speaker}
+                      currentTime={currentTime}
+                      canvasWidth={width}
+                      layoutScale={layoutScale}
+                      chatLayout={props.chatLayout}
+                      prevSpeakerId={prevSpeakerId}
+                      nextSpeakerId={nextSpeakerId}
+                      isLatestVisible={isLatestRow}
+                      renderInlineImage={({ src, alt, style }) => /\.gif(\?|$)/i.test(src)
+                        ? <Gif key={`${item.speaker}-${item.start}-${src}`} src={src} fit="contain" width={parseSizePx(style.maxWidth, 320)} height={parseSizePx(style.maxHeight, 240)} style={style} delayRenderTimeoutInMilliseconds={120000} />
+                        : <Img key={`${item.speaker}-${item.start}-${src}`} src={src} alt={alt} style={style} />}
+                      renderAvatar={({ src, alt, style }) => (
+                        (() => {
+                          const outerWidth = parseSizePx(style.width, 80);
+                          const outerHeight = parseSizePx(style.height, 80);
+                          const bubbleScale = props.chatLayout?.bubbleScale ?? 1.5;
+                          const combinedScale = Math.max(0.1, layoutScale) * bubbleScale;
+                          const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                          const borderColor = speaker.style?.avatarBorderColor || 'rgba(255,255,255,0.12)';
+                          const innerWidth = Math.max(1, outerWidth - borderWidth * 2);
+                          const innerHeight = Math.max(1, outerHeight - borderWidth * 2);
+
+                          return (
+                            <div
+                              style={{
+                                width: style.width,
+                                height: style.height,
+                                minWidth: style.minWidth,
+                                position: 'relative',
+                                borderRadius: style.borderRadius,
+                                overflow: 'hidden',
+                                boxSizing: 'border-box',
+                                backgroundColor: borderColor,
+                                boxShadow: style.boxShadow,
+                                border: `${borderWidth}px solid ${borderColor}`
+                              }}
+                            >
+                              {/\.gif(\?|$)/i.test(src)
+                                ? <Gif
+                                    src={src}
+                                    width={innerWidth}
+                                    height={innerHeight}
+                                    fit="cover"
+                                    delayRenderTimeoutInMilliseconds={120000}
+                                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
+                                  />
+                                : /\.mp4(\?|$)|\.webm(\?|$)|\.mov(\?|$)/i.test(src)
+                                  ? <OffthreadVideo src={src} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <Img src={src} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            </div>
+                          );
+                        })()
+                      )}
+                      renderBubble={({ outerStyle, contentStyle, children }) => (
+                        <div style={outerStyle}>
+                          <div style={contentStyle}>{children}</div>
+                        </div>
+                      )}
+                    />
+                  </div>
+                );
+              };
 
               return (
-                <ChatMessageBubble
-                  key={`${item.speaker}-${item.start}-${item.text}`}
-                  item={{ key: `${item.speaker}-${item.start}-${item.text}`, start: item.start, end: item.end, text: item.text, speakerId: item.speaker }}
-                  speaker={speaker}
-                  currentTime={currentTime}
-                  canvasWidth={width}
-                  layoutScale={layoutScale}
-                  chatLayout={props.chatLayout}
-                  prevSpeakerId={prevSpeakerId}
-                  nextSpeakerId={nextSpeakerId}
-                  isLatestVisible={isLatestVisible}
-                  renderAvatar={({ src, alt, style }) => (
-                    (() => {
-                      const outerWidth = parseSizePx(style.width, 80);
-                      const outerHeight = parseSizePx(style.height, 80);
-                      const bubbleScale = props.chatLayout?.bubbleScale ?? 1.5;
-                      const combinedScale = Math.max(0.1, layoutScale) * bubbleScale;
-                      const borderWidth = Math.max(2, Math.round(4 * combinedScale));
-                      const borderColor = speaker.style?.avatarBorderColor || 'rgba(255,255,255,0.12)';
-                      const innerWidth = Math.max(1, outerWidth - borderWidth * 2);
-                      const innerHeight = Math.max(1, outerHeight - borderWidth * 2);
-
-                      return (
-                        <div
-                          style={{
-                            width: style.width,
-                            height: style.height,
-                            minWidth: style.minWidth,
-                            position: 'relative',
-                            borderRadius: style.borderRadius,
-                            overflow: 'hidden',
-                            boxSizing: 'border-box',
-                            backgroundColor: borderColor,
-                            boxShadow: style.boxShadow,
-                            border: `${borderWidth}px solid ${borderColor}`
-                          }}
-                        >
-                          {/\.gif(\?|$)/i.test(src)
-                            ? <Gif
-                                src={src}
-                                width={innerWidth}
-                                height={innerHeight}
-                                fit="cover"
-                                delayRenderTimeoutInMilliseconds={120000}
-                                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
-                              />
-                            : /\.mp4(\?|$)|\.webm(\?|$)|\.mov(\?|$)/i.test(src)
-                              ? <OffthreadVideo src={src} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <Img src={src} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                        </div>
-                      );
-                    })()
-                  )}
-                  renderBubble={({ outerStyle, contentStyle, children }) => (
-                    <div style={outerStyle}>
-                      <div style={contentStyle}>{children}</div>
-                    </div>
-                  )}
-                />
+                <div key={`remotion-row-${rowIndex}`} style={{ display: 'flex', alignItems: 'flex-end', width: '100%' }}>
+                  {renderRowBubble('left')}
+                  {renderRowBubble('right')}
+                </div>
               );
             })}
           </div>
@@ -429,6 +457,9 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                 currentTime={currentTime}
                 layoutScale={layoutScale}
                 chatLayout={props.chatLayout}
+                renderInlineImage={({ src, alt, style }) => /\.gif(\?|$)/i.test(src)
+                  ? <Gif key={`top-${item.speaker}-${item.start}-${src}`} src={src} fit="contain" width={parseSizePx(style.maxWidth, 320)} height={parseSizePx(style.maxHeight, 240)} style={style} delayRenderTimeoutInMilliseconds={120000} />
+                  : <Img key={`top-${item.speaker}-${item.start}-${src}`} src={src} alt={alt} style={style} />}
               />
             ))}
           </div>
@@ -442,6 +473,9 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                 currentTime={currentTime}
                 layoutScale={layoutScale}
                 chatLayout={props.chatLayout}
+                renderInlineImage={({ src, alt, style }) => /\.gif(\?|$)/i.test(src)
+                  ? <Gif key={`bottom-${item.speaker}-${item.start}-${src}`} src={src} fit="contain" width={parseSizePx(style.maxWidth, 320)} height={parseSizePx(style.maxHeight, 240)} style={style} delayRenderTimeoutInMilliseconds={120000} />
+                  : <Img key={`bottom-${item.speaker}-${item.start}-${src}`} src={src} alt={alt} style={style} />}
               />
             ))}
           </div>

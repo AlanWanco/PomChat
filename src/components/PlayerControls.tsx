@@ -140,16 +140,20 @@ export const PlayerControls = memo(function PlayerControls({
   const formattedExportRangeStart = formatTime(displayedExportRangeStart);
   const formattedExportRangeEnd = formatTime(displayedExportRangeEnd);
   const waveformDuration = Math.max(duration || 0, defaultExportEnd || 0, displayedExportRangeEnd || 0);
+  const overlayTrackWidth = waveformOverlayMetrics.wrapperWidth || waveformRef.current?.clientWidth || 0;
   const clampedExportStart = waveformDuration > 0 ? Math.max(0, Math.min(displayedExportRangeStart, waveformDuration)) : 0;
   const clampedExportEnd = waveformDuration > 0 ? Math.max(clampedExportStart, Math.min(displayedExportRangeEnd, waveformDuration)) : 0;
   const exportBarStartPercent = waveformDuration > 0 ? (clampedExportStart / waveformDuration) * 100 : 0;
   const exportBarWidthPercent = waveformDuration > 0 ? ((clampedExportEnd - clampedExportStart) / waveformDuration) * 100 : 0;
   const backgroundSlidesBelow = backgroundSlides.filter((slide) => slide.layer !== 'overlay').sort((a, b) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0));
   const backgroundSlidesAbove = backgroundSlides.filter((slide) => slide.layer === 'overlay').sort((a, b) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0));
-  const backgroundSlideTrackPadding = 4;
-  const backgroundSlideTrackHeight = backgroundSlides.length > 0 ? (isBackgroundSlideTrackCollapsed ? 8 : Math.min(88, 12 + backgroundSlides.length * 10) + backgroundSlideTrackPadding * 2) : 0;
   const backgroundSlideBarHeight = 3;
   const backgroundSlideTrackGap = 7;
+  const backgroundSlideTrackPaddingTop = 10;
+  const backgroundSlideTrackPaddingBottom = 4;
+  const backgroundSlideTrackInnerHeight = backgroundSlides.length > 0 ? 12 + backgroundSlides.length * 10 : 0;
+  const backgroundSlideTrackContentHeight = Math.min(128, backgroundSlideTrackInnerHeight);
+  const backgroundSlideTrackHeight = backgroundSlides.length > 0 ? (isBackgroundSlideTrackCollapsed ? 8 : backgroundSlideTrackContentHeight + backgroundSlideTrackPaddingTop + backgroundSlideTrackPaddingBottom) : 0;
   const backgroundSlideGapToExportBar = backgroundSlides.length > 0 ? 7 : 1;
   const backgroundSlideBars = waveformDuration > 0
     ? [
@@ -296,6 +300,12 @@ export const PlayerControls = memo(function PlayerControls({
 
   // Initialize WaveSurfer
   useEffect(() => {
+    if (!audioPath) {
+      setIsWaveformReady(false);
+      wsRegions.current = null;
+      wavesurfer.current = null;
+      return;
+    }
     if (!waveformRef.current) return;
     if (!audioRef?.current) return;
 
@@ -459,10 +469,13 @@ export const PlayerControls = memo(function PlayerControls({
     
     wsRegions.current = wavesurfer.current.registerPlugin(RegionsPlugin.create());
 
-    if (audioPath) {
-      // With media element passed, load just fetches peaks without creating another audio element
-      wavesurfer.current.load(audioPath);
-    }
+    // With media element passed, load just fetches peaks without creating another audio element
+    void wavesurfer.current.load(audioPath).catch((error) => {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      console.error('WaveSurfer load failed:', error);
+    });
 
     wavesurfer.current.on('interaction', (newTime) => {
       onSeek(newTime);
@@ -812,7 +825,7 @@ export const PlayerControls = memo(function PlayerControls({
           marginBottom: showWaveformContainer ? '0.5rem' : 0
         }}
       >
-      {audioPath && showWaveformContainer && editingSub && regionTooltip && (
+      {showWaveformContainer && editingSub && regionTooltip && (
             <div
               className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 px-2 py-1 rounded-md text-[10px] font-mono z-[70] pointer-events-none whitespace-nowrap"
               style={{
@@ -853,11 +866,11 @@ export const PlayerControls = memo(function PlayerControls({
                 {insertImageHoverLabel.label}
             </div>
           )}
-          {audioPath && showWaveformContainer && waveformOverlayMetrics.wrapperWidth > 0 && waveformDuration > 0 && (
+          {showWaveformContainer && overlayTrackWidth > 0 && waveformDuration > 0 && (
             <div className="relative w-full overflow-visible mb-0.5" style={{ height: `${Math.max(exportHandleSize + 4, 14)}px`, marginTop: backgroundSlides.length > 0 ? `${backgroundSlideTrackHeight + backgroundSlideGapToExportBar}px` : undefined }}>
               {backgroundSlideBars.length > 0 && (
                 <div
-                  className="absolute left-0 right-0 rounded-lg"
+                  className="absolute left-0 right-0 rounded-lg overflow-hidden"
                   style={{
                     top: `${-(backgroundSlideTrackHeight + backgroundSlideGapToExportBar)}px`,
                     height: `${backgroundSlideTrackHeight}px`,
@@ -866,16 +879,124 @@ export const PlayerControls = memo(function PlayerControls({
                     boxShadow: `inset 0 0 0 1px ${rgba(themeColor, isDarkMode ? 0.04 : 0.02)}`,
                   }}
                 >
-                  {!isBackgroundSlideTrackCollapsed && backgroundSlidesBelow.length > 0 && backgroundSlidesAbove.length > 0 ? (
+                  <div
+                    className="relative overflow-x-hidden"
+                    style={{
+                      height: '100%',
+                      overflowY: backgroundSlideTrackInnerHeight > backgroundSlideTrackContentHeight ? 'auto' : 'hidden',
+                      overscrollBehavior: 'contain',
+                    }}
+                  >
                     <div
-                      className="absolute left-2 right-2"
-                      style={{
-                        top: `${backgroundSlideTrackPadding + backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap) + 1}px`,
-                        height: '1px',
-                        backgroundColor: rgba(themeColor, isDarkMode ? 0.55 : 0.38),
-                      }}
-                    />
-                  ) : null}
+                      className="relative"
+                      style={{ height: `${backgroundSlideTrackInnerHeight + backgroundSlideTrackPaddingTop + backgroundSlideTrackPaddingBottom}px` }}
+                    >
+                      <div
+                        className="absolute left-0 top-0"
+                        style={{
+                          width: `${overlayTrackWidth}px`,
+                          height: `${backgroundSlideTrackInnerHeight + backgroundSlideTrackPaddingTop + backgroundSlideTrackPaddingBottom}px`,
+                          transform: `translate(${-waveformOverlayMetrics.scrollLeft}px, 0)`,
+                        }}
+                      >
+                      {!isBackgroundSlideTrackCollapsed && backgroundSlidesBelow.length > 0 && backgroundSlidesAbove.length > 0 ? (
+                        <div
+                          className="absolute left-2 right-2"
+                          style={{
+                            top: `${backgroundSlideTrackPaddingTop + backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap) + 1}px`,
+                            height: '1px',
+                            backgroundColor: rgba(themeColor, isDarkMode ? 0.55 : 0.38),
+                          }}
+                        />
+                      ) : null}
+                      {backgroundSlideBars.map((slide) => (
+                        <div
+                          key={slide.id}
+                          className="absolute"
+                          onMouseEnter={() => {
+                            if (!isBackgroundSlideTrackCollapsed && slide.name) {
+                              const leftPercent = Number.parseFloat(slide.left) || 0;
+                              const widthPercent = Number.parseFloat(slide.width) || 0;
+                              const centerPercent = leftPercent + widthPercent / 2;
+                              const x = (centerPercent / 100) * (waveformOverlayMetrics.viewportWidth || overlayTrackWidth || 0);
+                              setInsertImageHoverLabel({ x, label: `${slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')} ${slide.name}`, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            if (!isBackgroundSlideTrackCollapsed) {
+                              setInsertImageHoverLabel(null);
+                            }
+                          }}
+                          style={{
+                            left: slide.left,
+                            width: slide.width,
+                            top: isBackgroundSlideTrackCollapsed
+                              ? `${backgroundSlideTrackPaddingTop + 1}px`
+                              : `${backgroundSlideTrackPaddingTop + (slide.group === 'overlay' ? slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap) : (backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap)) + backgroundSlideTrackGap + slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap))}px`,
+                            height: `${backgroundSlideBarHeight}px`,
+                            minWidth: '10px',
+                            opacity: isBackgroundSlideTrackCollapsed ? 0.45 : 1,
+                            pointerEvents: isBackgroundSlideTrackCollapsed ? 'none' : 'auto',
+                          }}
+                        >
+                          <div
+                            className="absolute inset-0 rounded-sm"
+                            style={{
+                              backgroundColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
+                              boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.18 : 0.12)}`,
+                              backgroundImage: slide.type === 'text' ? `linear-gradient(135deg, transparent 25%, ${rgba('#ffffff', 0.18)} 25%, ${rgba('#ffffff', 0.18)} 50%, transparent 50%, transparent 75%, ${rgba('#ffffff', 0.18)} 75%, ${rgba('#ffffff', 0.18)} 100%)` : undefined,
+                              backgroundSize: slide.type === 'text' ? '8px 8px' : undefined,
+                            }}
+                          />
+                          {!isBackgroundSlideTrackCollapsed ? <button
+                            type="button"
+                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border"
+                            style={{
+                              left: 0,
+                              width: '10px',
+                              height: '10px',
+                              backgroundColor: uiTheme.panelBgElevated,
+                              borderColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
+                              boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.24 : 0.16)}`,
+                              cursor: 'ew-resize',
+                              pointerEvents: 'auto',
+                            }}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              backgroundSlideDragRef.current = { id: slide.id, edge: 'start' };
+                              document.body.style.userSelect = 'none';
+                              document.body.style.cursor = 'ew-resize';
+                            }}
+                            title={slide.name}
+                          /> : null}
+                          {!isBackgroundSlideTrackCollapsed ? <button
+                            type="button"
+                            className="absolute top-1/2 translate-x-1/2 -translate-y-1/2 rounded-full border"
+                            style={{
+                              right: 0,
+                              width: '10px',
+                              height: '10px',
+                              backgroundColor: uiTheme.panelBgElevated,
+                              borderColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
+                              boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.24 : 0.16)}`,
+                              cursor: 'ew-resize',
+                              pointerEvents: 'auto',
+                            }}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              backgroundSlideDragRef.current = { id: slide.id, edge: 'end' };
+                              document.body.style.userSelect = 'none';
+                              document.body.style.cursor = 'ew-resize';
+                            }}
+                            title={slide.name}
+                          /> : null}
+                        </div>
+                      ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
               {/* Collapse/expand button — positioned at top of the track, outside the track container so it moves with track height */}
@@ -899,7 +1020,7 @@ export const PlayerControls = memo(function PlayerControls({
               <div
                 className="absolute left-0 top-0"
                 style={{
-                  width: `${waveformOverlayMetrics.wrapperWidth}px`,
+                  width: `${overlayTrackWidth}px`,
                   height: `${exportBarHeight}px`,
                   transform: `translate(${-waveformOverlayMetrics.scrollLeft}px, 0)`,
                   backgroundColor: exportBarBaseColor,
@@ -907,91 +1028,6 @@ export const PlayerControls = memo(function PlayerControls({
                   boxShadow: `inset 0 0 0 1px ${rgba(themeColor, isDarkMode ? 0.2 : 0.12)}`,
                 }}
                 >
-                  {backgroundSlideBars.map((slide) => (
-                    <div
-                      key={slide.id}
-                      className="absolute"
-                      onMouseEnter={() => {
-                        if (!isBackgroundSlideTrackCollapsed && slide.name) {
-                          const leftPercent = Number.parseFloat(slide.left) || 0;
-                          const widthPercent = Number.parseFloat(slide.width) || 0;
-                          const centerPercent = leftPercent + widthPercent / 2;
-                          const x = (centerPercent / 100) * (waveformOverlayMetrics.viewportWidth || waveformOverlayMetrics.wrapperWidth || 0);
-                          setInsertImageHoverLabel({ x, label: `${slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')} ${slide.name}`, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
-                        }
-                      }}
-                      onMouseLeave={() => {
-                        if (!isBackgroundSlideTrackCollapsed) {
-                          setInsertImageHoverLabel(null);
-                        }
-                      }}
-                      style={{
-                        left: slide.left,
-                        width: slide.width,
-                        top: isBackgroundSlideTrackCollapsed
-                          ? `${-(backgroundSlideGapToExportBar + 5)}px`
-                          : `${-(backgroundSlideTrackHeight + backgroundSlideGapToExportBar) + backgroundSlideTrackPadding + (slide.group === 'overlay' ? slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap) : (backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap)) + backgroundSlideTrackGap + slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap))}px`,
-                        height: `${backgroundSlideBarHeight}px`,
-                        minWidth: '10px',
-                        opacity: isBackgroundSlideTrackCollapsed ? 0.45 : 1,
-                        pointerEvents: isBackgroundSlideTrackCollapsed ? 'none' : 'auto',
-                      }}
-                    >
-                        <div
-                          className="absolute inset-0 rounded-sm"
-                          style={{
-                            backgroundColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
-                            boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.18 : 0.12)}`,
-                            backgroundImage: slide.type === 'text' ? `linear-gradient(135deg, transparent 25%, ${rgba('#ffffff', 0.18)} 25%, ${rgba('#ffffff', 0.18)} 50%, transparent 50%, transparent 75%, ${rgba('#ffffff', 0.18)} 75%, ${rgba('#ffffff', 0.18)} 100%)` : undefined,
-                            backgroundSize: slide.type === 'text' ? '8px 8px' : undefined,
-                          }}
-                        />
-                      {!isBackgroundSlideTrackCollapsed ? <button
-                        type="button"
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border"
-                        style={{
-                          left: 0,
-                          width: '10px',
-                          height: '10px',
-                          backgroundColor: uiTheme.panelBgElevated,
-                          borderColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
-                          boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.24 : 0.16)}`,
-                          cursor: 'ew-resize',
-                          pointerEvents: 'auto',
-                        }}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          backgroundSlideDragRef.current = { id: slide.id, edge: 'start' };
-                          document.body.style.userSelect = 'none';
-                          document.body.style.cursor = 'ew-resize';
-                        }}
-                        title={slide.name}
-                      /> : null}
-                      {!isBackgroundSlideTrackCollapsed ? <button
-                        type="button"
-                        className="absolute top-1/2 translate-x-1/2 -translate-y-1/2 rounded-full border"
-                        style={{
-                          right: 0,
-                          width: '10px',
-                          height: '10px',
-                          backgroundColor: uiTheme.panelBgElevated,
-                          borderColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
-                          boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.24 : 0.16)}`,
-                          cursor: 'ew-resize',
-                          pointerEvents: 'auto',
-                        }}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          backgroundSlideDragRef.current = { id: slide.id, edge: 'end' };
-                          document.body.style.userSelect = 'none';
-                          document.body.style.cursor = 'ew-resize';
-                        }}
-                        title={slide.name}
-                      /> : null}
-                    </div>
-                  ))}
                   <div
                     className="absolute top-0 h-full rounded-full"
                   style={{
@@ -1077,15 +1113,17 @@ export const PlayerControls = memo(function PlayerControls({
             ) : (
               <div
                 className="w-full rounded-md border"
+                ref={waveformRef}
                 onClick={handlePlaceholderWaveformSeek}
                 onMouseMove={handlePlaceholderWaveformHover}
                 onMouseLeave={clearWaveformHover}
                 style={{
                   height: `${waveformHeight}px`,
                   borderColor: rgba(secondaryThemeColor, 0.2),
-                  background: `linear-gradient(180deg, ${rgba(themeColor, isDarkMode ? 0.08 : 0.04)} 0%, ${rgba(themeColor, isDarkMode ? 0.05 : 0.02)} 100%)`,
+                  background: `linear-gradient(180deg, ${rgba(themeColor, isDarkMode ? 0.06 : 0.035)} 0%, ${rgba(themeColor, isDarkMode ? 0.03 : 0.015)} 100%)`,
                   position: 'relative',
                   cursor: waveformDuration > 0 ? 'pointer' : 'default',
+                  overflow: 'hidden',
                 }}
                 title={waveformDuration > 0 ? t('player.waveformTitle') : undefined}
               >
@@ -1096,11 +1134,26 @@ export const PlayerControls = memo(function PlayerControls({
                     right: 0,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    height: '2px',
+                    height: '1px',
                     backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.65 : 0.5),
                     borderRadius: 9999,
                   }}
                 />
+                {waveformHoverPreview && waveformDuration > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      left: `${waveformHoverPreview.x}px`,
+                      width: '1px',
+                      transform: 'translateX(-50%)',
+                      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.96)',
+                      boxShadow: isDarkMode ? '0 0 0 1px rgba(255,255,255,0.12)' : '0 0 0 1px rgba(17,24,39,0.08)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>

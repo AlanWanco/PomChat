@@ -9,7 +9,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedVisibleMessages } from './components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows } from './components/chat/SharedChatBubbles';
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
@@ -54,6 +54,7 @@ type RenderCacheInfo = {
 
 // Web-only local storage key
 const STORAGE_KEY = 'pomchat_config';
+const DEFAULT_I18N_LANGUAGE: Language = 'en';
 
 type ExportProgressState = {
   progress: number;
@@ -144,7 +145,7 @@ const DEFAULT_PROJECT_CONFIG = {
   content: [] as any[],
   speakers: {
     A: {
-      name: '主播A',
+      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.speakerA'),
       avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
       side: 'left',
       style: {
@@ -155,7 +156,7 @@ const DEFAULT_PROJECT_CONFIG = {
       }
     },
     B: {
-      name: '嘉宾B',
+      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.speakerB'),
       avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=B',
       side: 'right',
       style: {
@@ -166,7 +167,7 @@ const DEFAULT_PROJECT_CONFIG = {
       }
     },
     ANNOTATION: {
-      name: '注释',
+      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.annotationSpeaker'),
       avatar: '',
       side: 'center',
       type: 'annotation',
@@ -235,9 +236,9 @@ const sanitizeProjectConfig = (parsed: any) => {
         ? parsed.background.slides.map((slide: any, index: number) => ({
             id: typeof slide?.id === 'string' && slide.id ? slide.id : `slide-${index + 1}`,
             type: slide?.type === 'text' ? 'text' : 'image',
-            name: typeof slide?.name === 'string' ? slide.name : ((slide?.type === 'text' ? `字${index + 1}` : `图${index + 1}`)),
+            name: typeof slide?.name === 'string' ? slide.name : ((slide?.type === 'text' ? translate(DEFAULT_I18N_LANGUAGE, 'defaults.textAssetName', { index: index + 1 }) : translate(DEFAULT_I18N_LANGUAGE, 'defaults.imageAssetName', { index: index + 1 }))),
             image: typeof slide?.image === 'string' ? slide.image : '',
-            text: typeof slide?.text === 'string' ? slide.text : '文本',
+            text: typeof slide?.text === 'string' ? slide.text : translate(DEFAULT_I18N_LANGUAGE, 'project.defaultTextAssetContent'),
             start: typeof slide?.start === 'number' && Number.isFinite(slide.start) ? slide.start : 0,
             end: typeof slide?.end === 'number' && Number.isFinite(slide.end) ? slide.end : 3,
             fit: slide?.fit === 'contain' || slide?.fit === 'fill' ? slide.fit : 'cover',
@@ -308,13 +309,13 @@ const createBlankProjectConfig = (projectTitle: string) => ({
   content: [],
   speakers: {
     A: {
-      name: '默认角色',
+      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.speakerGeneric'),
       avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
       side: 'left',
       style: { ...DEFAULT_BUBBLE_STYLE }
     },
     ANNOTATION: {
-      name: '注释',
+      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.annotationSpeaker'),
       avatar: '',
       side: 'center',
       type: 'annotation',
@@ -768,7 +769,7 @@ function App() {
 
   // Panel Widths
   const [subtitleWidth, setSubtitleWidth] = useState(320);
-  const [settingsWidth, setSettingsWidth] = useState(320);
+  const [settingsWidth, setSettingsWidth] = useState(530);
   const [activeTab, setActiveTab] = useState<'subtitle' | 'global' | 'project' | 'speakers' | 'annotation'>(
     !window.electron && window.innerWidth < 700 ? 'subtitle' : 'speakers'
   );
@@ -1182,6 +1183,38 @@ const [previewScale, setPreviewScale] = useState(1);
     } catch (e) {
       console.error('Failed to delete subtitle:', e);
     }
+  };
+
+  const handleBulkDeleteSubtitles = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      pushHistorySnapshot();
+      const idSet = new Set(ids);
+      const nextSubtitles = subtitles.filter((sub: any) => !idSet.has(sub.id));
+      setSubtitles(nextSubtitles);
+      if (editingSub?.id && idSet.has(editingSub.id)) {
+        setEditingSub(null);
+      }
+      markProjectDirty();
+      showToast(t('app.subtitleBatchDeleted', { count: ids.length }));
+    } catch (e) {
+      console.error('Failed to delete subtitles:', e);
+    }
+  };
+
+  const handleBulkUpdateSubtitleSpeaker = async (ids: string[], speakerId: string) => {
+    if (ids.length === 0 || !speakerId) return;
+    pushHistorySnapshot();
+    const idSet = new Set(ids);
+    const nextSubtitles = subtitles.map((subtitle: any) => {
+      if (!idSet.has(subtitle.id)) {
+        return subtitle;
+      }
+      return normalizeSubtitleSpeakerFields({ ...subtitle, speakerId });
+    }).sort((a: any, b: any) => a.start - b.start || a.end - b.end);
+    setSubtitles(nextSubtitles);
+    markProjectDirty();
+    showToast(t('app.subtitleBatchSpeakerUpdated', { count: ids.length }));
   };
 
   const handleAddSubtitle = async () => {
@@ -1760,7 +1793,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (audioRef.current) {
       audioRef.current.load();
     }
-  }, [config.audioPath]);
+  }, [webAudioObjectUrl, config.audioPath]);
 
   const persistPlaybackPosition = useCallback((time: number) => {
     const playbackKey = projectPath || config.assPath || config.audioPath;
@@ -1875,7 +1908,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
-      if (!Number.isFinite(audioRef.current.duration) || audioRef.current.duration <= 0) {
+      if (!window.electron && (!Number.isFinite(audioRef.current.duration) || audioRef.current.duration <= 0)) {
         showToast(t('app.audioReloadRequired'));
       }
       setDuration(audioRef.current.duration);
@@ -1978,6 +2011,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const cachedPath = cachedRemoteAssets[assetPath || ''] || assetPath;
       return resolvePath(cachedPath) || cachedPath || '';
     };
+    const remapMarkdownImagePaths = (text: string) => text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => `![${alt}](${resolveExportAssetPath((src || '').trim())})`);
     const remappedSpeakers = Object.fromEntries(
       Object.entries(restConfig.speakers || {}).map(([key, speaker]: [string, any]) => [
         key,
@@ -1989,6 +2023,9 @@ const [previewScale, setPreviewScale] = useState(1);
     );
     return {
       ...restConfig,
+      content: Array.isArray(restConfig.content)
+        ? restConfig.content.map((item: any) => item?.type === 'text' ? { ...item, text: remapMarkdownImagePaths(item.text || '') } : item)
+        : restConfig.content,
       speakers: remappedSpeakers,
       background: restConfig.background
         ? {
@@ -2621,22 +2658,22 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const validateProjectConfig = (parsed: any) => {
     if (!parsed || typeof parsed !== 'object') {
-      throw new Error('无效的配置文件：不是一个有效的 JSON 对象');
+      throw new Error(t('dialog.invalidConfigNotObject'));
     }
     
     const requiredKeys = ['fps', 'dimensions', 'audioPath', 'assPath', 'speakers'];
     for (const key of requiredKeys) {
       if (parsed[key] === undefined) {
-        throw new Error(`无效的配置文件：缺少必要字段 "${key}"`);
+        throw new Error(t('dialog.invalidConfigMissingField', { key }));
       }
     }
     
     if (typeof parsed.dimensions !== 'object' || !parsed.dimensions.width || !parsed.dimensions.height) {
-      throw new Error('无效的配置文件：dimensions 尺寸格式错误');
+      throw new Error(t('dialog.invalidConfigBadDimensions'));
     }
 
     if (typeof parsed.speakers !== 'object') {
-      throw new Error('无效的配置文件：speakers 格式错误');
+      throw new Error(t('dialog.invalidConfigBadSpeakers'));
     }
 
     // 默认值合并（兼容旧版本或缺失非必填字段的配置）
@@ -2768,6 +2805,37 @@ const [previewScale, setPreviewScale] = useState(1);
       alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
     }
   };
+
+  const handleClearAudio = useCallback(() => {
+    const previousWebAudioObjectUrl = webAudioObjectUrl;
+
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
+    }
+
+    setWebAudioObjectUrl('');
+    applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: '' }));
+    if (previousWebAudioObjectUrl) {
+      window.setTimeout(() => URL.revokeObjectURL(previousWebAudioObjectUrl), 0);
+    }
+    showToast(t('app.audioCleared'));
+  }, [applyTrackedConfigUpdater, showToast, t, webAudioObjectUrl]);
+
+  const handleClearSubtitle = useCallback(() => {
+    setWebAssContent(null);
+    applyTrackedConfigUpdater((prev: any) => ({
+      ...prev,
+      assPath: '',
+      content: []
+    }));
+    showToast(t('app.subtitleCleared'));
+  }, [applyTrackedConfigUpdater, showToast, t]);
 
   const importFileByPath = useCallback(async (filePath: string, currentProjectPath: string | null) => {
     if (!window.electron || !filePath) return;
@@ -3469,7 +3537,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const appearanceTime = Math.max(0, item.start - (animationStyle === 'none' ? 0 : animationDuration));
     return previewRenderTime >= appearanceTime && previewRenderTime <= item.end;
   });
-  const visibleMessages = useMemo(() => {
+  const visibleMessageRows = useMemo(() => {
     const appeared = subtitles.filter((item) => {
       const speaker = config.speakers[item.speakerId];
       if (!speaker || speaker.type === 'annotation') return false;
@@ -3480,8 +3548,12 @@ const [previewScale, setPreviewScale] = useState(1);
       return previewRenderTime >= appearanceTime;
     });
 
-    return computeInterruptedVisibleMessages(appeared, config.speakers, config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT);
+    return computeInterruptedMessageRows(appeared, config.speakers, config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT);
   }, [subtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, config.chatLayout?.maxVisibleBubbles, previewRenderTime]);
+  const flatVisibleMessages = useMemo(
+    () => visibleMessageRows.flatMap((row) => [row.left, row.right].filter(Boolean)),
+    [visibleMessageRows]
+  );
   useEffect(() => {
     const bgVideo = previewBackgroundVideoRef.current;
     const backgroundImage = config.background?.image || '';
@@ -3729,6 +3801,8 @@ const [previewScale, setPreviewScale] = useState(1);
         onSaveProject={handleSaveProject}
         onSetAudio={handleSetAudio}
         onSetSubtitle={handleSetSubtitle}
+        onClearAudio={handleClearAudio}
+        onClearSubtitle={handleClearSubtitle}
         onAddSubtitle={handleAddSubtitle}
         onImportPresets={handleImportPresets}
         onExportPresets={handleExportPresets}
@@ -3783,10 +3857,9 @@ const [previewScale, setPreviewScale] = useState(1);
       )}
 
       <audio 
-        key={resolvedAudioPath}
         ref={audioRef}
         className="hidden"
-        src={resolvedAudioPath}
+        src={resolvedAudioPath || undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={() => !loop && setIsPlaying(false)}
@@ -3811,6 +3884,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onSeek={handleSeek} 
                 onUpdateSubtitle={handleUpdateSubtitle}
                 onDeleteSubtitle={handleDeleteSubtitle}
+                onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
+                onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                 editingSub={editingSub}
                 setEditingSub={setEditingSub}
               />
@@ -3976,6 +4051,8 @@ const [previewScale, setPreviewScale] = useState(1);
                   onSeek={handleSeek}
                   onUpdateSubtitle={handleUpdateSubtitle}
                   onDeleteSubtitle={handleDeleteSubtitle}
+                  onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
+                  onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                   editingSub={editingSub}
                   setEditingSub={setEditingSub}
                 />
@@ -4210,53 +4287,85 @@ const [previewScale, setPreviewScale] = useState(1);
                     {subtitlesLoading ? (
                       <div className="text-center opacity-50 my-auto">{t('app.loadSubtitle')}</div>
                     ) : (
-                      visibleMessages.map((item, index) => {
-                        const speaker = config.speakers[item.speakerId];
-                        if (!speaker || speaker.type === 'annotation') return null;
-                        const prevSpeakerId = index > 0 ? visibleMessages[index - 1].speakerId : undefined;
-                        const nextSpeakerId = index < visibleMessages.length - 1 ? visibleMessages[index + 1].speakerId : undefined;
-                        const isLatestVisible = index === visibleMessages.length - 1;
+                      visibleMessageRows.map((row, rowIndex) => {
+                        const isLatestRow = rowIndex === visibleMessageRows.length - 1;
+
+                        const renderRowBubble = (side: 'left' | 'right') => {
+                          const item = row[side];
+                          if (!item) return null;
+                          const speaker = config.speakers[item.speakerId];
+                          if (!speaker || speaker.type === 'annotation') return null;
+                          const flatIndex = flatVisibleMessages.findIndex((candidate) => candidate?.id === item.id);
+                          const prevSpeakerId = flatIndex > 0 ? flatVisibleMessages[flatIndex - 1]?.speakerId : undefined;
+                          const nextSpeakerId = flatIndex < flatVisibleMessages.length - 1 ? flatVisibleMessages[flatIndex + 1]?.speakerId : undefined;
+
+                          return (
+                            <div
+                              key={item.id}
+                              style={{
+                                  flex: '0 1 auto',
+                                  minWidth: 0,
+                                  display: 'flex',
+                                  justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
+                                  marginLeft: side === 'right' ? 'auto' : undefined,
+                              }}
+                            >
+                              <ChatMessageBubble
+                                item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
+                                speaker={speaker}
+                                currentTime={previewRenderTime}
+                                canvasWidth={canvasWidth}
+                                layoutScale={1}
+                                chatLayout={previewChatLayout}
+                                fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
+                                prevSpeakerId={prevSpeakerId}
+                                nextSpeakerId={nextSpeakerId}
+                                isLatestVisible={isLatestRow}
+                                renderInlineImage={({ src, alt, style }) => (
+                                  <img
+                                    key={`${item.id}-${src}`}
+                                    src={resolvePath(src)}
+                                    alt={alt}
+                                    referrerPolicy="no-referrer"
+                                    style={style}
+                                  />
+                                )}
+                                renderAvatar={({ src, alt, style }) => {
+                                  const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
+                                  const combinedScale = Math.max(0.1, 1) * bubbleScale;
+                                  const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                                  const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
+                                  return (
+                                    <img
+                                      src={resolvePath(src)}
+                                      alt={alt}
+                                      referrerPolicy="no-referrer"
+                                      className="rounded-full shrink-0 object-cover"
+                                      style={{
+                                        ...style,
+                                        pointerEvents: 'none',
+                                        boxSizing: 'border-box',
+                                        border: `${borderWidth}px solid ${borderColor}`,
+                                        backgroundColor: borderColor
+                                      }}
+                                    />
+                                  );
+                                }}
+                                renderBubble={({ outerStyle, contentStyle, children }) => (
+                                  <div style={{ ...outerStyle, pointerEvents: 'none' }}>
+                                    <div style={{ ...contentStyle, pointerEvents: 'none' }}>{children}</div>
+                                  </div>
+                                )}
+                              />
+                            </div>
+                          );
+                        };
 
                         return (
-                          <ChatMessageBubble
-                            key={item.id}
-                            item={{ key: item.id, start: item.start, end: item.end, text: item.text, speakerId: item.speakerId }}
-                            speaker={speaker}
-                            currentTime={previewRenderTime}
-                            canvasWidth={canvasWidth}
-                            layoutScale={1}
-                            chatLayout={previewChatLayout}
-                            fallbackAvatarBorderColor={isDarkMode ? '#1f2937' : '#ffffff'}
-                            prevSpeakerId={prevSpeakerId}
-                            nextSpeakerId={nextSpeakerId}
-                            isLatestVisible={isLatestVisible}
-                            renderAvatar={({ src, alt, style }) => {
-                              const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
-                              const combinedScale = Math.max(0.1, 1) * bubbleScale;
-                              const borderWidth = Math.max(2, Math.round(4 * combinedScale));
-                              const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
-                              return (
-                                <img
-                                  src={resolvePath(src)}
-                                  alt={alt}
-                                  referrerPolicy="no-referrer"
-                                  className="rounded-full shrink-0 object-cover"
-                                  style={{
-                                    ...style,
-                                    pointerEvents: 'none',
-                                    boxSizing: 'border-box',
-                                    border: `${borderWidth}px solid ${borderColor}`,
-                                    backgroundColor: borderColor
-                                  }}
-                                />
-                              );
-                            }}
-                            renderBubble={({ outerStyle, contentStyle, children }) => (
-                              <div style={{ ...outerStyle, pointerEvents: 'none' }}>
-                                <div style={{ ...contentStyle, pointerEvents: 'none' }}>{children}</div>
-                              </div>
-                            )}
-                          />
+                          <div key={`message-row-${rowIndex}`} style={{ display: 'flex', alignItems: 'flex-end', width: '100%' }}>
+                            {renderRowBubble('left')}
+                            {renderRowBubble('right')}
+                          </div>
                         );
                       })
                     )}
@@ -4356,6 +4465,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
+                            renderInlineImage={({ src, alt, style }) => <img key={`${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
                           />
                         </div>
                       );
@@ -4372,6 +4482,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
+                            renderInlineImage={({ src, alt, style }) => <img key={`${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
                           />
                         </div>
                       );
@@ -4526,6 +4637,7 @@ const [previewScale, setPreviewScale] = useState(1);
       </div>
 
       <PlayerControls 
+        key={resolvedAudioPath || 'no-audio'}
         audioPath={resolvedAudioPath}
         audioRef={audioRef}
         duration={duration}
@@ -4556,7 +4668,9 @@ const [previewScale, setPreviewScale] = useState(1);
           id: slide.id,
           start: slide.start,
           end: slide.end,
-          name: (slide.name || '').trim() || (slide.type === 'text' ? `字${index + 1}` : `图${index + 1}`),
+          name: (slide.name || '').trim() || (slide.type === 'text'
+            ? translate(DEFAULT_I18N_LANGUAGE, 'defaults.textAssetName', { index: index + 1 })
+            : translate(DEFAULT_I18N_LANGUAGE, 'defaults.imageAssetName', { index: index + 1 })),
           type: slide.type || 'image',
           layer: slide.layer || 'background',
           backgroundOrder: slide.backgroundOrder ?? index,
@@ -4658,6 +4772,8 @@ const [previewScale, setPreviewScale] = useState(1);
                     onSeek={handleSeek}
                     onUpdateSubtitle={handleUpdateSubtitle}
                     onDeleteSubtitle={handleDeleteSubtitle}
+                    onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
+                    onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                     editingSub={editingSub}
                     setEditingSub={setEditingSub}
                   />

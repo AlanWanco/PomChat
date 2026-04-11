@@ -18,6 +18,8 @@ interface MenuBarProps {
   onSetAudio: () => void;
   onSetSubtitle: () => void;
   onAddSubtitle: () => void;
+  onClearAudio: () => void;
+  onClearSubtitle: () => void;
   onImportPresets: () => void;
   onExportPresets: () => void;
   onSortSubtitles: () => void;
@@ -45,6 +47,8 @@ export function MenuBar({
   onSetAudio,
   onSetSubtitle,
   onAddSubtitle,
+  onClearAudio,
+  onClearSubtitle,
   onImportPresets,
   onExportPresets,
   onSortSubtitles,
@@ -132,6 +136,27 @@ export function MenuBar({
                 className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
               >
                 <Subtitles size={14} /> {t('menu.importSubtitle')}
+              </button>
+              <div className={`my-1 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}></div>
+              <button 
+                onClick={() => executeAction(onClearAudio)} 
+                disabled={!projectPath}
+                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
+                style={{ color: secondaryThemeColor }}
+                onMouseEnter={(e) => { if (projectPath) e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <XCircle size={14} /> {t('menu.clearAudio')}
+              </button>
+              <button 
+                onClick={() => executeAction(onClearSubtitle)} 
+                disabled={!projectPath}
+                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
+                style={{ color: secondaryThemeColor }}
+                onMouseEnter={(e) => { if (projectPath) e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <XCircle size={14} /> {t('menu.clearSubtitle')}
               </button>
               <div className={`my-1 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}></div>
               <button 
