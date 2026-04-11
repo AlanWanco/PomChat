@@ -910,35 +910,40 @@ export const PlayerControls = memo(function PlayerControls({
                         />
                       ) : null}
                       {backgroundSlideBars.map((slide) => (
-                        <div
-                          key={slide.id}
-                          className="absolute"
-                          onMouseEnter={() => {
-                            if (!isBackgroundSlideTrackCollapsed && slide.name) {
-                              const leftPercent = Number.parseFloat(slide.left) || 0;
-                              const widthPercent = Number.parseFloat(slide.width) || 0;
-                              const centerPercent = leftPercent + widthPercent / 2;
-                              const x = (centerPercent / 100) * (waveformOverlayMetrics.viewportWidth || overlayTrackWidth || 0);
-                              setInsertImageHoverLabel({ x, label: `${slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')} ${slide.name}`, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
-                            }
-                          }}
-                          onMouseLeave={() => {
-                            if (!isBackgroundSlideTrackCollapsed) {
-                              setInsertImageHoverLabel(null);
-                            }
-                          }}
-                          style={{
-                            left: slide.left,
-                            width: slide.width,
-                            top: isBackgroundSlideTrackCollapsed
-                              ? `${backgroundSlideTrackPaddingTop + 1}px`
-                              : `${backgroundSlideTrackPaddingTop + (slide.group === 'overlay' ? slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap) : (backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap)) + backgroundSlideTrackGap + slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap))}px`,
-                            height: `${backgroundSlideBarHeight}px`,
-                            minWidth: '10px',
-                            opacity: isBackgroundSlideTrackCollapsed ? 0.45 : 1,
-                            pointerEvents: isBackgroundSlideTrackCollapsed ? 'none' : 'auto',
-                          }}
-                        >
+                        (() => {
+                          const collapsedTop = 2;
+                          const expandedTop = backgroundSlideTrackPaddingTop + (slide.group === 'overlay'
+                            ? slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap)
+                            : (backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap)) + backgroundSlideTrackGap + slide.trackIndex * (backgroundSlideBarHeight + backgroundSlideTrackGap));
+
+                          return <div
+                            key={slide.id}
+                            className="absolute"
+                            onMouseEnter={() => {
+                              if (!isBackgroundSlideTrackCollapsed && slide.name) {
+                                const leftPercent = Number.parseFloat(slide.left) || 0;
+                                const widthPercent = Number.parseFloat(slide.width) || 0;
+                                const centerPercent = leftPercent + widthPercent / 2;
+                                const x = (centerPercent / 100) * (waveformOverlayMetrics.viewportWidth || overlayTrackWidth || 0);
+                                setInsertImageHoverLabel({ x, label: `${slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')} ${slide.name}`, color: slide.group === 'background' ? themeColor : secondaryThemeColor });
+                              }
+                            }}
+                            onMouseLeave={() => {
+                              if (!isBackgroundSlideTrackCollapsed) {
+                                setInsertImageHoverLabel(null);
+                              }
+                            }}
+                            style={{
+                              left: slide.left,
+                              width: slide.width,
+                              top: `${isBackgroundSlideTrackCollapsed ? collapsedTop : expandedTop}px`,
+                              height: `${backgroundSlideBarHeight}px`,
+                              minWidth: '10px',
+                              opacity: isBackgroundSlideTrackCollapsed ? 0.42 : 1,
+                              zIndex: isBackgroundSlideTrackCollapsed ? 20 : undefined,
+                              pointerEvents: isBackgroundSlideTrackCollapsed ? 'none' : 'auto',
+                            }}
+                          >
                           <div
                             className="absolute inset-0 rounded-sm"
                             style={{
@@ -992,7 +997,8 @@ export const PlayerControls = memo(function PlayerControls({
                             }}
                             title={slide.name}
                           /> : null}
-                        </div>
+                          </div>;
+                        })()
                       ))}
                       </div>
                     </div>
