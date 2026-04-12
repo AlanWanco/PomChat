@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electron', {
   getRenderCacheInfo: () => ipcRenderer.invoke('get-render-cache-info'),
   clearRenderCache: (type: 'remote-assets' | 'remotion-temp') => ipcRenderer.invoke('clear-render-cache', type),
   cacheRemoteAsset: (assetUrl: string) => ipcRenderer.invoke('cache-remote-asset', assetUrl),
+  saveClipboardImageToCache: (payload: { bytes: number[]; contentType?: string; preferredName?: string }) => ipcRenderer.invoke('save-clipboard-image-to-cache', payload),
   showSaveDialog: (options: any) => ipcRenderer.invoke('show-save-dialog', options),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
   getDroppedFilePath: (file: File) => webUtils.getPathForFile(file),

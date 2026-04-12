@@ -159,6 +159,20 @@ function guessExtensionFromContentType(contentType: string | null) {
   return '';
 }
 
+function saveImageBufferToCache(buffer: Buffer, contentType?: string | null, preferredName?: string | null) {
+  const cacheDir = getRemoteAssetCacheDir();
+  const preferredExtension = preferredName ? path.extname(preferredName).toLowerCase() : '';
+  const extension = guessExtensionFromContentType(contentType || null) || preferredExtension || '.png';
+  const hash = crypto.createHash('sha1').update(buffer).digest('hex');
+  const outputPath = path.join(cacheDir, `${hash}${extension}`);
+
+  if (!fs.existsSync(outputPath)) {
+    fs.writeFileSync(outputPath, buffer);
+  }
+
+  return outputPath;
+}
+
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron');
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
@@ -608,6 +622,14 @@ ipcMain.handle('cache-remote-asset', async (_event, assetUrl: string) => {
   const arrayBuffer = await response.arrayBuffer();
   fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
   return outputPath;
+});
+
+ipcMain.handle('save-clipboard-image-to-cache', async (_event, payload: { bytes: number[]; contentType?: string; preferredName?: string }) => {
+  if (!payload || !Array.isArray(payload.bytes) || payload.bytes.length === 0) {
+    return null;
+  }
+
+  return saveImageBufferToCache(Buffer.from(payload.bytes), payload.contentType, payload.preferredName);
 });
 
 ipcMain.handle('show-save-dialog', async (_event, options) => {

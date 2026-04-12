@@ -254,91 +254,25 @@ function SvgStrokeText({
   align?: 'left' | 'right' | 'center';
   style?: React.CSSProperties;
 }) {
-  const textRef = React.useRef<SVGTextElement | null>(null);
-  const [box, setBox] = React.useState<{ width: number; height: number; minX: number; minY: number; rawWidth: number; rawHeight: number } | null>(null);
-
-  React.useLayoutEffect(() => {
-    const node = textRef.current;
-    if (!node) return;
-    try {
-      const bbox = node.getBBox();
-      const padding = strokeWidth + 2;
-      const nextBox = {
-        width: Math.max(1, bbox.width + padding * 2),
-        height: Math.max(1, bbox.height + padding * 2),
-        minX: bbox.x,
-        minY: bbox.y,
-        rawWidth: bbox.width,
-        rawHeight: bbox.height,
-      };
-      setBox((prev) => (
-        prev && prev.width === nextBox.width && prev.height === nextBox.height && prev.minX === nextBox.minX && prev.minY === nextBox.minY && prev.rawWidth === nextBox.rawWidth && prev.rawHeight === nextBox.rawHeight
-          ? prev
-          : nextBox
-      ));
-    } catch {
-      setBox((prev) => prev ?? {
-        width: Math.max(1, text.length * fontSize * 0.62 + strokeWidth * 2 + 4),
-        height: Math.max(1, fontSize * 1.2 + strokeWidth * 2 + 4),
-        minX: 0,
-        minY: 0,
-        rawWidth: Math.max(1, text.length * fontSize * 0.62),
-        rawHeight: Math.max(1, fontSize * 1.2),
-      });
-    }
-  }, [color, fontFamily, fontSize, fontWeight, strokeColor, strokeWidth, text]);
-
-  const width = box?.width ?? Math.max(1, text.length * fontSize * 0.62 + strokeWidth * 2 + 4);
-  const height = box?.height ?? Math.max(1, fontSize * 1.2 + strokeWidth * 2 + 4);
-  const minX = box?.minX ?? 0;
-  const minY = box?.minY ?? 0;
-  const rawWidth = box?.rawWidth ?? Math.max(1, text.length * fontSize * 0.62);
-  const rawHeight = box?.rawHeight ?? Math.max(1, fontSize * 1.2);
-  const visualOffsetX = (width - rawWidth) / 2;
-  const visualOffsetY = (height - rawHeight) / 2;
-
   return (
-    <div
+    <span
       style={{
         display: 'inline-block',
-        position: 'relative',
-        width: `${rawWidth}px`,
-        height: `${rawHeight}px`,
-        lineHeight: 0,
+        lineHeight: 1,
         textAlign: align,
-        overflow: 'visible',
+        whiteSpace: 'nowrap',
+        fontFamily,
+        fontSize: `${fontSize}px`,
+        fontWeight,
+        color,
+        WebkitTextStrokeWidth: strokeWidth > 0 ? `${strokeWidth}px` : undefined,
+        WebkitTextStrokeColor: strokeWidth > 0 ? strokeColor : undefined,
+        paintOrder: 'stroke fill',
         ...style,
       }}
     >
-      <svg
-        width={width}
-        height={height}
-        overflow="visible"
-        style={{
-          display: 'block',
-          position: 'absolute',
-          left: `${-visualOffsetX}px`,
-          top: `${-visualOffsetY}px`,
-        }}
-      >
-        <text
-          ref={textRef}
-          x={width / 2 - (minX + rawWidth / 2)}
-          y={height / 2 - (minY + rawHeight / 2)}
-          textAnchor="start"
-          dominantBaseline="hanging"
-          fontFamily={fontFamily}
-          fontSize={fontSize}
-          fontWeight={fontWeight}
-          fill={color}
-          stroke={strokeWidth > 0 ? strokeColor : 'none'}
-          strokeWidth={strokeWidth}
-          paintOrder="stroke"
-        >
-          {text}
-        </text>
-      </svg>
-    </div>
+      {text}
+    </span>
   );
 }
 

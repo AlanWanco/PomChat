@@ -44,6 +44,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const selectableSpeakers = useMemo(() => Object.entries(speakers).filter(([, speaker]) => speaker?.type !== 'annotation'), [speakers]);
   const [bulkSpeakerId, setBulkSpeakerId] = useState('');
   const [pendingBulkAction, setPendingBulkAction] = useState<null | { type: 'delete' } | { type: 'speaker'; speakerId: string }>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedSubtitleIdSet = useMemo(() => new Set(selectedSubtitleIds), [selectedSubtitleIds]);
   const selectedSubtitles = useMemo(
     () => subtitles.filter((sub) => selectedSubtitleIdSet.has(sub.id)),
@@ -285,6 +286,68 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     });
     
     setInlineEditingId(null);
+  };
+
+  const insertImageMarkdownIntoEditForm = (markdown: string, textarea: HTMLTextAreaElement | null) => {
+    const selectionStart = textarea?.selectionStart ?? editForm.text.length;
+    const selectionEnd = textarea?.selectionEnd ?? editForm.text.length;
+    const nextText = `${editForm.text.slice(0, selectionStart)}${markdown}${editForm.text.slice(selectionEnd)}`;
+    setEditForm((prev) => ({ ...prev, text: nextText }));
+
+    window.requestAnimationFrame(() => {
+      const target = editTextareaRef.current;
+      if (!target) {
+        return;
+      }
+      const caret = selectionStart + markdown.length;
+      target.focus();
+      target.setSelectionRange(caret, caret);
+    });
+  };
+
+  const handleInlineEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardItems = Array.from(event.clipboardData?.items || []);
+    const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    if (!imageItem) {
+      return;
+    }
+
+    const file = imageItem.getAsFile();
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      let imagePath = '';
+
+      if (window.electron) {
+        imagePath = window.electron.getDroppedFilePath(file) || '';
+      }
+
+      if (!imagePath) {
+        if (window.electron) {
+          const arrayBuffer = await file.arrayBuffer();
+          imagePath = await window.electron.saveClipboardImageToCache({
+            bytes: Array.from(new Uint8Array(arrayBuffer)),
+            contentType: file.type,
+            preferredName: file.name,
+          }) || '';
+        } else {
+          imagePath = URL.createObjectURL(file);
+        }
+      }
+
+      if (!imagePath) {
+        return;
+      }
+
+      insertImageMarkdownIntoEditForm(`![img](${imagePath})`, event.currentTarget);
+    } catch (error) {
+      console.error('Failed to paste clipboard image:', error);
+    }
   };
 
   // Global shortcuts for Region Edit
@@ -639,8 +702,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     </div>
                     
                     <textarea
+                      ref={editTextareaRef}
                       value={editForm.text}
                       onChange={(e) => setEditForm({...editForm, text: e.target.value})}
+                      onPaste={(e) => { void handleInlineEditorPaste(e); }}
                       className="w-full p-2 rounded border text-xs min-h-[60px] resize-y focus:outline-none"
                       style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                       autoFocus
