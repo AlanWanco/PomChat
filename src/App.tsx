@@ -2812,10 +2812,11 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (currentTime < activeInsertImageSlide.start || currentTime > activeInsertImageSlide.end) {
+    const editModeTimeEpsilon = 1 / Math.max(1, config.fps || 60);
+    if (currentTime < (activeInsertImageSlide.start - editModeTimeEpsilon) || currentTime > (activeInsertImageSlide.end + editModeTimeEpsilon)) {
       setIsInsertImageEditMode(false);
     }
-  }, [activeInsertImageSlide, currentTime, isInsertImageEditMode]);
+  }, [activeInsertImageSlide, config.fps, currentTime, isInsertImageEditMode]);
 
   const activeInsertImageBounds = useMemo(() => {
     if (!activeInsertImageSlide) {
@@ -4486,7 +4487,12 @@ const [previewScale, setPreviewScale] = useState(1);
                       blur={slide.inheritBackgroundFilters === false ? 0 : (config.background.blur || 0)}
                       brightness={slide.inheritBackgroundFilters === false ? 1 : (config.background.brightness ?? 1)}
                       onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
-                      onDoubleClick={undefined}
+                      onDoubleClick={() => {
+                        enterInsertImageEditMode(slide.id);
+                        setShowSettings(true);
+                        setActiveTab('project');
+                        focusInsertImageSettings();
+                      }}
                       onPointerDown={undefined}
                     editOverlay={undefined}
                     />
@@ -4515,7 +4521,12 @@ const [previewScale, setPreviewScale] = useState(1);
                     draggable={activeInsertImageId === slide.id && isInsertImageEditMode}
                     onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
                     onNaturalSizeChange={(size) => updateSlideIntrinsicSize(slide.id, size.width, size.height)}
-                    onDoubleClick={undefined}
+                    onDoubleClick={() => {
+                      enterInsertImageEditMode(slide.id);
+                      setShowSettings(true);
+                      setActiveTab('project');
+                      focusInsertImageSettings();
+                    }}
                     onPointerDown={undefined}
                     editOverlay={undefined}
                   />}
@@ -4693,6 +4704,9 @@ const [previewScale, setPreviewScale] = useState(1);
                       onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
                     onDoubleClick={() => {
                       enterInsertImageEditMode(slide.id);
+                      setShowSettings(true);
+                      setActiveTab('project');
+                      focusInsertImageSettings();
                     }}
                     onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
                         event.preventDefault();
@@ -4739,6 +4753,9 @@ const [previewScale, setPreviewScale] = useState(1);
                     onNaturalSizeChange={(size) => updateSlideIntrinsicSize(slide.id, size.width, size.height)}
                     onDoubleClick={() => {
                       enterInsertImageEditMode(slide.id);
+                      setShowSettings(true);
+                      setActiveTab('project');
+                      focusInsertImageSettings();
                     }}
                     onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
                       event.preventDefault();
