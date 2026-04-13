@@ -2109,6 +2109,86 @@ const [previewScale, setPreviewScale] = useState(1);
     };
   };
 
+  async function loadRenderableAssetNaturalSize(assetPath: string) {
+    const resolved = resolvePath(assetPath) || assetPath;
+    if (!resolved) {
+      return null;
+    }
+
+    return await new Promise<{ width: number; height: number } | null>((resolve) => {
+      if (/\.(mp4|webm|mov|mkv)(\?|$)/i.test(resolved)) {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        video.onloadedmetadata = () => resolve(
+          Number.isFinite(video.videoWidth) && Number.isFinite(video.videoHeight) && video.videoWidth > 0 && video.videoHeight > 0
+            ? { width: video.videoWidth, height: video.videoHeight }
+            : null
+        );
+        video.onerror = () => resolve(null);
+        video.src = resolved;
+        return;
+      }
+
+      const image = new Image();
+      image.referrerPolicy = 'no-referrer';
+      image.onload = () => resolve(
+        Number.isFinite(image.naturalWidth) && Number.isFinite(image.naturalHeight) && image.naturalWidth > 0 && image.naturalHeight > 0
+          ? { width: image.naturalWidth, height: image.naturalHeight }
+          : null
+      );
+      image.onerror = () => resolve(null);
+      image.src = resolved;
+    });
+  }
+
+  async function ensureBackgroundSlideIntrinsicSizes() {
+    const slides = Array.isArray(config.background?.slides) ? config.background.slides : [];
+    const targets = slides.filter((slide: BackgroundSlideItem) => slide.type !== 'text' && slide.image && (!slide.intrinsicWidth || !slide.intrinsicHeight));
+    if (targets.length === 0) {
+      return;
+    }
+
+    const measured = await Promise.all(targets.map(async (slide: BackgroundSlideItem) => ({
+      id: slide.id,
+      size: await loadRenderableAssetNaturalSize(slide.image || ''),
+    })));
+    const updates = measured.filter((item) => item.size);
+    if (updates.length === 0) {
+      return;
+    }
+
+    setConfig((prev: any) => {
+      const prevSlides = Array.isArray(prev?.background?.slides) ? prev.background.slides : [];
+      let changed = false;
+      const nextSlides = prevSlides.map((slide: BackgroundSlideItem) => {
+        const match = updates.find((item) => item.id === slide.id);
+        if (!match?.size) {
+          return slide;
+        }
+        if (slide.intrinsicWidth === match.size.width && slide.intrinsicHeight === match.size.height) {
+          return slide;
+        }
+        changed = true;
+        return { ...slide, intrinsicWidth: match.size.width, intrinsicHeight: match.size.height };
+      });
+
+      if (!changed) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        background: {
+          ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+          slides: nextSlides,
+        },
+      };
+    });
+  }
+
+
   const getDefaultExportRange = useCallback(() => {
     const latestSubtitle = subtitles.reduce((max, item) => Math.max(max, item.end), 0);
     const start = 0;
@@ -2407,6 +2487,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setExportStatusMessage(t('export.preparing'));
 
     try {
+      await ensureBackgroundSlideIntrinsicSizes();
       const crf = calculateCRF(exportQuality);
       const preset = calculateX264Preset(exportQuality);
       
@@ -2441,7 +2522,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setIsExporting(false);
       exportProgressActiveRef.current = false;
     }
-  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset]);
+  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes]);
 
   const handleRevealExport = useCallback(async () => {
     const targetPath = lastExportOutputPath || exportOutputPath.trim();

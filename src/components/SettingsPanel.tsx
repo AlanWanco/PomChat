@@ -184,12 +184,8 @@ export function SettingsPanel({
       return;
     }
 
-    if (!backgroundSlides.some((slide: any) => slide.id === activeInsertImageId)) {
-      return;
-    }
-
     setActiveBackgroundSlideTab((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
-  }, [activeInsertImageId, backgroundSlides]);
+  }, [activeInsertImageId]);
 
   const currentBackgroundSlide = activeBackgroundSlideTab
     ? backgroundSlides.find((slide: any) => slide.id === activeBackgroundSlideTab) || null
