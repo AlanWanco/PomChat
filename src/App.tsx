@@ -817,6 +817,7 @@ function App() {
   const [lastExportSucceeded, setLastExportSucceeded] = useState(false);
   const [activeInsertImageId, setActiveInsertImageId] = useState<string | null>(null);
   const [isInsertImageEditMode, setIsInsertImageEditMode] = useState(false);
+  const [focusInsertImageSettingsKey, setFocusInsertImageSettingsKey] = useState(0);
   const insertImageDragRef = useRef<{ id: string; mode: 'move' | 'scale' | 'rotate'; startX: number; startY: number; initialOffsetX: number; initialOffsetY: number; initialScale: number; initialRotation: number; initialDistance?: number; initialAngle?: number } | null>(null);
   const [slideEditBoxes, setSlideEditBoxes] = useState<Record<string, { centerX: number; centerY: number; width: number; height: number }>>({});
   const [renderCacheInfo, setRenderCacheInfo] = useState<RenderCacheInfo | null>(null);
@@ -2802,6 +2803,9 @@ const [previewScale, setPreviewScale] = useState(1);
     setActiveInsertImageId(id);
     setIsInsertImageEditMode(true);
   }, []);
+  const focusInsertImageSettings = useCallback(() => {
+    setFocusInsertImageSettingsKey((prev) => prev + 1);
+  }, []);
 
   useEffect(() => {
     if (!isInsertImageEditMode || !activeInsertImageSlide) {
@@ -4219,8 +4223,12 @@ const [previewScale, setPreviewScale] = useState(1);
                    onSeek={handleSeek}
                    currentTime={previewRenderTime}
                    activeInsertImageId={activeInsertImageId}
+                   focusInsertImageSettingsKey={focusInsertImageSettingsKey}
                    onActiveInsertImageChange={setActiveInsertImageId}
-                    onEditInsertImage={enterInsertImageEditMode}
+                    onEditInsertImage={(id) => {
+                      enterInsertImageEditMode(id);
+                      focusInsertImageSettings();
+                    }}
                    resolveAssetSrc={resolvePath}
                   />
             </div>
@@ -4930,8 +4938,12 @@ const [previewScale, setPreviewScale] = useState(1);
                 onSeek={handleSeek}
                 currentTime={previewRenderTime}
                 activeInsertImageId={activeInsertImageId}
+                focusInsertImageSettingsKey={focusInsertImageSettingsKey}
                 onActiveInsertImageChange={setActiveInsertImageId}
-                onEditInsertImage={enterInsertImageEditMode}
+                onEditInsertImage={(id) => {
+                  enterInsertImageEditMode(id);
+                  focusInsertImageSettings();
+                }}
                 resolveAssetSrc={resolvePath}
               />
             </div>
@@ -5003,6 +5015,7 @@ const [previewScale, setPreviewScale] = useState(1);
           enterInsertImageEditMode(id);
           setShowSettings(true);
           setActiveTab('project');
+          focusInsertImageSettings();
         }}
         compactMobile={isMobileWebLayout}
       />

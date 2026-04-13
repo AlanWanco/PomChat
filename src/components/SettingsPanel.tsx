@@ -59,6 +59,7 @@ interface SettingsPanelProps {
   onSeek?: (time: number) => void;
   currentTime?: number;
   activeInsertImageId?: string | null;
+  focusInsertImageSettingsKey?: number;
   onActiveInsertImageChange?: (id: string | null) => void;
   onEditInsertImage?: (id: string) => void;
   resolveAssetSrc?: (src?: string) => string | undefined;
@@ -77,6 +78,7 @@ export function SettingsPanel({
   onSeek,
   currentTime = 0,
   activeInsertImageId,
+  focusInsertImageSettingsKey = 0,
   onActiveInsertImageChange,
   onEditInsertImage,
   resolveAssetSrc
@@ -141,6 +143,7 @@ export function SettingsPanel({
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
   const backgroundSlideTabsRef = useRef<HTMLDivElement | null>(null);
+  const backgroundSlideSettingsRef = useRef<HTMLDivElement | null>(null);
   const [pendingScrollSlideId, setPendingScrollSlideId] = useState<string | null>(null);
   // Independent tab display order — decoupled from layer/backgroundOrder/overlayOrder
   const [tabOrderIds, setTabOrderIds] = useState<string[]>([]);
@@ -192,21 +195,26 @@ export function SettingsPanel({
     : (tabOrderedSlides[0] || null);
 
   useEffect(() => {
-    const targetId = pendingScrollSlideId || activeBackgroundSlideTab;
-    if (!targetId || !backgroundSlideTabsRef.current) {
+    if (!pendingScrollSlideId || !backgroundSlideTabsRef.current) {
       return;
     }
 
-    const target = backgroundSlideTabsRef.current.querySelector<HTMLElement>(`[data-slide-tab-id="${targetId}"]`);
+    const target = backgroundSlideTabsRef.current.querySelector<HTMLElement>(`[data-slide-tab-id="${pendingScrollSlideId}"]`);
     if (!target) {
       return;
     }
 
     target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    if (pendingScrollSlideId === targetId) {
-      setPendingScrollSlideId(null);
+    setPendingScrollSlideId(null);
+  }, [pendingScrollSlideId]);
+
+  useEffect(() => {
+    if (!focusInsertImageSettingsKey || activeTab !== 'project' || !activeInsertImageId || !backgroundSlideSettingsRef.current) {
+      return;
     }
-  }, [activeBackgroundSlideTab, pendingScrollSlideId, tabOrderedSlides]);
+
+    backgroundSlideSettingsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+  }, [activeInsertImageId, activeTab, focusInsertImageSettingsKey]);
 
   useEffect(() => {
     if (globalOnly && activeTab !== 'global') {
@@ -1369,7 +1377,7 @@ export function SettingsPanel({
                     </div>
 
                     {currentBackgroundSlide ? (
-                      <div className="space-y-3">
+                      <div ref={backgroundSlideSettingsRef} className="space-y-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="shrink-0 w-10 h-10 rounded-md border flex items-center justify-center overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
                             {currentBackgroundSlide.type === 'text' ? (
