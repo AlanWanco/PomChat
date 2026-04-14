@@ -1094,8 +1094,19 @@ export function SettingsPanel({
                     {renderColorInput((Object.values(config.speakers || {})[0] as any)?.style?.avatarBorderColor || '#FFFFFF', applyAvatarBorderColorToAll)}
                   </div>
                   <div className="space-y-1.5">
-                    <span className="text-xs opacity-70">{t('project.speakerNameSize')}</span>
-                    {renderNumberInput(config.chatLayout?.speakerNameSize ?? 22, (value) => updateChatLayout('speakerNameSize', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                    <label className="block text-xs opacity-70">{t('project.showSpeakerName')}</label>
+                    <button
+                      type="button"
+                      onClick={() => updateChatLayout('showSpeakerName', !(config.chatLayout?.showSpeakerName ?? config.chatLayout?.showMeta ?? true))}
+                      className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
+                      style={{
+                        backgroundColor: (config.chatLayout?.showSpeakerName ?? config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                        borderColor: (config.chatLayout?.showSpeakerName ?? config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
+                        color: uiTheme.text,
+                      }}
+                    >
+                      <span>{(config.chatLayout?.showSpeakerName ?? config.chatLayout?.showMeta ?? true) ? t('common.enabled') : t('common.disabled')}</span>
+                    </button>
                   </div>
                   <div className="space-y-1.5">
                     <label className="block text-xs opacity-70">{t('project.showAvatar')}</label>
@@ -1113,18 +1124,18 @@ export function SettingsPanel({
                     </button>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs opacity-70">{t('project.showMeta')}</label>
+                    <label className="block text-xs opacity-70">{t('project.showTimestamp')}</label>
                     <button
                       type="button"
-                      onClick={() => updateChatLayout('showMeta', !(config.chatLayout?.showMeta ?? true))}
+                      onClick={() => updateChatLayout('showTimestamp', !(config.chatLayout?.showTimestamp ?? config.chatLayout?.showMeta ?? true))}
                       className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
                       style={{
-                        backgroundColor: (config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
-                        borderColor: (config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
+                        backgroundColor: (config.chatLayout?.showTimestamp ?? config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                        borderColor: (config.chatLayout?.showTimestamp ?? config.chatLayout?.showMeta ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
                         color: uiTheme.text,
                       }}
                     >
-                      <span>{(config.chatLayout?.showMeta ?? true) ? t('common.enabled') : t('common.disabled')}</span>
+                      <span>{(config.chatLayout?.showTimestamp ?? config.chatLayout?.showMeta ?? true) ? t('common.enabled') : t('common.disabled')}</span>
                     </button>
                   </div>
                   <div className="space-y-1.5">
@@ -1168,6 +1179,10 @@ export function SettingsPanel({
                       </div>
                     </>
                   ) : null}
+                  <div className="space-y-1.5">
+                    <span className="text-xs opacity-70">{t('project.speakerNameSize')}</span>
+                    {renderNumberInput(config.chatLayout?.speakerNameSize ?? 22, (value) => updateChatLayout('speakerNameSize', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                  </div>
                 </div>
               </div>
 
@@ -2035,10 +2050,6 @@ export function SettingsPanel({
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                           {renderFontFamilyFields(speaker.style?.fontFamily, (value) => updateSpeakerStyle(key, 'fontFamily', value))}
                         </div>
-                        <div className="space-y-1 col-span-2">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
-                          {renderFontFamilyFields(speaker.style?.nameFontFamily, (value) => updateSpeakerStyle(key, 'nameFontFamily', value))}
-                        </div>
                         <div className="space-y-1">
                           <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                           {renderNumberInput(speaker.style?.fontSize ?? 30, (value) => updateSpeakerStyle(key, 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -2129,6 +2140,11 @@ export function SettingsPanel({
                           />
                           <span className="text-[10px] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
                         </div>
+                      </div>
+
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
+                        {renderFontFamilyFields(speaker.style?.nameFontFamily, (value) => updateSpeakerStyle(key, 'nameFontFamily', value))}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">

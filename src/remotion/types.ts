@@ -124,6 +124,8 @@ export interface PodchatExportInput {
     animationDuration?: number;
     maxVisibleBubbles?: number;
     showAvatar?: boolean;
+    showSpeakerName?: boolean;
+    showTimestamp?: boolean;
     showMeta?: boolean;
     compactMode?: boolean;
     compactSpacing?: number;

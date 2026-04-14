@@ -60,6 +60,8 @@ export interface SharedChatLayout {
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
   animationDuration?: number;
   showAvatar?: boolean;
+  showSpeakerName?: boolean;
+  showTimestamp?: boolean;
   showMeta?: boolean;
   compactMode?: boolean;
   compactSpacing?: number;
@@ -552,14 +554,15 @@ export function ChatMessageBubble({
   const showAvatarThisBubble = showAvatarGlobal && (!compactMode || !isSameAsNext);
 
   // Compact mode: show speaker name only below the last message of a run
-  const showMetaGlobal = chatLayout?.showMeta ?? true;
+  const showSpeakerNameGlobal = chatLayout?.showSpeakerName ?? chatLayout?.showMeta ?? true;
+  const showTimestampGlobal = chatLayout?.showTimestamp ?? chatLayout?.showMeta ?? true;
   // In normal mode: name shown above bubble; in compact: name shown below the last bubble of the run
-  const showNameAbove = showMetaGlobal && !compactMode;
-  const showNameBelow = showMetaGlobal && compactMode && !isSameAsNext;
+  const showNameAbove = showSpeakerNameGlobal && !compactMode;
+  const showNameBelow = showSpeakerNameGlobal && compactMode && !isSameAsNext;
 
   // Compact timestamp: shown beside bubble (outside, on the far end)
   // Normal mode: shown inline with name row above bubble
-  const showTimestampBeside = compactMode && showMetaGlobal;
+  const showTimestampBeside = compactMode && showTimestampGlobal;
   const markdownContent = renderMarkdownContent({
     text: item.text,
     textColor,
@@ -695,9 +698,11 @@ export function ChatMessageBubble({
                 strokeWidth={speakerNameStrokeWidth}
                 strokeColor={speakerNameStrokeColor}
               />
-              <span style={{ fontSize: `${timestampSize}px`, fontFamily: timestampFontFamily, color: timestampColor }}>
-                {formatTimestamp(item.start)}
-              </span>
+              {showTimestampGlobal ? (
+                <span style={{ fontSize: `${timestampSize}px`, fontFamily: timestampFontFamily, color: timestampColor }}>
+                  {formatTimestamp(item.start)}
+                </span>
+              ) : null}
             </div>
           ) : null}
 

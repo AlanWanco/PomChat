@@ -104,6 +104,8 @@ const DEFAULT_CHAT_LAYOUT = {
   animationDuration: 0.2,
   maxVisibleBubbles: 15,
   showAvatar: true,
+  showSpeakerName: true,
+  showTimestamp: true,
   showMeta: true,
   compactMode: false,
   compactSpacing: 14,
