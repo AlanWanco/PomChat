@@ -1,14 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session } from 'electron';
+import { execFileSync, fork } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fork } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 
 const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/AlanWanco/PomChat/releases/latest';
+const require = createRequire(import.meta.url);
+let cachedPatchedBinariesDir: string | null = null;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +75,271 @@ function writeExportLog(entry: Record<string, unknown>) {
   const filePath = path.join(getExportLogDir(), `export-${timestamp}.json`);
   fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
   return filePath;
+}
+
+function getCpuCount() {
+  return Math.max(1, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length);
+}
+
+function patchMacCompositorBinaries() {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  if (cachedPatchedBinariesDir) {
+    return cachedPatchedBinariesDir;
+  }
+
+  const compositorPkgName = process.arch === 'arm64'
+    ? '@remotion/compositor-darwin-arm64/package.json'
+    : '@remotion/compositor-darwin-x64/package.json';
+  const pkgJsonPath = require.resolve(compositorPkgName);
+  const sourceDir = path.dirname(pkgJsonPath);
+  const hash = crypto.createHash('sha1').update(sourceDir).digest('hex').slice(0, 8);
+  const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
+  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}`);
+  const marker = path.join(targetDir, '.patched-v2');
+
+  if (!fs.existsSync(marker)) {
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+    fs.cpSync(sourceDir, targetDir, { recursive: true });
+
+    const dylibs = fs.readdirSync(targetDir).filter((name) => name.endsWith('.dylib'));
+    const patchTarget = (filePath: string) => {
+      dylibs.forEach((libName) => {
+        execFileSync('install_name_tool', ['-change', libName, `@loader_path/${libName}`, filePath]);
+      });
+    };
+
+    dylibs.forEach((libName) => {
+      const dylibPath = path.join(targetDir, libName);
+      execFileSync('install_name_tool', ['-id', `@loader_path/${libName}`, dylibPath]);
+      patchTarget(dylibPath);
+    });
+
+    ['ffmpeg', 'ffprobe', 'remotion'].forEach((binary) => {
+      patchTarget(path.join(targetDir, binary));
+    });
+
+    const signTarget = (filePath: string) => {
+      execFileSync('codesign', ['--force', '--sign', '-', '--timestamp=none', filePath]);
+    };
+
+    dylibs.forEach((libName) => {
+      signTarget(path.join(targetDir, libName));
+    });
+    ['ffmpeg', 'ffprobe', 'remotion'].forEach((binary) => {
+      signTarget(path.join(targetDir, binary));
+    });
+
+    fs.writeFileSync(marker, 'ok');
+  }
+
+  cachedPatchedBinariesDir = targetDir;
+  return cachedPatchedBinariesDir;
+}
+
+function getExportWorkerPath() {
+  const appRoot = process.env.APP_ROOT || process.cwd();
+  const workerCandidates = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs') : null,
+    path.join(appRoot, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs'),
+    path.join(appRoot, 'electron', 'remotion-worker.cjs'),
+  ].filter(Boolean) as string[];
+  const workerPath = workerCandidates.find((p) => fs.existsSync(p)) || workerCandidates[workerCandidates.length - 1];
+  if (!workerPath || !fs.existsSync(workerPath)) {
+    throw new Error(`Export worker not found. Tried: ${workerCandidates.join(', ')}`);
+  }
+  return workerPath;
+}
+
+function resolveRemotionBinary(binaryName: 'ffmpeg' | 'ffprobe') {
+  const patchedDir = patchMacCompositorBinaries();
+  if (patchedDir) {
+    const patchedBinaryPath = path.join(patchedDir, process.platform === 'win32' ? `${binaryName}.exe` : binaryName);
+    if (fs.existsSync(patchedBinaryPath)) {
+      return patchedBinaryPath;
+    }
+  }
+
+  const appRoot = process.env.APP_ROOT || process.cwd();
+  const remotionDirs = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@remotion') : null,
+    path.join(appRoot, 'app.asar.unpacked', 'node_modules', '@remotion'),
+    path.join(appRoot, 'node_modules', '@remotion'),
+  ].filter(Boolean) as string[];
+
+  for (const dir of remotionDirs) {
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir)) {
+      if (!entry.startsWith('compositor-')) continue;
+      const binaryPath = path.join(dir, entry, process.platform === 'win32' ? `${binaryName}.exe` : binaryName);
+      if (fs.existsSync(binaryPath)) {
+        return binaryPath;
+      }
+    }
+  }
+
+  try {
+    const pkgPath = require.resolve(`@remotion/compositor-${process.platform}-${process.arch}/package.json`);
+    const binaryPath = path.join(path.dirname(pkgPath), process.platform === 'win32' ? `${binaryName}.exe` : binaryName);
+    if (fs.existsSync(binaryPath)) {
+      return binaryPath;
+    }
+  } catch (_error) {
+    // Fall back to PATH below.
+  }
+
+  return process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
+}
+
+function probeHasAudioStream(inputPath: string) {
+  try {
+    const output = execFileSync(resolveRemotionBinary('ffprobe'), [
+      '-v', 'error',
+      '-select_streams', 'a:0',
+      '-show_entries', 'stream=index',
+      '-of', 'csv=p=0',
+      inputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+    return output.length > 0;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function runConcatMp4(segmentPaths: string[], outputPath: string) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomchat-concat-'));
+  const listPath = path.join(tempDir, 'segments.txt');
+  const escapeConcatPath = (value: string) => value.replace(/'/g, `'\\''`);
+
+  fs.writeFileSync(
+    listPath,
+    segmentPaths.map((segmentPath) => `file '${escapeConcatPath(path.resolve(segmentPath))}'`).join('\n'),
+    'utf-8'
+  );
+
+  try {
+    const ffmpegBinary = resolveRemotionBinary('ffmpeg');
+
+    try {
+      execFileSync(ffmpegBinary, [
+        '-y',
+        '-fflags', '+genpts',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', listPath,
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero',
+        outputPath,
+      ], { stdio: 'pipe' });
+      return;
+    } catch (_copyError) {
+      const hasAudioInAllSegments = segmentPaths.every((segmentPath) => probeHasAudioStream(segmentPath));
+      execFileSync(ffmpegBinary, [
+        '-y',
+        '-i', segmentPaths[0],
+        '-i', segmentPaths[1],
+        '-filter_complex', hasAudioInAllSegments
+          ? '[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[outv][outa]'
+          : '[0:v:0][1:v:0]concat=n=2:v=1:a=0[outv]',
+        '-map', '[outv]',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '20',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        ...(hasAudioInAllSegments ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '192k'] : []),
+        outputPath,
+      ], { stdio: 'pipe' });
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function runWorkerExport(workerPath: string, config: any, onProgress?: (payload: any) => void) {
+  return new Promise<any>((resolve, reject) => {
+    let workerStdErr = '';
+    let workerStdOut = '';
+
+    const workerCwd = app.getPath('userData');
+    fs.mkdirSync(workerCwd, { recursive: true });
+    const worker = fork(workerPath, [], {
+      cwd: workerCwd,
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      env: {
+        ...process.env,
+        APP_ROOT: process.env.APP_ROOT || process.cwd(),
+        VITE_PUBLIC: process.env.VITE_PUBLIC || '',
+      },
+    });
+
+    worker.stdout?.on('data', (chunk) => {
+      workerStdOut += chunk.toString();
+    });
+
+    worker.stderr?.on('data', (chunk) => {
+      workerStdErr += chunk.toString();
+    });
+
+    const timeout = setTimeout(() => {
+      worker.kill();
+      reject(new Error('Export timeout: operation took too long'));
+    }, 5 * 60 * 60 * 1000);
+
+    worker.on('message', (message: any) => {
+      if (!message) return;
+      if (message.type === 'progress') {
+        onProgress?.(message.payload);
+        return;
+      }
+
+      if (message.type === 'result') {
+        clearTimeout(timeout);
+        resolve({
+          ...message.payload,
+          workerDetails: {
+            stdout: workerStdOut.trim() || null,
+            stderr: workerStdErr.trim() || null,
+          },
+        });
+        worker.kill();
+        return;
+      }
+
+      if (message.type === 'error') {
+        clearTimeout(timeout);
+        const detail = [message.payload?.message, workerStdErr.trim() || '', workerStdOut.trim() || ''].filter(Boolean).join('\n');
+        reject(new Error(detail || 'Export failed'));
+        worker.kill();
+      }
+    });
+
+    worker.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    worker.on('exit', (code) => {
+      clearTimeout(timeout);
+      if (code && code !== 0) {
+        const detail = [
+          `Export worker exited with code ${code}`,
+          workerStdErr.trim() || '',
+          workerStdOut.trim() || '',
+        ].filter(Boolean).join('\n');
+        reject(new Error(detail));
+      }
+    });
+
+    worker.send({
+      type: 'render',
+      payload: config,
+    });
+  });
 }
 
 function getPomchatRemotionTempEntries() {
@@ -354,6 +622,7 @@ ipcMain.handle('export-video', async (_event, config) => {
       exportType: config?.exportFormat === 'mov-alpha' || config?.exportFormat === 'webm-alpha' ? config.exportFormat : 'mp4',
       exportQuality: config?.exportQuality || 'balance',
       exportHardware: config?.exportHardware || 'auto',
+      exportParallelSegments: Boolean(config?.exportParallelSegments),
       exportRange: config?.exportRange || null,
       exportDurationSeconds: typeof config?.exportRange?.start === 'number' && typeof config?.exportRange?.end === 'number'
         ? Math.max(0, config.exportRange.end - config.exportRange.start)
@@ -366,101 +635,104 @@ ipcMain.handle('export-video', async (_event, config) => {
       startedAt: new Date(exportStartedAt).toISOString(),
     };
 
-    const appRoot = process.env.APP_ROOT || process.cwd();
-    const workerCandidates = [
-      // asar unpacked path (when asar: true)
-      process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs') : null,
-      path.join(appRoot, 'app.asar.unpacked', 'electron', 'remotion-worker.cjs'),
-      // direct path (when asar: false or dev mode)
-      path.join(appRoot, 'electron', 'remotion-worker.cjs'),
-    ].filter(Boolean) as string[];
-    const workerPath = workerCandidates.find((p) => fs.existsSync(p)) || workerCandidates[workerCandidates.length - 1];
-    if (!fs.existsSync(workerPath)) {
-      return {
-        success: false,
-        error: `Export worker not found. Tried: ${workerCandidates.join(', ')}`,
-      };
-    }
-    const result = await new Promise<any>((resolve, reject) => {
-      let workerStdErr = '';
-      let workerStdOut = '';
+    const workerPath = getExportWorkerPath();
+    const exportRange = config?.exportRange || null;
+    const fps = typeof config?.fps === 'number' && Number.isFinite(config.fps) ? config.fps : 30;
+    const canUseParallelSegments = Boolean(
+      config?.exportParallelSegments &&
+      config?.exportFormat !== 'mov-alpha' &&
+      config?.exportFormat !== 'webm-alpha' &&
+      exportRange &&
+      typeof exportRange.start === 'number' &&
+      typeof exportRange.end === 'number' &&
+      exportRange.end > exportRange.start
+    );
 
-      const workerCwd = app.getPath('userData');
-      fs.mkdirSync(workerCwd, { recursive: true });
-      const worker = fork(workerPath, [], {
-        cwd: workerCwd,
-        stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-        env: {
-          ...process.env,
-          APP_ROOT: process.env.APP_ROOT || process.cwd(),
-          VITE_PUBLIC: process.env.VITE_PUBLIC || '',
-        },
-      });
+    let result: any = null;
 
-      worker.stdout?.on('data', (chunk) => {
-        workerStdOut += chunk.toString();
-      });
+    if (canUseParallelSegments) {
+      const totalFrames = Math.max(1, Math.round((exportRange.end - exportRange.start) * fps));
+      const firstSegmentFrames = Math.floor(totalFrames / 2);
 
-      worker.stderr?.on('data', (chunk) => {
-        workerStdErr += chunk.toString();
-      });
+      if (firstSegmentFrames >= 1 && totalFrames - firstSegmentFrames >= 1) {
+        const splitTime = exportRange.start + firstSegmentFrames / fps;
+        const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
+        const tempDir = fs.mkdtempSync(path.join(tempRoot, 'pomchat-parallel-export-'));
+        const outputExt = path.extname(outputPath) || '.mp4';
+        const segmentAPath = path.join(tempDir, `segment-a${outputExt}`);
+        const segmentBPath = path.join(tempDir, `segment-b${outputExt}`);
+        const renderConcurrency = Math.max(1, Math.floor(getCpuCount() / 2));
+        const workerProgress = [0, 0];
 
-      // Set timeout for export (5 hours max)
-      const timeout = setTimeout(() => {
-        worker.kill();
-        reject(new Error('Export timeout: operation took too long'));
-      }, 5 * 60 * 60 * 1000);
+        try {
+          const aggregateProgress = (segmentIndex: number, payload: any) => {
+            workerProgress[segmentIndex] = Math.max(0, Math.min(1, payload?.progress || 0));
+            const combined = (workerProgress[0] + workerProgress[1]) / 2;
+            win?.webContents.send('export-progress', {
+              ...payload,
+              progress: Math.min(0.94, combined * 0.94),
+              stage: `Parallel render ${segmentIndex + 1}/2: ${payload?.stage || 'Rendering'}`,
+            });
+          };
 
-      worker.on('message', (message: any) => {
-        if (!message) return;
-        if (message.type === 'progress') {
-          win?.webContents.send('export-progress', message.payload);
-          return;
-        }
+          const segmentResults = await Promise.allSettled([
+            runWorkerExport(workerPath, {
+              ...config,
+              outputPath: segmentAPath,
+              exportRange: {
+                start: exportRange.start,
+                end: splitTime,
+              },
+              renderConcurrency,
+            }, (payload) => aggregateProgress(0, payload)),
+            runWorkerExport(workerPath, {
+              ...config,
+              outputPath: segmentBPath,
+              exportRange: {
+                start: splitTime,
+                end: exportRange.end,
+              },
+              renderConcurrency,
+            }, (payload) => aggregateProgress(1, payload)),
+          ]);
 
-        if (message.type === 'result') {
-          clearTimeout(timeout);
-          resolve({
-            ...message.payload,
-            workerDetails: {
-              stdout: workerStdOut.trim() || null,
-              stderr: workerStdErr.trim() || null,
-            },
+          const firstRejected = segmentResults.find((entry) => entry.status === 'rejected') as PromiseRejectedResult | undefined;
+          if (firstRejected) {
+            throw firstRejected.reason;
+          }
+
+          win?.webContents.send('export-progress', {
+            progress: 0.97,
+            elapsedMs: Date.now() - exportStartedAt,
+            estimatedRemainingMs: null,
+            stage: 'Concatenating parallel segments',
           });
-          worker.kill();
-          return;
-        }
 
-        if (message.type === 'error') {
-          clearTimeout(timeout);
-          const detail = [message.payload?.message, workerStdErr.trim() || '', workerStdOut.trim() || ''].filter(Boolean).join('\n');
-          reject(new Error(detail || 'Export failed'));
-          worker.kill();
+          runConcatMp4([segmentAPath, segmentBPath], outputPath);
+          const elapsedMs = Date.now() - exportStartedAt;
+          const durationSeconds = Math.max(0.1, exportRange.end - exportRange.start);
+          result = {
+            success: true,
+            outputPath,
+            elapsedMs,
+            realTimeFactor: elapsedMs / (durationSeconds * 1000),
+            message: `Exported with parallel segments in ${(elapsedMs / 1000).toFixed(2)}s`,
+            workerDetails: {
+              stdout: null,
+              stderr: null,
+            },
+          };
+        } finally {
+          fs.rmSync(tempDir, { recursive: true, force: true });
         }
-      });
+      }
+    }
 
-      worker.on('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
+    if (!result) {
+      result = await runWorkerExport(workerPath, config, (payload) => {
+        win?.webContents.send('export-progress', payload);
       });
-      
-      worker.on('exit', (code) => {
-        clearTimeout(timeout);
-        if (code && code !== 0) {
-          const detail = [
-            `Export worker exited with code ${code}`,
-            workerStdErr.trim() || '',
-            workerStdOut.trim() || ''
-          ].filter(Boolean).join('\n');
-          reject(new Error(detail));
-        }
-      });
-
-      worker.send({
-        type: 'render',
-        payload: config,
-      });
-    });
+    }
 
     const workerDetails = result?.workerDetails || null;
 
@@ -493,6 +765,7 @@ ipcMain.handle('export-video', async (_event, config) => {
         exportType: config?.exportFormat === 'mov-alpha' || config?.exportFormat === 'webm-alpha' ? config.exportFormat : 'mp4',
         exportQuality: config?.exportQuality || 'balance',
         exportHardware: config?.exportHardware || 'auto',
+        exportParallelSegments: Boolean(config?.exportParallelSegments),
         exportRange: config?.exportRange || null,
         exportDurationSeconds: typeof config?.exportRange?.start === 'number' && typeof config?.exportRange?.end === 'number'
           ? Math.max(0, config.exportRange.end - config.exportRange.start)

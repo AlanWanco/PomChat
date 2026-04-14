@@ -309,7 +309,6 @@ export const PlayerControls = memo(function PlayerControls({
       return;
     }
     if (!waveformRef.current) return;
-    if (!audioRef?.current) return;
 
     const readyResetTimer = window.setTimeout(() => setIsWaveformReady(false), 0);
     waveformRef.current.innerHTML = '';
@@ -324,7 +323,6 @@ export const PlayerControls = memo(function PlayerControls({
       barRadius: 2,
       height: waveformHeight,
       normalize: true,
-      media: audioRef.current,
       minPxPerSec: 50,
     });
 
@@ -471,7 +469,8 @@ export const PlayerControls = memo(function PlayerControls({
     
     wsRegions.current = wavesurfer.current.registerPlugin(RegionsPlugin.create());
 
-    // With media element passed, load just fetches peaks without creating another audio element
+    // Let WaveSurfer decode the source directly so containers like M4A
+    // can still produce peaks even when playback is handled elsewhere.
     void wavesurfer.current.load(audioPath).catch((error) => {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;

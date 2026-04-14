@@ -341,9 +341,13 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
   };
 };
 
-const getRenderConcurrency = () => {
+const getRenderConcurrency = (requestedConcurrency) => {
   const cpuCount = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
-  return Math.max(1, cpuCount);
+  const maxConcurrency = Math.max(1, cpuCount);
+  if (typeof requestedConcurrency !== 'number' || !Number.isFinite(requestedConcurrency)) {
+    return maxConcurrency;
+  }
+  return Math.max(1, Math.min(maxConcurrency, Math.round(requestedConcurrency)));
 };
 
 const patchMacCompositorBinaries = () => {
@@ -361,7 +365,8 @@ const patchMacCompositorBinaries = () => {
   const pkgJsonPath = require.resolve(compositorPkgName);
   const sourceDir = path.dirname(pkgJsonPath);
   const hash = crypto.createHash('sha1').update(sourceDir).digest('hex').slice(0, 8);
-  const targetDir = path.join(os.tmpdir(), `pomchat-remotion-bin-${process.arch}-${hash}`);
+  const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
+  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}`);
   const marker = path.join(targetDir, '.patched-v2');
 
   if (!fs.existsSync(marker)) {
@@ -570,7 +575,7 @@ const runRender = async (config) => {
         inputProps,
         overwrite: true,
         logLevel: 'error',
-        concurrency: getRenderConcurrency(),
+        concurrency: getRenderConcurrency(config.renderConcurrency),
         imageFormat: renderImageFormat,
         jpegQuality: renderJpegQuality,
         ...qualityOptions,

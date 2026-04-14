@@ -54,6 +54,7 @@ interface ExportModalProps {
   } | null;
   exportQuality?: 'fast' | 'balance' | 'high';
   exportHardware?: 'auto' | 'gpu' | 'cpu';
+  exportParallelSegments?: boolean;
   exportFormat?: 'mp4' | 'mov-alpha' | 'webm-alpha';
   exportLogEnabled?: boolean;
    filenameTemplate?: 'default' | 'timestamp' | 'unix' | 'custom';
@@ -68,6 +69,7 @@ interface ExportModalProps {
   onClearRenderCache?: (type: 'remote-assets' | 'remotion-temp') => void | Promise<void>;
   onQualityChange?: (quality: 'fast' | 'balance' | 'high') => void;
   onHardwareChange?: (mode: 'auto' | 'gpu' | 'cpu') => void;
+  onExportParallelSegmentsChange?: (enabled: boolean) => void;
   onExportFormatChange?: (format: 'mp4' | 'mov-alpha' | 'webm-alpha') => void;
   onExportLogEnabledChange?: (enabled: boolean) => void;
   onFilenameTemplateChange?: (template: 'default' | 'timestamp' | 'unix' | 'custom') => void;
@@ -157,6 +159,7 @@ export function ExportModal({
   renderCacheInfo,
   exportQuality = 'balance',
   exportHardware = 'auto',
+  exportParallelSegments = false,
   exportFormat = 'mp4',
   exportLogEnabled = false,
   filenameTemplate = 'default',
@@ -171,6 +174,7 @@ export function ExportModal({
   onClearRenderCache,
   onQualityChange,
   onHardwareChange,
+  onExportParallelSegmentsChange,
   onExportFormatChange,
   onExportLogEnabledChange,
   onFilenameTemplateChange,
@@ -428,8 +432,25 @@ export function ExportModal({
                          {t(`export.hardware.${mode}`)}
                        </button>
                      ))}
-                   </div>
-                   <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.hardwareHint')}</div>
+                    </div>
+                    <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.hardwareHint')}</div>
+                  </div>
+
+                  <div className="mt-3 rounded-2xl border px-3 py-3" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.06 : 0.03) }}>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={exportParallelSegments}
+                        onChange={(event) => onExportParallelSegmentsChange?.(event.target.checked)}
+                        disabled={isExporting}
+                        className="mt-0.5 h-4 w-4 rounded border"
+                        style={{ accentColor: secondaryThemeColor }}
+                      />
+                      <div>
+                        <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('export.parallelSegments')}</div>
+                        <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.parallelSegmentsHint')}</div>
+                      </div>
+                    </label>
                   </div>
 
                   <div className="mt-3">

@@ -34,6 +34,7 @@ type HistorySnapshot = {
   exportRange: { start: number; end: number };
   exportRangeTouched: boolean;
   exportQuality: 'fast' | 'balance' | 'high';
+  exportParallelSegments: boolean;
   exportFormat: 'mp4' | 'mov-alpha' | 'webm-alpha';
   exportLogEnabled: boolean;
   filenameTemplate: 'default' | 'timestamp' | 'unix' | 'custom';
@@ -106,7 +107,7 @@ const DEFAULT_CHAT_LAYOUT = {
   showAvatar: true,
   showSpeakerName: true,
   showTimestamp: true,
-  interruptionEnabled: true,
+  interruptionEnabled: false,
   showMeta: true,
   compactMode: false,
   compactSpacing: 14,
@@ -151,8 +152,9 @@ const DEFAULT_PROJECT_CONFIG = {
   exportRangeCustomized: false,
   exportHardware: 'auto' as 'auto' | 'gpu' | 'cpu',
   exportConcurrency: null as number | null,
+  exportParallelSegments: false,
   exportFormat: 'mp4' as 'mp4' | 'mov-alpha' | 'webm-alpha',
-  exportLogEnabled: false,
+  exportLogEnabled: true,
   content: [] as any[],
   speakers: {
     A: {
@@ -833,6 +835,7 @@ function App() {
   const [renderCacheInfo, setRenderCacheInfo] = useState<RenderCacheInfo | null>(null);
   const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
   const [exportHardware, setExportHardware] = useState<'auto' | 'gpu' | 'cpu'>('auto');
+  const [exportParallelSegments, setExportParallelSegments] = useState(false);
   const [exportFormat, setExportFormat] = useState<'mp4' | 'mov-alpha' | 'webm-alpha'>('mp4');
   const [exportLogEnabled, setExportLogEnabled] = useState(false);
   const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
@@ -886,12 +889,13 @@ function App() {
     exportRange: JSON.parse(JSON.stringify(exportRange)),
     exportRangeTouched: exportRangeTouchedRef.current,
     exportQuality,
+    exportParallelSegments,
     exportFormat,
     exportLogEnabled,
     filenameTemplate,
     customFilename,
     persistedCustomFilename,
-  }), [config, subtitles, webAssContent, exportRange, exportQuality, exportFormat, exportLogEnabled, filenameTemplate, customFilename, persistedCustomFilename]);
+  }), [config, subtitles, webAssContent, exportRange, exportQuality, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, persistedCustomFilename]);
   const syncHistoryAvailability = useCallback(() => {
     setCanUndo(historyPastRef.current.length > 0);
     setCanRedo(historyFutureRef.current.length > 0);
@@ -928,6 +932,7 @@ function App() {
     exportRangeTouchedRef.current = snapshot.exportRangeTouched;
     setExportRange(snapshot.exportRange);
     setExportQuality(snapshot.exportQuality);
+    setExportParallelSegments(snapshot.exportParallelSegments);
     setExportFormat(snapshot.exportFormat);
     setExportLogEnabled(snapshot.exportLogEnabled);
     setFilenameTemplate(snapshot.filenameTemplate);
@@ -2332,6 +2337,15 @@ const [previewScale, setPreviewScale] = useState(1);
     markProjectDirty();
   }, [exportLogEnabled, markProjectDirty, pushHistorySnapshot]);
 
+  const handleExportParallelSegmentsChange = useCallback((nextEnabled: boolean) => {
+    if (exportParallelSegments === nextEnabled) {
+      return;
+    }
+    pushHistorySnapshot();
+    setExportParallelSegments(nextEnabled);
+    markProjectDirty();
+  }, [exportParallelSegments, markProjectDirty, pushHistorySnapshot]);
+
   const handleCustomFilenameChange = useCallback((nextFilename: string) => {
     if (customFilename === nextFilename) {
       return;
@@ -2392,10 +2406,11 @@ const [previewScale, setPreviewScale] = useState(1);
     setPersistedCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
     const nextHardware = config.exportHardware === 'gpu' || config.exportHardware === 'cpu' ? config.exportHardware : 'auto';
     setExportHardware((prev) => (prev === nextHardware ? prev : nextHardware));
+    setExportParallelSegments((prev) => (prev === Boolean(config.exportParallelSegments) ? prev : Boolean(config.exportParallelSegments)));
     const nextFormat = config.exportFormat === 'mov-alpha' || config.exportFormat === 'webm-alpha' ? config.exportFormat : 'mp4';
     setExportFormat((prev) => (prev === nextFormat ? prev : nextFormat));
     setExportLogEnabled((prev) => (prev === Boolean(config.exportLogEnabled) ? prev : Boolean(config.exportLogEnabled)));
-  }, [config.exportQuality, config.filenameTemplate, config.customFilename, config.exportHardware, config.exportFormat, config.exportLogEnabled]);
+  }, [config.exportQuality, config.filenameTemplate, config.customFilename, config.exportHardware, config.exportParallelSegments, config.exportFormat, config.exportLogEnabled]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -2417,12 +2432,13 @@ const [previewScale, setPreviewScale] = useState(1);
       const sameExportRangeCustomized = Boolean(prev.exportRangeCustomized) === exportRangeTouchedRef.current;
       const sameQuality = prev.exportQuality === exportQuality;
       const sameHardware = prev.exportHardware === exportHardware;
+      const sameParallelSegments = Boolean(prev.exportParallelSegments) === exportParallelSegments;
       const sameFormat = prev.exportFormat === exportFormat;
       const sameLogEnabled = Boolean(prev.exportLogEnabled) === exportLogEnabled;
       const sameTemplate = prev.filenameTemplate === filenameTemplate;
       const sameCustomFilename = prev.customFilename === persistedCustomFilename;
 
-      if (sameExportRange && sameExportRangeCustomized && sameQuality && sameHardware && sameFormat && sameLogEnabled && sameTemplate && sameCustomFilename) {
+      if (sameExportRange && sameExportRangeCustomized && sameQuality && sameHardware && sameParallelSegments && sameFormat && sameLogEnabled && sameTemplate && sameCustomFilename) {
         return prev;
       }
 
@@ -2432,13 +2448,14 @@ const [previewScale, setPreviewScale] = useState(1);
         exportRangeCustomized: exportRangeTouchedRef.current,
         exportQuality,
         exportHardware,
+        exportParallelSegments,
         exportFormat,
         exportLogEnabled,
         filenameTemplate,
         customFilename: persistedCustomFilename
       };
     });
-  }, [exportRange, exportQuality, exportHardware, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename]);
+  }, [exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename]);
 
   useEffect(() => {
     if (!window.electron) {
@@ -2563,6 +2580,7 @@ const [previewScale, setPreviewScale] = useState(1);
         exportRange,
         exportQuality,
         exportHardware,
+        exportParallelSegments,
         exportFormat,
         exportLogEnabled,
         crf,
@@ -2588,7 +2606,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setIsExporting(false);
       exportProgressActiveRef.current = false;
     }
-  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes]);
+  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes]);
 
   const handleRevealExport = useCallback(async () => {
     const targetPath = lastExportOutputPath || exportOutputPath.trim();
@@ -5246,6 +5264,7 @@ const [previewScale, setPreviewScale] = useState(1);
          renderCacheInfo={renderCacheInfo}
          exportQuality={exportQuality}
          exportHardware={exportHardware}
+         exportParallelSegments={exportParallelSegments}
          exportFormat={exportFormat}
          exportLogEnabled={exportLogEnabled}
          filenameTemplate={filenameTemplate}
@@ -5261,6 +5280,7 @@ const [previewScale, setPreviewScale] = useState(1);
          onRangeChange={updateExportRange}
          onQualityChange={handleExportQualityChange}
          onHardwareChange={setExportHardware}
+         onExportParallelSegmentsChange={handleExportParallelSegmentsChange}
          onExportFormatChange={handleExportFormatChange}
          onExportLogEnabledChange={handleExportLogEnabledChange}
          onFilenameTemplateChange={handleFilenameTemplateChange}
