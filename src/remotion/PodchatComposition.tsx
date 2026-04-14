@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
 
 const MESSAGE_FALLBACK_COUNT = 32;
@@ -291,7 +291,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     const appearanceTime = Math.max(0, item.start - ((props.chatLayout?.animationStyle || 'rise') === 'none' ? 0 : animationDuration));
     return currentTime >= appearanceTime;
   });
-  const visibleMessageRows = computeInterruptedMessageRows(
+  const visibleMessageRows = ((props.chatLayout?.interruptionEnabled ?? true) ? computeInterruptedMessageRows : computeSimpleMessageRows)(
     appearedMessages.map((item) => ({ ...item, speakerId: item.speaker })),
     Object.fromEntries(Object.entries(props.speakers).map(([key, value]) => [key, { side: value.side, type: value.type }])),
     props.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT,

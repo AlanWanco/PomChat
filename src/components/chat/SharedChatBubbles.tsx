@@ -62,6 +62,7 @@ export interface SharedChatLayout {
   showAvatar?: boolean;
   showSpeakerName?: boolean;
   showTimestamp?: boolean;
+  interruptionEnabled?: boolean;
   showMeta?: boolean;
   compactMode?: boolean;
   compactSpacing?: number;
@@ -167,6 +168,23 @@ export const computeInterruptedVisibleMessages = <T extends { start: number; end
   return computeInterruptedMessageRows(appearedMessages, speakers, maxVisible)
     .flatMap((row) => [row.left, row.right].filter(Boolean) as T[])
     .slice(-maxVisible);
+};
+
+export const computeSimpleMessageRows = <T extends { start: number; end: number; speakerId: string }>(
+  appearedMessages: T[],
+  speakers: Record<string, { side?: 'left' | 'right' | 'center'; type?: 'speaker' | 'annotation' }>,
+  maxVisible: number,
+): InterruptedMessageRow<T>[] => {
+  return appearedMessages
+    .filter((item) => {
+      const speaker = speakers[item.speakerId];
+      return Boolean(speaker && speaker.type !== 'annotation');
+    })
+    .slice(-Math.max(1, maxVisible))
+    .map((item) => {
+      const side = getSpeakerSide(speakers[item.speakerId]);
+      return side === 'right' ? { left: undefined, right: item } : { left: item, right: undefined };
+    });
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));

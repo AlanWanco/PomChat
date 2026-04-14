@@ -1208,8 +1208,8 @@ export function SettingsPanel({
 
               <hr style={{ borderColor: uiTheme.border }} />
 
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <span className="text-xs font-semibold opacity-80 inline-flex items-center gap-1">
                       {t('project.animationStyle')}
@@ -1247,7 +1247,23 @@ export function SettingsPanel({
                       style={themedRangeStyle}
                     />
                   </div>
-                   </div>
+                  </div>
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-xs opacity-70">{t('project.interruptionEffect')}</label>
+                    <button
+                      type="button"
+                      onClick={() => updateChatLayout('interruptionEnabled', !(config.chatLayout?.interruptionEnabled ?? true))}
+                      className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
+                      style={{
+                        backgroundColor: (config.chatLayout?.interruptionEnabled ?? true) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                        borderColor: (config.chatLayout?.interruptionEnabled ?? true) ? `${secondaryThemeColor}55` : uiTheme.border,
+                        color: uiTheme.text,
+                      }}
+                    >
+                      <span>{(config.chatLayout?.interruptionEnabled ?? true) ? t('common.enabled') : t('common.disabled')}</span>
+                    </button>
+                    <p className="text-[11px] opacity-60 leading-relaxed">{t('project.interruptionEffectHelp')}</p>
+                  </div>
                 </div>
              </div>
 

@@ -9,7 +9,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows } from './components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows } from './components/chat/SharedChatBubbles';
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
@@ -106,6 +106,7 @@ const DEFAULT_CHAT_LAYOUT = {
   showAvatar: true,
   showSpeakerName: true,
   showTimestamp: true,
+  interruptionEnabled: true,
   showMeta: true,
   compactMode: false,
   compactSpacing: 14,
@@ -3845,8 +3846,11 @@ const [previewScale, setPreviewScale] = useState(1);
     return previewRenderTime >= appearanceTime;
   }), [subtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
   const visibleMessageRows = useMemo(() => {
-    return computeInterruptedMessageRows(appearedMessages, config.speakers, config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT);
-  }, [appearedMessages, config.speakers, config.chatLayout?.maxVisibleBubbles]);
+    const maxVisible = config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT;
+    return (config.chatLayout?.interruptionEnabled ?? true)
+      ? computeInterruptedMessageRows(appearedMessages, config.speakers, maxVisible)
+      : computeSimpleMessageRows(appearedMessages, config.speakers, maxVisible);
+  }, [appearedMessages, config.speakers, config.chatLayout?.interruptionEnabled, config.chatLayout?.maxVisibleBubbles]);
   const flatVisibleMessages = useMemo(
     () => visibleMessageRows.flatMap((row) => [row.left, row.right].filter(Boolean)),
     [visibleMessageRows]
