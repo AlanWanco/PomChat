@@ -837,7 +837,7 @@ function App() {
   const [exportHardware, setExportHardware] = useState<'auto' | 'gpu' | 'cpu'>('auto');
   const [exportParallelSegments, setExportParallelSegments] = useState(false);
   const [exportFormat, setExportFormat] = useState<'mp4' | 'mov-alpha' | 'webm-alpha'>('mp4');
-  const [exportLogEnabled, setExportLogEnabled] = useState(false);
+  const [exportLogEnabled, setExportLogEnabled] = useState(() => Boolean(config.exportLogEnabled));
   const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
   const [customFilename, setCustomFilename] = useState('');
   const [persistedCustomFilename, setPersistedCustomFilename] = useState('');

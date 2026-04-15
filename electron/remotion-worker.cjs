@@ -104,6 +104,12 @@ const getAvatarGifTranscodeDir = () => {
   return dir;
 };
 
+const getBackgroundVideoTranscodeDir = () => {
+  const dir = path.join(os.homedir(), '.config', 'pomchat', 'cache', 'background-video-transcodes');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
 const resolveLocalMediaPath = (value) => {
   if (!value) return null;
   if (/^file:/i.test(value)) {
@@ -155,6 +161,38 @@ const transcodeGifAvatarToMp4 = (gifPath, binariesDirectory) => {
     return outputPath;
   } catch (_error) {
     return gifPath;
+  }
+};
+
+const normalizeBackgroundVideoForRender = (videoPath, binariesDirectory, fps) => {
+  if (!videoPath || !/\.(mp4|webm|mov|mkv)(\?|$)/i.test(videoPath) || !fs.existsSync(videoPath)) {
+    return videoPath;
+  }
+
+  const stat = fs.statSync(videoPath);
+  const normalizedFps = Math.max(1, Math.round(Number.isFinite(fps) ? fps : 30));
+  const hash = crypto.createHash('sha1').update(`${videoPath}:${stat.size}:${stat.mtimeMs}:${normalizedFps}`).digest('hex');
+  const outputPath = path.join(getBackgroundVideoTranscodeDir(), `${hash}.mp4`);
+  if (fs.existsSync(outputPath)) {
+    return outputPath;
+  }
+
+  try {
+    execFileSync(resolveFfmpegBinary(binariesDirectory), [
+      '-y',
+      '-i', videoPath,
+      '-an',
+      '-movflags', '+faststart',
+      '-pix_fmt', 'yuv420p',
+      '-vf', `fps=${normalizedFps},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '18',
+      outputPath,
+    ], { stdio: 'ignore' });
+    return outputPath;
+  } catch (_error) {
+    return videoPath;
   }
 };
 
@@ -319,6 +357,14 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
     ]),
   );
 
+  const localBackgroundPath = resolveLocalMediaPath(config.background?.image);
+  const normalizedBackgroundPath = config.exportParallelSegments
+    ? normalizeBackgroundVideoForRender(localBackgroundPath, binariesDirectory, config.fps)
+    : localBackgroundPath;
+  const backgroundImage = normalizedBackgroundPath && path.isAbsolute(normalizedBackgroundPath)
+    ? mediaServer.urlForPath(normalizedBackgroundPath)
+    : toMediaUrl(config.background?.image, mediaServer);
+
   return {
     ...config,
     content: Array.isArray(config.content)
@@ -329,7 +375,7 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
     audioPath: toMediaUrl(config.audioPath, mediaServer),
     background: {
       ...config.background,
-      image: toMediaUrl(config.background?.image, mediaServer),
+      image: backgroundImage,
       slides: Array.isArray(config.background?.slides)
         ? config.background.slides.map((slide) => ({
             ...slide,
