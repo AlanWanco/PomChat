@@ -590,6 +590,26 @@ export const PlayerControls = memo(function PlayerControls({
     }
   }, [playbackRate]);
 
+  useEffect(() => {
+    if (!wavesurfer.current || !isWaveformReady) {
+      return;
+    }
+
+    const nextTime = Number.isFinite(liveCurrentTime) ? liveCurrentTime : 0;
+    const durationSeconds = wavesurfer.current.getDuration() || 0;
+    if (durationSeconds <= 0) {
+      return;
+    }
+
+    const clampedTime = Math.max(0, Math.min(nextTime, durationSeconds));
+    const currentWaveTime = wavesurfer.current.getCurrentTime();
+    if (Math.abs(currentWaveTime - clampedTime) < 1 / 120) {
+      return;
+    }
+
+    wavesurfer.current.setTime(clampedTime);
+  }, [isWaveformReady, liveCurrentTime]);
+
   // Volume Sync
   useEffect(() => {
     if (audioRef?.current) {
