@@ -164,35 +164,44 @@ const transcodeGifAvatarToMp4 = (gifPath, binariesDirectory) => {
   }
 };
 
-const normalizeBackgroundVideoForRender = (videoPath, binariesDirectory, fps) => {
+const normalizeBackgroundVideoForRender = (videoPath, binariesDirectory, fps, exportRange) => {
   if (!videoPath || !/\.(mp4|webm|mov|mkv)(\?|$)/i.test(videoPath) || !fs.existsSync(videoPath)) {
-    return videoPath;
+    return { path: videoPath, trimmedToExportRange: false, duration: null };
   }
 
   const stat = fs.statSync(videoPath);
   const normalizedFps = Math.max(1, Math.round(Number.isFinite(fps) ? fps : 30));
-  const hash = crypto.createHash('sha1').update(`${videoPath}:${stat.size}:${stat.mtimeMs}:${normalizedFps}`).digest('hex');
+  const trimStart = exportRange && typeof exportRange.start === 'number' ? Math.max(0, exportRange.start) : 0;
+  const trimDuration = exportRange && typeof exportRange.start === 'number' && typeof exportRange.end === 'number'
+    ? Math.max(0.1, exportRange.end - exportRange.start + 1 / normalizedFps)
+    : null;
+  const hash = crypto.createHash('sha1').update(`${videoPath}:${stat.size}:${stat.mtimeMs}:${normalizedFps}:${trimStart}:${trimDuration ?? 'full'}`).digest('hex');
   const outputPath = path.join(getBackgroundVideoTranscodeDir(), `${hash}.mp4`);
   if (fs.existsSync(outputPath)) {
-    return outputPath;
+    return { path: outputPath, trimmedToExportRange: Boolean(trimDuration), duration: trimDuration };
   }
 
   try {
-    execFileSync(resolveFfmpegBinary(binariesDirectory), [
+    const command = [
       '-y',
+      ...(trimStart > 0 ? ['-ss', String(trimStart)] : []),
       '-i', videoPath,
+      ...(trimDuration ? ['-t', String(trimDuration)] : []),
       '-an',
       '-movflags', '+faststart',
       '-pix_fmt', 'yuv420p',
-      '-vf', `fps=${normalizedFps},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+      '-vf', `fps=${normalizedFps},setpts=PTS-STARTPTS,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-crf', '18',
+      '-vsync', 'cfr',
+      '-video_track_timescale', String(normalizedFps * 1000),
       outputPath,
-    ], { stdio: 'ignore' });
-    return outputPath;
+    ];
+    execFileSync(resolveFfmpegBinary(binariesDirectory), command, { stdio: 'ignore' });
+    return { path: outputPath, trimmedToExportRange: Boolean(trimDuration), duration: trimDuration };
   } catch (_error) {
-    return videoPath;
+    return { path: videoPath, trimmedToExportRange: false, duration: null };
   }
 };
 
@@ -358,9 +367,10 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
   );
 
   const localBackgroundPath = resolveLocalMediaPath(config.background?.image);
-  const normalizedBackgroundPath = config.exportParallelSegments
-    ? normalizeBackgroundVideoForRender(localBackgroundPath, binariesDirectory, config.fps)
-    : localBackgroundPath;
+  const normalizedBackground = config.exportParallelSegments
+    ? normalizeBackgroundVideoForRender(localBackgroundPath, binariesDirectory, config.fps, config.exportRange)
+    : { path: localBackgroundPath, trimmedToExportRange: false, duration: null };
+  const normalizedBackgroundPath = normalizedBackground.path;
   const backgroundImage = normalizedBackgroundPath && path.isAbsolute(normalizedBackgroundPath)
     ? mediaServer.urlForPath(normalizedBackgroundPath)
     : toMediaUrl(config.background?.image, mediaServer);
@@ -376,6 +386,10 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
     background: {
       ...config.background,
       image: backgroundImage,
+      duration: normalizedBackground.trimmedToExportRange
+        ? normalizedBackground.duration
+        : config.background?.duration,
+      renderStartsAtZero: normalizedBackground.trimmedToExportRange,
       slides: Array.isArray(config.background?.slides)
         ? config.background.slides.map((slide) => ({
             ...slide,
@@ -412,7 +426,7 @@ const patchMacCompositorBinaries = () => {
   const sourceDir = path.dirname(pkgJsonPath);
   const hash = crypto.createHash('sha1').update(sourceDir).digest('hex').slice(0, 8);
   const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
-  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}`);
+  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}-${process.pid}`);
   const marker = path.join(targetDir, '.patched-v2');
 
   if (!fs.existsSync(marker)) {

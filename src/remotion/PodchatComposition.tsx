@@ -265,7 +265,9 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const backgroundVideoDurationFrames = props.background?.duration
     ? Math.max(1, Math.round(props.background.duration * fps))
     : null;
-  const backgroundVideoStartFrame = backgroundVideoDurationFrames
+  const backgroundVideoStartFrame = props.background?.renderStartsAtZero
+    ? 0
+    : backgroundVideoDurationFrames
     ? Math.floor((props.exportRange.start * fps) % backgroundVideoDurationFrames)
     : 0;
   const backgroundObjectPosition = (() => {

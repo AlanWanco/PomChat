@@ -97,7 +97,7 @@ function patchMacCompositorBinaries() {
   const sourceDir = path.dirname(pkgJsonPath);
   const hash = crypto.createHash('sha1').update(sourceDir).digest('hex').slice(0, 8);
   const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
-  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}`);
+  const targetDir = path.join(tempRoot, `pomchat-remotion-bin-${process.arch}-${hash}-${process.pid}`);
   const marker = path.join(targetDir, '.patched-v2');
 
   if (!fs.existsSync(marker)) {

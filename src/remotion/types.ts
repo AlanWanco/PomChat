@@ -106,6 +106,7 @@ export interface PodchatExportInput {
     fit?: 'cover' | 'contain' | 'fill';
     position?: 'center' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
     duration?: number;
+    renderStartsAtZero?: boolean;
     slides?: BackgroundSlideItem[];
   };
   chatLayout?: {
