@@ -46,6 +46,7 @@ export interface SubtitleContentItem {
   speaker: string;
   type: 'text';
   text: string;
+  visible?: boolean;
 }
 
 export interface SpeakerStyle {

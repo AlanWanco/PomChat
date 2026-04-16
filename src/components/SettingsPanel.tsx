@@ -671,9 +671,21 @@ export function SettingsPanel({
     const className = options?.className || `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`;
     const style = options?.style || inputSurfaceStyle;
     const safeValue = Number.isFinite(value) ? value : 0;
+    const getPrecision = (targetStep: number) => {
+      if (!Number.isFinite(targetStep)) return 0;
+      const normalized = targetStep.toString();
+      if (normalized.includes('e-')) {
+        const [, exponent] = normalized.split('e-');
+        return Number.parseInt(exponent || '0', 10) || 0;
+      }
+      const decimalPart = normalized.split('.')[1];
+      return decimalPart ? decimalPart.length : 0;
+    };
+    const precision = getPrecision(step);
+    const roundByStep = (nextValue: number) => Number(nextValue.toFixed(precision));
 
     const applyDelta = (delta: number) => {
-      let next = Number((safeValue + delta).toFixed(4));
+      let next = roundByStep(safeValue + delta);
       if (typeof min === 'number') next = Math.max(min, next);
       if (typeof max === 'number') next = Math.min(max, next);
       onValueChange(next);
@@ -690,7 +702,7 @@ export function SettingsPanel({
           onChange={(e) => {
             const next = Number(e.target.value);
             if (Number.isFinite(next)) {
-              onValueChange(next);
+              onValueChange(roundByStep(next));
             }
           }}
           className={`${className} pr-8`}
@@ -1269,7 +1281,7 @@ export function SettingsPanel({
                       max="0.5"
                       step="0.01"
                       value={config.chatLayout?.animationDuration ?? 0.2}
-                      onChange={(e) => updateChatLayout('animationDuration', parseFloat(e.target.value))}
+                      onChange={(e) => updateChatLayout('animationDuration', Number(parseFloat(e.target.value).toFixed(2)))}
                       className="w-full"
                       style={themedRangeStyle}
                     />

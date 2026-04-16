@@ -121,9 +121,17 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
             <h3 className={`text-sm font-medium mb-3 ml-2`} style={{ color: uiTheme.textMuted }}>{t('welcome.recent')}</h3>
             <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
               {(recentProjects.length > 0 ? recentProjects : recentProject ? [recentProject] : []).slice(0, 10).map((path, index) => (
-                <button 
+                <div
                   key={`${path}-${index}`}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onOpenRecent(path)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onOpenRecent(path);
+                    }
+                  }}
                   className="w-full flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 group shadow-sm hover:-translate-y-0.5"
                   style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated, boxShadow: `0 4px 12px ${secondaryThemeColor}14` }}
                 >
@@ -150,7 +158,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
                       <X size={14} />
                     </button>
                   )}
-                </button>
+                </div>
               ))}
             </div>
           </div>

@@ -1115,7 +1115,8 @@ const [previewScale, setPreviewScale] = useState(1);
     return {
       ...subtitle,
       actor: speaker.name || subtitle.actor,
-      style: speaker.name || subtitle.style || 'Default'
+      style: speaker.name || subtitle.style || 'Default',
+      visible: subtitle.visible !== false,
     };
   };
 
@@ -1281,6 +1282,21 @@ const [previewScale, setPreviewScale] = useState(1);
     showToast(t('app.subtitleBatchSpeakerUpdated', { count: ids.length }));
   };
 
+  const handleBulkUpdateSubtitleVisibility = async (ids: string[], visible: boolean) => {
+    if (ids.length === 0) return;
+    pushHistorySnapshot();
+    const idSet = new Set(ids);
+    const nextSubtitles = subtitles.map((subtitle: any) => {
+      if (!idSet.has(subtitle.id)) {
+        return subtitle;
+      }
+      return { ...subtitle, visible };
+    }).sort((a: any, b: any) => a.start - b.start || a.end - b.end);
+    setSubtitles(nextSubtitles);
+    markProjectDirty();
+    showToast(visible ? t('app.subtitleBatchShown', { count: ids.length }) : t('app.subtitleBatchHidden', { count: ids.length }));
+  };
+
   const handleAddSubtitle = async () => {
     pushHistorySnapshot();
     const speakerId = Object.keys(config.speakers || {}).find((key) => config.speakers[key]?.type !== 'annotation') || 'A';
@@ -1295,6 +1311,7 @@ const [previewScale, setPreviewScale] = useState(1);
       actor: config.speakers?.[speakerId]?.name || '',
       text: '',
       speakerId,
+      visible: true,
       sourceLineIndex: -1
     });
 
@@ -1574,12 +1591,26 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const replacementCandidates = nonAnnotationKeys.filter((key) => key !== speakerKey);
     const affectedCount = subtitles.filter((sub) => sub.speakerId === speakerKey).length;
+    if (affectedCount === 0) {
+      pushHistorySnapshot();
+      setConfig((prev: any) => {
+        const nextSpeakers = { ...(prev?.speakers || {}) };
+        delete nextSpeakers[speakerKey];
+        return {
+          ...prev,
+          speakers: nextSpeakers
+        };
+      });
+      markProjectDirty();
+      return;
+    }
+
     setSpeakerReplaceDialog({
       speakerKey,
       replacementKey: replacementCandidates[0] || '',
       affectedCount
     });
-  }, [config.speakers, showToast, subtitles, t]);
+  }, [config.speakers, markProjectDirty, pushHistorySnapshot, showToast, subtitles, t]);
 
   const confirmRemoveSpeakerWithReplacement = useCallback(() => {
     if (!speakerReplaceDialog) {
@@ -1898,7 +1929,8 @@ const [previewScale, setPreviewScale] = useState(1);
             end: s.end,
             speaker: s.speakerId,
             type: 'text',
-            text: s.text
+            text: s.text,
+            visible: s.visible !== false,
           }))
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(webPersistedConfig));
@@ -2180,7 +2212,8 @@ const [previewScale, setPreviewScale] = useState(1);
         end: s.end,
         speaker: s.speakerId,
         type: 'text',
-        text: s.text
+        text: s.text,
+        visible: s.visible !== false,
       }))
     };
   };
@@ -2424,20 +2457,19 @@ const [previewScale, setPreviewScale] = useState(1);
     setExportOutputPath('');
     setExportStatusMessage(null);
     setLastExportSucceeded(false);
-  }, [config.projectId]);
+  }, [projectPath, config.projectId]);
 
   useEffect(() => {
-    if (config.exportRangeCustomized) {
-      exportRangeTouchedRef.current = true;
-    }
     const sourceRange = config.exportRange;
+    exportRangeTouchedRef.current = Boolean(config.exportRangeCustomized);
     if (sourceRange && typeof sourceRange.start === 'number' && typeof sourceRange.end === 'number') {
-      setExportRange({
-        start: Math.max(0, sourceRange.start),
-        end: Math.max(sourceRange.start, sourceRange.end)
-      });
+      const nextRange = {
+        start: Number(Math.max(0, sourceRange.start).toFixed(2)),
+        end: Number(Math.max(sourceRange.start, sourceRange.end).toFixed(2))
+      };
+      setExportRange((prev) => isSameRange(prev, nextRange) ? prev : nextRange);
     }
-  }, [config.projectId]); // Only run on project load/change, not continuously
+  }, [projectPath, config.projectId, config.exportRange?.start, config.exportRange?.end, config.exportRangeCustomized]);
 
   useEffect(() => {
     const nextQuality = config.exportQuality === 'fast' || config.exportQuality === 'balance' || config.exportQuality === 'high'
@@ -3141,6 +3173,13 @@ const [previewScale, setPreviewScale] = useState(1);
         fps: payload.importedConfig?.fps ?? prev?.fps,
         dimensions: payload.importedConfig?.dimensions ?? prev?.dimensions,
         chatLayout: payload.importedConfig?.chatLayout ?? prev?.chatLayout,
+        background: payload.importedConfig?.background
+          ? {
+              ...(prev?.background || {}),
+              ...payload.importedConfig.background,
+              slides: prev?.background?.slides || [],
+            }
+          : prev?.background,
         speakers: nextSpeakers,
       };
     });
@@ -3155,6 +3194,16 @@ const [previewScale, setPreviewScale] = useState(1);
       fps: validatedConfig.fps,
       dimensions: JSON.parse(JSON.stringify(validatedConfig.dimensions)),
       chatLayout: JSON.parse(JSON.stringify(validatedConfig.chatLayout)),
+      background: validatedConfig.background
+        ? {
+            fit: validatedConfig.background.fit,
+            position: validatedConfig.background.position,
+            blur: validatedConfig.background.blur,
+            brightness: validatedConfig.background.brightness,
+            image: validatedConfig.background.image,
+            duration: validatedConfig.background.duration,
+          }
+        : undefined,
       speakers: Object.fromEntries(
         Object.entries(validatedConfig.speakers || {}).map(([speakerKey, speaker]: [string, any]) => [
           speakerKey,
@@ -3190,7 +3239,15 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const hasLayoutChange = JSON.stringify(config.chatLayout || {}) !== JSON.stringify(importedConfig.chatLayout || {})
       || JSON.stringify(config.dimensions || {}) !== JSON.stringify(importedConfig.dimensions || {})
-      || (config.fps ?? null) !== (importedConfig.fps ?? null);
+      || (config.fps ?? null) !== (importedConfig.fps ?? null)
+      || JSON.stringify({
+        fit: config.background?.fit,
+        position: config.background?.position,
+        blur: config.background?.blur,
+        brightness: config.background?.brightness,
+        image: config.background?.image,
+        duration: config.background?.duration,
+      }) !== JSON.stringify(importedConfig.background || {});
     const hasSpeakerChange = conflicts.length > 0
       || Object.entries(importedConfig.speakers || {}).some(([sourceKey, importedSpeaker]: [string, any]) => {
         const existingSpeaker = config.speakers?.[sourceKey];
@@ -3465,7 +3522,7 @@ const [previewScale, setPreviewScale] = useState(1);
               ...prev,
               background: {
                 ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
-                duration: mediaInfo.duration
+                duration: mediaInfo.duration !== null ? Number(mediaInfo.duration.toFixed(2)) : mediaInfo.duration
               }
             }));
           }
@@ -3525,7 +3582,7 @@ const [previewScale, setPreviewScale] = useState(1);
           background: {
             ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
             image: filePath,
-            duration: mediaInfo.duration ?? prev?.background?.duration
+            duration: mediaInfo.duration !== null && mediaInfo.duration !== undefined ? Number(mediaInfo.duration.toFixed(2)) : prev?.background?.duration
           }
         }));
 
@@ -3891,7 +3948,7 @@ const [previewScale, setPreviewScale] = useState(1);
           background: {
             ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
             image: mediaObjectUrl,
-            duration: mediaInfo.duration ?? prev?.background?.duration
+            duration: mediaInfo.duration !== null && mediaInfo.duration !== undefined ? Number(mediaInfo.duration.toFixed(2)) : prev?.background?.duration
           }
         }));
 
@@ -4106,6 +4163,7 @@ const [previewScale, setPreviewScale] = useState(1);
     .filter((slide: BackgroundSlideItem) => slide.layer === 'overlay')
     .sort((a: BackgroundSlideItem, b: BackgroundSlideItem) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0));
   const visibleAnnotations = subtitles.filter((item) => {
+    if (item.visible === false) return false;
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type !== 'annotation') return false;
     const animationStyle = config.chatLayout?.animationStyle || 'rise';
@@ -4114,6 +4172,7 @@ const [previewScale, setPreviewScale] = useState(1);
     return previewRenderTime >= appearanceTime && previewRenderTime <= item.end;
   });
   const appearedMessages = useMemo(() => subtitles.filter((item) => {
+    if (item.visible === false) return false;
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type === 'annotation') return false;
     const animationStyle = config.chatLayout?.animationStyle || 'rise';
@@ -4507,6 +4566,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onDeleteSubtitle={handleDeleteSubtitle}
                 onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                 onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
+                onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                 editingSub={editingSub}
                 setEditingSub={setEditingSub}
               />
@@ -4680,6 +4740,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   onDeleteSubtitle={handleDeleteSubtitle}
                   onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                   onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
+                  onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                   editingSub={editingSub}
                   setEditingSub={setEditingSub}
                 />
@@ -5496,6 +5557,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onDeleteSubtitle={handleDeleteSubtitle}
                     onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                     onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
+                    onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                     editingSub={editingSub}
                     setEditingSub={setEditingSub}
                   />

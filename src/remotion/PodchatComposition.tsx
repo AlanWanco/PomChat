@@ -241,7 +241,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const frame = useCurrentFrame();
   const { fps, width, durationInFrames } = useVideoConfig();
   const currentTime = props.exportRange.start + frame / fps;
-  const sortedContent = [...props.content].sort((a, b) => a.start - b.start || a.end - b.end);
+  const sortedContent = [...props.content].filter((item) => item.visible !== false).sort((a, b) => a.start - b.start || a.end - b.end);
   const layoutScale = width / (props.dimensions.width || width);
   const effectiveScale = Math.max(0.35, layoutScale);
   const animationDuration = props.chatLayout?.animationDuration ?? 0.2;

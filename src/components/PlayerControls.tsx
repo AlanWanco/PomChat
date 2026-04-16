@@ -57,11 +57,11 @@ interface WaveformRegionsPlugin {
 }
 
 const formatTime = (seconds: number) => {
-  if (isNaN(seconds) || !isFinite(seconds)) return '00:00.0';
+  if (isNaN(seconds) || !isFinite(seconds)) return '00:00.00';
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 10);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
+  const cs = Math.floor((seconds % 1) * 100);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
 };
 
 export const PlayerControls = memo(function PlayerControls({ 

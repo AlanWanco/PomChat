@@ -10,14 +10,24 @@ export interface SubtitleItem {
   actor: string;
   text: string;
   speakerId: string;
+  visible?: boolean;
   sourceLineIndex: number;
 }
 
-const extractDialogueLineIndexes = (content: string) => {
+const extractDialogueLineMetas = (content: string) => {
   return content
     .split(/\r?\n/)
-    .map((line, index) => (line.startsWith('Dialogue:') ? index : -1))
-    .filter((index) => index !== -1);
+    .map((line, index) => {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('Dialogue:')) {
+        return { index, visible: true };
+      }
+      if (trimmed.startsWith('Comment:')) {
+        return { index, visible: false };
+      }
+      return null;
+    })
+    .filter((item): item is { index: number; visible: boolean } => Boolean(item));
 };
 
 const normalizeSubtitleText = (value: string) => value.replace(/\\N/g, '\n').trim();
@@ -41,6 +51,7 @@ type ProjectTextItem = {
   end?: number;
   text?: string;
   speaker?: string;
+  visible?: boolean;
 };
 type ParsedDialogue = ParsedASS['events']['dialogue'][number];
 
@@ -61,7 +72,7 @@ const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styl
   return keys[0] || 'A';
 };
 
-const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineIndexes: number[], speakerConfig: SpeakerConfig) => {
+const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineMetas: Array<{ index: number; visible: boolean }>, speakerConfig: SpeakerConfig) => {
   return dialogues.reduce((result: SubtitleItem[], dialogue, index: number) => {
     const text = normalizeSubtitleText(dialogue.Text.combined);
     if (!text) {
@@ -69,7 +80,7 @@ const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineIndexes: nu
     }
 
     result.push({
-      id: `sub-${dialogueLineIndexes[index] ?? index}`,
+      id: `sub-${dialogueLineMetas[index]?.index ?? index}`,
       start: dialogue.Start,
       end: dialogue.End,
       duration: Number((dialogue.End - dialogue.Start).toFixed(2)),
@@ -77,7 +88,8 @@ const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineIndexes: nu
       actor: dialogue.Name || dialogue.Style,
       text,
       speakerId: mapActorToSpeaker(speakerConfig, dialogue.Name, dialogue.Style),
-      sourceLineIndex: dialogueLineIndexes[index] ?? index
+      visible: dialogueLineMetas[index]?.visible ?? true,
+      sourceLineIndex: dialogueLineMetas[index]?.index ?? index
     });
 
     return result;
@@ -114,8 +126,8 @@ export function useAssSubtitle(
         .then((text: string) => {
           if (cancelled) return;
           const parsed = parse(text);
-          const dialogueLineIndexes = extractDialogueLineIndexes(text);
-          const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineIndexes, speakerConfig);
+          const dialogueLineMetas = extractDialogueLineMetas(text);
+          const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineMetas, speakerConfig);
 
           setSubtitles(items);
           setError(null);
@@ -148,6 +160,7 @@ export function useAssSubtitle(
           actor: item.speaker ? (speakerConfig[item.speaker]?.name || item.speaker) : '',
           text: normalizeSubtitleText(item.text || ''),
           speakerId: item.speaker || Object.keys(speakerConfig || {})[0] || 'A',
+          visible: item.visible !== false,
           sourceLineIndex: index
         }));
 
@@ -179,8 +192,8 @@ export function useAssSubtitle(
       .then((text: string) => {
         if (cancelled) return;
         const parsed = parse(text);
-        const dialogueLineIndexes = extractDialogueLineIndexes(text);
-        const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineIndexes, speakerConfig);
+        const dialogueLineMetas = extractDialogueLineMetas(text);
+        const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineMetas, speakerConfig);
 
         setSubtitles(items);
         setError(null);

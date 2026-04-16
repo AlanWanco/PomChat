@@ -102,17 +102,17 @@ const parseFlexibleTime = (value: string) => {
 };
 
 const formatTime = (seconds: number) => {
-  if (!Number.isFinite(seconds) || seconds < 0) return '00:00.0';
+  if (!Number.isFinite(seconds) || seconds < 0) return '00:00.00';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  const ds = Math.floor((seconds % 1) * 10);
+  const cs = Math.floor((seconds % 1) * 100);
 
   if (h > 0) {
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ds}`;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
   }
 
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ds}`;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
 };
 
 const formatDuration = (ms: number | null) => {
