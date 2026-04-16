@@ -22,6 +22,18 @@ const extractDialogueLineIndexes = (content: string) => {
 
 const normalizeSubtitleText = (value: string) => value.replace(/\\N/g, '\n').trim();
 
+const buildSpeakerStyleCandidates = (actorName: string, styleName: string) => {
+  const actor = (actorName || '').trim();
+  const style = (styleName || '').trim();
+  if (!actor || !style || actor === style) {
+    return [];
+  }
+  return [
+    `${actor}（${style}）`,
+    `${actor} (${style})`,
+  ];
+};
+
 type SpeakerConfig = Record<string, { name?: string }>;
 type ProjectTextItem = {
   type?: string;
@@ -34,6 +46,12 @@ type ParsedDialogue = ParsedASS['events']['dialogue'][number];
 
 const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styleName: string) => {
   const keys = Object.keys(speakerConfig);
+  const combinedCandidates = buildSpeakerStyleCandidates(actorName, styleName);
+  for (const candidate of combinedCandidates) {
+    for (const key of keys) {
+      if (speakerConfig[key].name === candidate) return key;
+    }
+  }
   for (const key of keys) {
     if (speakerConfig[key].name === actorName) return key;
   }

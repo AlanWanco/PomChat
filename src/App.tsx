@@ -1470,6 +1470,26 @@ const [previewScale, setPreviewScale] = useState(1);
       };
     });
   }, []);
+  const removeRecentProject = useCallback((path: string) => {
+    if (!path) return;
+    setConfig((prev: any) => {
+      const prevUi = prev?.ui || DEFAULT_UI_CONFIG;
+      const nextRecentProjects = (prevUi.recentProjects || []).filter((item: string) => item !== path);
+      const nextRecentProject = prevUi.recentProject === path ? (nextRecentProjects[0] || null) : prevUi.recentProject;
+      if (nextRecentProject === prevUi.recentProject && JSON.stringify(nextRecentProjects) === JSON.stringify(prevUi.recentProjects || [])) {
+        return prev;
+      }
+      setRecentProject((current) => (current === path ? nextRecentProject : current));
+      return {
+        ...prev,
+        ui: {
+          ...prevUi,
+          recentProject: nextRecentProject,
+          recentProjects: nextRecentProjects,
+        }
+      };
+    });
+  }, []);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const language = (config.language || 'zh-CN') as Language;
@@ -4310,6 +4330,7 @@ const [previewScale, setPreviewScale] = useState(1);
             }
             loadWebSavedProject();
           }}
+          onRemoveRecent={removeRecentProject}
           onOpenSettings={() => setShowSettings(true)}
           recentProject={recentProject}
           recentProjects={config.ui?.recentProjects ?? DEFAULT_UI_CONFIG.recentProjects}

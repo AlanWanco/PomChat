@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, Clock, Settings } from 'lucide-react';
+import { FolderOpen, Plus, Clock, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
@@ -13,6 +13,7 @@ interface WelcomeScreenProps {
   onNewProject: () => void;
   onOpenProject: () => void;
   onOpenRecent?: (path: string) => void;
+  onRemoveRecent?: (path: string) => void;
   onOpenSettings?: () => void;
   recentProject?: string | null;
   recentProjects?: string[];
@@ -22,7 +23,7 @@ interface WelcomeScreenProps {
   secondaryThemeColor: string;
 }
 
-export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpenSettings, recentProject, recentProjects = [], isDarkMode, language, themeColor, secondaryThemeColor }: WelcomeScreenProps) {
+export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRemoveRecent, onOpenSettings, recentProject, recentProjects = [], isDarkMode, language, themeColor, secondaryThemeColor }: WelcomeScreenProps) {
   const t = (key: string) => translate(language, key);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [hoveredCard, setHoveredCard] = useState<'new' | 'open' | null>(null);
@@ -31,7 +32,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
 
   return (
     <div
-      className="w-full h-screen flex flex-col items-center justify-center"
+      className="w-full h-screen flex flex-col items-center justify-center overflow-y-auto px-6 py-16"
       style={{
         backgroundColor: isDarkMode ? uiTheme.appBg : uiTheme.panelBg,
         backgroundImage: `linear-gradient(180deg, transparent 0%, transparent 74%, ${secondaryThemeColor}${isDarkMode ? '14' : '0A'} 100%)`,
@@ -50,7 +51,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
           {translate(language, 'menu.settings')}
         </button>
       )}
-      <div className="mb-12 flex flex-col items-center">
+      <div className="mb-12 mt-6 flex flex-col items-center">
         <button
           type="button"
           className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-colors cursor-pointer"
@@ -76,7 +77,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
         </p>
       </div>
 
-      <div className="flex flex-col gap-6 max-w-2xl w-full px-8">
+      <div className="flex flex-col gap-6 max-w-2xl w-full px-8 shrink-0">
         <div className="flex gap-6 w-full">
           <button 
             onClick={onNewProject}
@@ -116,9 +117,9 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
         </div>
 
         {(recentProjects.length > 0 || recentProject) && onOpenRecent && (
-          <div className="mt-4">
+          <div className="mt-4 min-h-0">
             <h3 className={`text-sm font-medium mb-3 ml-2`} style={{ color: uiTheme.textMuted }}>{t('welcome.recent')}</h3>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
               {(recentProjects.length > 0 ? recentProjects : recentProject ? [recentProject] : []).slice(0, 10).map((path, index) => (
                 <button 
                   key={`${path}-${index}`}
@@ -135,6 +136,20 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onOpe
                       {path}
                     </span>
                   </div>
+                  {onRemoveRecent && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemoveRecent(path);
+                      }}
+                      className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md"
+                      style={{ color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle }}
+                      title={translate(language, 'common.close')}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </button>
               ))}
             </div>

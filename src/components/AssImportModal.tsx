@@ -214,14 +214,18 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       setStyles(Array.from(styleSet));
       
       const preferredStylesByName = getPreferredStylesByName(parsed.events.dialogue || []);
+      const stylesByName = getStylesByName(parsed.events.dialogue || []);
       const initialNames = new Set<string>(Array.from(nameSet));
       const initialStyles = new Set<string>();
       if (nameSet.size > 0) {
         nameSet.forEach((name) => {
-          const styleName = preferredStylesByName.get(name);
-          if (styleName) {
-            initialStyles.add(styleName);
+          const relatedStyles = stylesByName.get(name) || [];
+          if (relatedStyles.length > 0) {
+            relatedStyles.forEach((styleName) => initialStyles.add(styleName));
+            return;
           }
+          const fallbackStyle = preferredStylesByName.get(name);
+          if (fallbackStyle) initialStyles.add(fallbackStyle);
         });
       } else {
         const usedStyleSet = new Set<string>();
@@ -257,12 +261,15 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       nextNames.delete(name);
     } else {
       nextNames.add(name);
-      const mappedStyle = preferredStylesByName.get(name);
-      if (mappedStyle) {
-        const nextStyles = new Set(selectedStyles);
-        nextStyles.add(mappedStyle);
-        setSelectedStyles(nextStyles);
+      const nextStyles = new Set(selectedStyles);
+      const relatedStyles = stylesByName.get(name) || [];
+      if (relatedStyles.length > 0) {
+        relatedStyles.forEach((styleName) => nextStyles.add(styleName));
+      } else {
+        const mappedStyle = preferredStylesByName.get(name);
+        if (mappedStyle) nextStyles.add(mappedStyle);
       }
+      setSelectedStyles(nextStyles);
     }
     setSelectedNames(nextNames);
   };
@@ -520,8 +527,11 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
                 <div className="grid grid-cols-2 gap-2">
                   {names.map(a => {
                     const isSel = selectedNames.has(a);
-                    const linkedStyle = preferredStylesByName.get(a);
-                    const linkedStyleSelected = linkedStyle ? selectedStyles.has(linkedStyle) : false;
+                    const relatedStyles = stylesByName.get(a) || [];
+                    const fallbackStyle = preferredStylesByName.get(a);
+                    const styleVariants = relatedStyles.length > 0
+                      ? relatedStyles
+                      : (fallbackStyle ? [fallbackStyle] : []);
                     return (
                       <button
                         key={`name:${a}`}
@@ -531,13 +541,26 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
                           ? { borderColor: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '22' : '12'}` }
                           : { borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium truncate">{a || t('import.empty')}</span>
-                          {linkedStyleSelected ? (
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}18` }}>
-                              {linkedStyle}
-                            </span>
-                          ) : null}
+                        <div className="space-y-1.5">
+                          <div className="font-medium truncate">{a || t('import.empty')}</div>
+                          {styleVariants.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {styleVariants.map((styleName) => {
+                                const styleSelected = selectedStyles.has(styleName);
+                                return (
+                                  <span
+                                    key={`${a}:${styleName}`}
+                                    className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                                    style={styleSelected
+                                      ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}18` }
+                                      : { color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle }}
+                                  >
+                                    {formatImportedSpeakerName(language, a || t('import.empty'), styleName, true)}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </button>
                     );
