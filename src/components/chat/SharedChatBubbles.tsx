@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React from 'react';
 
 export interface SharedChatItem {
@@ -321,6 +322,21 @@ type MarkdownToken =
   | { type: 'image'; src: string; alt: string }
   | { type: 'linebreak' };
 
+type AssInlineStyleState = {
+  bold?: string | number;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  fontFamily?: string;
+  fontSize?: number;
+  color?: string;
+  alpha?: number | null;
+};
+
+type AssStyledSegment =
+  | { type: 'text'; value: string; style: AssInlineStyleState }
+  | { type: 'linebreak' };
+
 const MARKDOWN_PATTERNS = {
   image: /!\[([^\]]*)\]\(([^)]+)\)/,
   color: /<color=([^>]+)>([\s\S]*?)<\/color>/,
@@ -400,12 +416,224 @@ const tokenizeMarkdownInline = (input: string): MarkdownToken[] => {
   return tokens;
 };
 
-const tokenizeMarkdown = (input: string): MarkdownToken[] => {
-  const lines = input.split('\n');
-  return lines.flatMap((line, index) => {
-    const lineTokens = tokenizeMarkdownInline(line);
-    return index < lines.length - 1 ? [...lineTokens, { type: 'linebreak' as const }] : lineTokens;
+const parseAssHexColor = (value: string) => {
+  const normalized = value.trim();
+  const match = normalized.match(/&H([0-9A-F]{6,8})&?/i);
+  if (!match) {
+    return null;
+  }
+
+  const hex = match[1].toUpperCase();
+  const colorHex = hex.length >= 8 ? hex.slice(hex.length - 6) : hex.padStart(6, '0');
+  const bb = colorHex.slice(0, 2);
+  const gg = colorHex.slice(2, 4);
+  const rr = colorHex.slice(4, 6);
+  const alphaHex = hex.length >= 8 ? hex.slice(0, hex.length - 6).slice(-2) : null;
+
+  return {
+    color: `#${rr}${gg}${bb}`,
+    alpha: alphaHex ? 1 - Number.parseInt(alphaHex, 16) / 255 : null,
+  };
+};
+
+const parseAssAlpha = (value: string) => {
+  const normalized = value.trim();
+  const match = normalized.match(/&H([0-9A-F]{2})&?/i);
+  if (!match) {
+    return null;
+  }
+  return 1 - Number.parseInt(match[1], 16) / 255;
+};
+
+const applyAlphaToColor = (color: string, alpha: number | null | undefined) => {
+  if (alpha == null || alpha >= 0.999) {
+    return color;
+  }
+
+  const hexMatch = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const expanded = hexMatch[1].length === 3
+      ? hexMatch[1].split('').map((char) => char + char).join('')
+      : hexMatch[1];
+    const parsed = Number.parseInt(expanded, 16);
+    const r = (parsed >> 16) & 255;
+    const g = (parsed >> 8) & 255;
+    const b = parsed & 255;
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+  }
+
+  const rgbaMatch = color.match(/^rgba?\((.+)\)$/i);
+  if (rgbaMatch) {
+    const parts = rgbaMatch[1].split(',').map((part) => part.trim());
+    if (parts.length >= 3) {
+      return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${Math.max(0, Math.min(1, alpha))})`;
+    }
+  }
+
+  return color;
+};
+
+const normalizeCssColor = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const assColor = parseAssHexColor(trimmed);
+  if (assColor) {
+    return assColor;
+  }
+
+  return { color: trimmed, alpha: null as number | null };
+};
+
+const parseAssOverrideBlock = (block: string, currentStyle: AssInlineStyleState) => {
+  let nextStyle: AssInlineStyleState = { ...currentStyle };
+  const tagPattern = /\\([1-4]?c|[1-4]?a|alpha|fs|fn|b|i|u|s|r)([^\\}]*)/gi;
+  let matched = false;
+
+  block.replace(tagPattern, (_full, rawTag: string, rawValue: string) => {
+    matched = true;
+    const tag = rawTag.toLowerCase();
+    const value = (rawValue || '').trim();
+
+    if (tag === 'r') {
+      nextStyle = {};
+      return '';
+    }
+
+    if (tag === 'b') {
+      if (!value) {
+        nextStyle.bold = 'bold';
+      } else {
+        const numeric = Number.parseInt(value, 10);
+        if (Number.isFinite(numeric)) {
+          nextStyle.bold = numeric <= 0 ? 'normal' : numeric === 1 ? 'bold' : numeric;
+        }
+      }
+      return '';
+    }
+
+    if (tag === 'i') {
+      nextStyle.italic = value === '' ? true : value !== '0';
+      return '';
+    }
+
+    if (tag === 'u') {
+      nextStyle.underline = value === '' ? true : value !== '0';
+      return '';
+    }
+
+    if (tag === 's') {
+      nextStyle.strike = value === '' ? true : value !== '0';
+      return '';
+    }
+
+    if (tag === 'fn') {
+      if (value) {
+        nextStyle.fontFamily = value;
+      }
+      return '';
+    }
+
+    if (tag === 'fs') {
+      const numeric = Number.parseFloat(value);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        nextStyle.fontSize = numeric;
+      }
+      return '';
+    }
+
+    if (tag === 'alpha' || tag === '1a') {
+      const alpha = parseAssAlpha(value);
+      if (alpha !== null) {
+        nextStyle.alpha = alpha;
+      }
+      return '';
+    }
+
+    if (tag === 'c' || tag === '1c') {
+      const normalized = normalizeCssColor(value);
+      if (normalized?.color) {
+        nextStyle.color = normalized.color;
+        if (normalized.alpha !== null) {
+          nextStyle.alpha = normalized.alpha;
+        }
+      }
+    }
+
+    return '';
   });
+
+  return matched ? nextStyle : currentStyle;
+};
+
+const buildAssStyledSegments = (input: string): AssStyledSegment[] => {
+  const segments: AssStyledSegment[] = [];
+  let styleState: AssInlineStyleState = {};
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const blockStart = input.indexOf('{', cursor);
+    if (blockStart < 0) {
+      const trailingText = input.slice(cursor);
+      if (trailingText) {
+        segments.push({ type: 'text', value: trailingText, style: { ...styleState } });
+      }
+      break;
+    }
+
+    if (blockStart > cursor) {
+      segments.push({ type: 'text', value: input.slice(cursor, blockStart), style: { ...styleState } });
+    }
+
+    const blockEnd = input.indexOf('}', blockStart + 1);
+    if (blockEnd < 0) {
+      segments.push({ type: 'text', value: input.slice(blockStart), style: { ...styleState } });
+      break;
+    }
+
+    const blockContent = input.slice(blockStart + 1, blockEnd);
+    if (blockContent.includes('\\')) {
+      styleState = parseAssOverrideBlock(blockContent, styleState);
+    } else {
+      segments.push({ type: 'text', value: input.slice(blockStart, blockEnd + 1), style: { ...styleState } });
+    }
+    cursor = blockEnd + 1;
+  }
+
+  return segments.flatMap((segment) => {
+    if (segment.type !== 'text') {
+      return [segment];
+    }
+
+    const parts = segment.value.split('\n');
+    return parts.flatMap((part, index) => {
+      const nextSegments: AssStyledSegment[] = [];
+      if (part) {
+        nextSegments.push({ type: 'text', value: part, style: segment.style });
+      }
+      if (index < parts.length - 1) {
+        nextSegments.push({ type: 'linebreak' });
+      }
+      return nextSegments;
+    });
+  });
+};
+
+const buildInlineTextStyle = (style: AssInlineStyleState): React.CSSProperties => {
+  const textDecorationLine = [style.underline ? 'underline' : '', style.strike ? 'line-through' : '']
+    .filter(Boolean)
+    .join(' ');
+
+  return {
+    color: style.color ? applyAlphaToColor(style.color, style.alpha) : undefined,
+    fontFamily: style.fontFamily,
+    fontSize: typeof style.fontSize === 'number' && Number.isFinite(style.fontSize) ? `${style.fontSize}px` : undefined,
+    fontWeight: style.bold,
+    fontStyle: style.italic ? 'italic' : undefined,
+    textDecorationLine: textDecorationLine || undefined,
+  };
 };
 
 const renderMarkdownTokens = ({
@@ -414,27 +642,31 @@ const renderMarkdownTokens = ({
   baseFontSize,
   renderInlineImage,
   keyPrefix,
+  inheritedTextStyle,
 }: {
   tokens: MarkdownToken[];
   textColor: string;
   baseFontSize: number;
   renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
   keyPrefix: string;
+  inheritedTextStyle?: React.CSSProperties;
 }): React.ReactNode[] => tokens.map((token, index) => {
   const key = `${keyPrefix}-${index}`;
   switch (token.type) {
     case 'text':
-      return <React.Fragment key={key}>{token.value}</React.Fragment>;
+      return inheritedTextStyle && Object.keys(inheritedTextStyle).length > 0
+        ? <span key={key} style={inheritedTextStyle}>{token.value}</span>
+        : <React.Fragment key={key}>{token.value}</React.Fragment>;
     case 'linebreak':
       return <br key={key} />;
     case 'bold':
-      return <strong key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</strong>;
+      return <strong key={key} style={inheritedTextStyle}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle })}</strong>;
     case 'italic':
-      return <em key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</em>;
+      return <em key={key} style={inheritedTextStyle}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle })}</em>;
     case 'strike':
-      return <del key={key}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</del>;
+      return <del key={key} style={inheritedTextStyle}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle })}</del>;
     case 'color':
-      return <span key={key} style={{ color: token.color || textColor }}>{renderMarkdownTokens({ tokens: token.children, textColor: token.color || textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</span>;
+      return <span key={key} style={{ ...inheritedTextStyle, color: token.color || textColor }}>{renderMarkdownTokens({ tokens: token.children, textColor: token.color || textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, color: token.color || textColor } })}</span>;
     case 'size': {
       const normalized = token.size.trim();
       const cssSize = /^\d+(\.\d+)?$/.test(normalized)
@@ -442,10 +674,10 @@ const renderMarkdownTokens = ({
         : /^(\d+(\.\d+)?)(px|em|rem|%)$/.test(normalized)
           ? normalized
           : `${baseFontSize}px`;
-      return <span key={key} style={{ fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</span>;
+      return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
     }
     case 'font':
-      return <span key={key} style={{ fontFamily: token.font || undefined }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key })}</span>;
+      return <span key={key} style={{ ...inheritedTextStyle, fontFamily: token.font || undefined }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontFamily: token.font || undefined } })}</span>;
     case 'image':
       return renderInlineImage({ src: token.src, alt: token.alt, key });
     default:
@@ -463,13 +695,29 @@ const renderMarkdownContent = ({
   textColor: string;
   baseFontSize: number;
   renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
-}) => renderMarkdownTokens({
-  tokens: tokenizeMarkdown(text),
-  textColor,
-  baseFontSize,
-  renderInlineImage,
-  keyPrefix: 'md',
-});
+}) => {
+  const segments = buildAssStyledSegments(text);
+  return segments.map((segment, index) => {
+    const key = `md-ass-${index}`;
+    if (segment.type === 'linebreak') {
+      return <br key={key} />;
+    }
+
+    const inlineStyle = buildInlineTextStyle(segment.style);
+    return (
+      <React.Fragment key={key}>
+        {renderMarkdownTokens({
+          tokens: tokenizeMarkdownInline(segment.value),
+          textColor,
+          baseFontSize,
+          renderInlineImage,
+          keyPrefix: key,
+          inheritedTextStyle: inlineStyle,
+        })}
+      </React.Fragment>
+    );
+  });
+};
 
 interface BubbleRenderArgs {
   outerStyle: React.CSSProperties;
@@ -501,7 +749,6 @@ export function ChatMessageBubble({
   canvasWidth,
   layoutScale,
   chatLayout,
-  fallbackAvatarBorderColor: _fallbackAvatarBorderColor = '#ffffff',
   prevSpeakerId,
   nextSpeakerId,
   isLatestVisible = false,

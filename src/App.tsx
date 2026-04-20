@@ -164,6 +164,7 @@ const DEFAULT_UI_CONFIG = {
   autoSaveProject: false,
   proxy: '',
   settingsPosition: 'right' as 'left' | 'right',
+  subtitlePanelCompactMode: false,
   recentProject: null as string | null,
   recentProjects: [] as string[],
   playbackPositions: {} as Record<string, number>,
@@ -350,6 +351,7 @@ const sanitizeProjectConfig = (parsed: any) => {
       autoSaveProject: parsed?.ui?.autoSaveProject === true,
       proxy: typeof parsed?.ui?.proxy === 'string' ? parsed.ui.proxy : '',
       settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
+      subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
       playbackPositions: parsed?.ui?.playbackPositions && typeof parsed.ui.playbackPositions === 'object' ? parsed.ui.playbackPositions : {},
@@ -845,6 +847,7 @@ function App() {
   const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
+  const [subtitlePanelCompactMode, setSubtitlePanelCompactMode] = useState(() => Boolean(config.ui?.subtitlePanelCompactMode));
   
   const [settingsPosition, setSettingsPosition] = useState<'left'|'right'>(() => config.ui?.settingsPosition ?? DEFAULT_UI_CONFIG.settingsPosition);
 
@@ -1746,6 +1749,7 @@ const [previewScale, setPreviewScale] = useState(1);
       autoSaveProject: Boolean(ui.autoSaveProject),
       proxy: ui.proxy || '',
       settingsPosition: ui.settingsPosition,
+      subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
       recentProject: ui.recentProject,
       presets: ui.presets ?? DEFAULT_UI_CONFIG.presets,
       annotationPresets: ui.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets,
@@ -1755,6 +1759,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setAutoSaveProject((prev: boolean) => (prev === Boolean(ui.autoSaveProject) ? prev : Boolean(ui.autoSaveProject)));
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
+    setSubtitlePanelCompactMode((prev: boolean) => (prev === Boolean(ui.subtitlePanelCompactMode) ? prev : Boolean(ui.subtitlePanelCompactMode)));
     if (window.electron) {
       setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
     }
@@ -1784,6 +1789,7 @@ const [previewScale, setPreviewScale] = useState(1);
       autoSaveProject,
       proxy: proxyState.trim(),
       settingsPosition,
+      subtitlePanelCompactMode,
       recentProject,
       presets,
       annotationPresets,
@@ -1806,6 +1812,7 @@ const [previewScale, setPreviewScale] = useState(1);
         prevUi.autoSaveProject === autoSaveProject &&
         prevUi.proxy === proxyState.trim() &&
         prevUi.settingsPosition === settingsPosition &&
+        Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
         prevUi.recentProject === recentProject &&
         samePresets &&
         sameAnnotationPresets
@@ -1825,13 +1832,14 @@ const [previewScale, setPreviewScale] = useState(1);
           autoSaveProject,
           proxy: proxyState.trim(),
           settingsPosition,
+          subtitlePanelCompactMode,
           recentProject,
           presets: nextPresets,
           annotationPresets: nextAnnotationPresets,
         },
       };
     });
-  }, [autoSaveProject, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, recentProject, presets, annotationPresets]);
+  }, [autoSaveProject, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -4818,9 +4826,9 @@ const [previewScale, setPreviewScale] = useState(1);
           {!shouldHideSidePanels && showSubtitlePanel && (
             <div style={{ width: subtitleWidth }} className="h-full border-r border-gray-800 shrink-0 flex flex-col min-h-0 overflow-hidden">
               <SubtitlePanel 
-                subtitles={subtitles} 
-                currentTime={currentTime} 
-                isDarkMode={isDarkMode} 
+                subtitles={subtitles}
+                currentTime={currentTime}
+                isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
@@ -4833,6 +4841,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                 editingSub={editingSub}
                 setEditingSub={setEditingSub}
+                compactMode={subtitlePanelCompactMode}
+                onCompactModeChange={setSubtitlePanelCompactMode}
               />
             </div>
           )}
@@ -5007,6 +5017,8 @@ const [previewScale, setPreviewScale] = useState(1);
                   onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                   editingSub={editingSub}
                   setEditingSub={setEditingSub}
+                  compactMode={subtitlePanelCompactMode}
+                  onCompactModeChange={setSubtitlePanelCompactMode}
                 />
               </div>
             </div>
@@ -5824,6 +5836,8 @@ const [previewScale, setPreviewScale] = useState(1);
                     onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
                     editingSub={editingSub}
                     setEditingSub={setEditingSub}
+                    compactMode={subtitlePanelCompactMode}
+                    onCompactModeChange={setSubtitlePanelCompactMode}
                   />
                 </div>
               </div>
