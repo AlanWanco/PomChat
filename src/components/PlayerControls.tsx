@@ -153,7 +153,11 @@ export const PlayerControls = memo(function PlayerControls({
   const visiblePlayheadX = hasScrollableWaveform
     ? waveformContentX - waveformOverlayMetrics.scrollLeft
     : waveformContentX;
-  const fixedPlayheadX = isPlaying && hasScrollableWaveform
+  const canCenterPlayheadWhilePlaying = isPlaying
+    && hasScrollableWaveform
+    && waveformContentX >= waveformViewportWidth / 2
+    && waveformContentX <= Math.max(waveformViewportWidth / 2, overlayTrackWidth - waveformViewportWidth / 2);
+  const fixedPlayheadX = canCenterPlayheadWhilePlaying
     ? waveformViewportWidth / 2
     : visiblePlayheadX;
   const clampedExportStart = waveformDuration > 0 ? Math.max(0, Math.min(displayedExportRangeStart, waveformDuration)) : 0;
