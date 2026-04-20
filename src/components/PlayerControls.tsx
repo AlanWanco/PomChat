@@ -136,13 +136,18 @@ export const PlayerControls = memo(function PlayerControls({
 
   const textClass = isDarkMode ? "text-gray-400" : "text-gray-600";
   const showWaveformContainer = audioPath ? isWaveformReady : true;
-  const liveCurrentTime = audioRef.current?.currentTime ?? displayCurrentTime;
+  const liveCurrentTime = displayCurrentTime;
   const displayedExportRangeStart = dragPreviewRange?.start ?? exportRangeStart;
   const displayedExportRangeEnd = dragPreviewRange?.end ?? exportRangeEnd;
   const formattedExportRangeStart = formatTime(displayedExportRangeStart);
   const formattedExportRangeEnd = formatTime(displayedExportRangeEnd);
   const waveformDuration = Math.max(duration || 0, defaultExportEnd || 0, displayedExportRangeEnd || 0);
-  const overlayTrackWidth = waveformOverlayMetrics.wrapperWidth || waveformRef.current?.clientWidth || 0;
+  const overlayTrackWidth = waveformOverlayMetrics.wrapperWidth || waveformOverlayMetrics.viewportWidth || 0;
+  const hasScrollableWaveform = waveformOverlayMetrics.wrapperWidth > waveformOverlayMetrics.viewportWidth + 1;
+  const waveformViewportWidth = waveformOverlayMetrics.viewportWidth || waveformOverlayMetrics.wrapperWidth || 0;
+  const fixedPlayheadX = hasScrollableWaveform
+    ? waveformViewportWidth / 2
+    : (waveformDuration > 0 && waveformViewportWidth > 0 ? (Math.max(0, Math.min(liveCurrentTime, waveformDuration)) / waveformDuration) * waveformViewportWidth : 0);
   const clampedExportStart = waveformDuration > 0 ? Math.max(0, Math.min(displayedExportRangeStart, waveformDuration)) : 0;
   const clampedExportEnd = waveformDuration > 0 ? Math.max(clampedExportStart, Math.min(displayedExportRangeEnd, waveformDuration)) : 0;
   const exportBarStartPercent = waveformDuration > 0 ? (clampedExportStart / waveformDuration) * 100 : 0;
@@ -317,7 +322,8 @@ export const PlayerControls = memo(function PlayerControls({
       container: waveformRef.current,
       waveColor: waveformBaseColor,
       progressColor: waveformProgressColor,
-      cursorColor: isDarkMode ? '#ffffff' : '#111827',
+      cursorColor: 'transparent',
+      cursorWidth: 0,
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
@@ -609,6 +615,34 @@ export const PlayerControls = memo(function PlayerControls({
 
     wavesurfer.current.setTime(clampedTime);
   }, [isWaveformReady, liveCurrentTime]);
+
+  useEffect(() => {
+    if (!isWaveformReady || !audioPath) {
+      return;
+    }
+
+    const { scrollElement, wrapperElement } = getWaveformOverlayElements();
+    if (!scrollElement || !wrapperElement) {
+      return;
+    }
+
+    const contentWidth = wrapperElement.clientWidth;
+    const viewportWidth = scrollElement.clientWidth;
+    const durationSeconds = wavesurfer.current?.getDuration() || waveformDuration;
+    if (contentWidth <= viewportWidth + 1 || durationSeconds <= 0) {
+      return;
+    }
+
+    const clampedTime = Math.max(0, Math.min(liveCurrentTime, durationSeconds));
+    const contentX = (clampedTime / durationSeconds) * contentWidth;
+    const targetScrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, contentX - viewportWidth / 2));
+
+    if (Math.abs(scrollElement.scrollLeft - targetScrollLeft) < 1) {
+      return;
+    }
+
+    scrollElement.scrollLeft = targetScrollLeft;
+  }, [audioPath, getWaveformOverlayElements, isWaveformReady, liveCurrentTime, waveformDuration]);
 
   // Volume Sync
   useEffect(() => {
@@ -1106,15 +1140,23 @@ export const PlayerControls = memo(function PlayerControls({
                 </button>
               )}
               <div
-                className="absolute left-0 top-0"
+                className="absolute left-0 top-0 overflow-hidden"
                 style={{
-                  width: `${overlayTrackWidth}px`,
+                  width: '100%',
                   height: `${exportBarHeight}px`,
-                  transform: `translate(${-waveformOverlayMetrics.scrollLeft}px, 0)`,
-                  backgroundColor: exportBarBaseColor,
                   borderRadius: 9999,
-                  boxShadow: `inset 0 0 0 1px ${rgba(themeColor, isDarkMode ? 0.2 : 0.12)}`,
                 }}
+              >
+                <div
+                  className="absolute left-0 top-0"
+                  style={{
+                    width: `${overlayTrackWidth}px`,
+                    height: `${exportBarHeight}px`,
+                    transform: `translate(${-waveformOverlayMetrics.scrollLeft}px, 0)`,
+                    backgroundColor: exportBarBaseColor,
+                    borderRadius: 9999,
+                    boxShadow: `inset 0 0 0 1px ${rgba(themeColor, isDarkMode ? 0.2 : 0.12)}`,
+                  }}
                 >
                   <div
                     className="absolute top-0 h-full rounded-full"
@@ -1191,13 +1233,14 @@ export const PlayerControls = memo(function PlayerControls({
                       document.body.style.userSelect = 'none';
                       document.body.style.cursor = 'ew-resize';
                     }}
-                    aria-label={t('export.rangeEnd')}
-                  />
+                      aria-label={t('export.rangeEnd')}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           )}
-          <div className="w-full overflow-hidden">
+          <div className="relative w-full overflow-hidden">
             {audioPath ? (
               <div
                 className="w-full cursor-pointer"
@@ -1252,6 +1295,20 @@ export const PlayerControls = memo(function PlayerControls({
                   />
                 )}
               </div>
+            )}
+            {showWaveformContainer && waveformDuration > 0 && waveformViewportWidth > 0 && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-20"
+                style={{
+                  left: `${fixedPlayheadX}px`,
+                  width: '1px',
+                  transform: 'translateX(-50%)',
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.98)',
+                  boxShadow: isDarkMode
+                    ? '0 0 0 1px rgba(255,255,255,0.12), 0 0 14px rgba(255,255,255,0.18)'
+                    : '0 0 0 1px rgba(17,24,39,0.06), 0 0 12px rgba(255,255,255,0.38)',
+                }}
+              />
             )}
           </div>
           {!audioPath && showWaveformContainer && (

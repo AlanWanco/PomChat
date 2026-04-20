@@ -145,6 +145,22 @@ export function SettingsPanel({
   const backgroundSectionHeaderRef = useRef<HTMLDivElement | null>(null);
   const backgroundSlideTabsRef = useRef<HTMLDivElement | null>(null);
   const [pendingScrollSlideId, setPendingScrollSlideId] = useState<string | null>(null);
+
+  const scrollSlideTabIntoView = (slideId: string) => {
+    const tabsContainer = backgroundSlideTabsRef.current;
+    if (!tabsContainer) {
+      return;
+    }
+
+    const target = tabsContainer.querySelector<HTMLElement>(`[data-slide-tab-id="${slideId}"]`);
+    if (!target) {
+      return;
+    }
+
+    const targetCenter = target.offsetLeft + target.offsetWidth / 2;
+    const desiredScrollLeft = Math.max(0, targetCenter - tabsContainer.clientWidth / 2);
+    tabsContainer.scrollTo({ left: desiredScrollLeft, behavior: 'smooth' });
+  };
   // Independent tab display order — decoupled from layer/backgroundOrder/overlayOrder
   const [tabOrderIds, setTabOrderIds] = useState<string[]>([]);
   const speakerKeys = Object.keys(config.speakers).filter((key) => config.speakers[key]?.type !== 'annotation');
@@ -200,14 +216,8 @@ export function SettingsPanel({
     }
 
     const frame = window.requestAnimationFrame(() => {
-      backgroundSectionHeaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-
-      const target = backgroundSlideTabsRef.current?.querySelector<HTMLElement>(`[data-slide-tab-id="${pendingScrollSlideId}"]`);
-      if (!target) {
-        return;
-      }
-
-      target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      backgroundSectionHeaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollSlideTabIntoView(pendingScrollSlideId);
       setPendingScrollSlideId(null);
     });
 
@@ -219,7 +229,7 @@ export function SettingsPanel({
       return;
     }
 
-    backgroundSectionHeaderRef.current.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    backgroundSectionHeaderRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setPendingScrollSlideId((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
   }, [activeInsertImageId, activeTab, focusInsertImageSettingsKey]);
 
