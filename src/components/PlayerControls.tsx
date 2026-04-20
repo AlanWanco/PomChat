@@ -170,6 +170,23 @@ export const PlayerControls = memo(function PlayerControls({
   const backgroundSlideTrackContentHeight = Math.min(128, backgroundSlideTrackInnerHeight);
   const backgroundSlideTrackHeight = backgroundSlides.length > 0 ? (isBackgroundSlideTrackCollapsed ? 8 : backgroundSlideTrackContentHeight + backgroundSlideTrackPaddingTop + backgroundSlideTrackPaddingBottom) : 0;
   const backgroundSlideGapToExportBar = backgroundSlides.length > 0 ? 7 : 1;
+  const backgroundSlideGuideLines = isBackgroundSlideTrackCollapsed
+    ? []
+    : [
+        ...backgroundSlidesAbove.map((_, index) => ({
+          key: `overlay-${index}`,
+          top: backgroundSlideTrackPaddingTop + index * (backgroundSlideBarHeight + backgroundSlideTrackGap) + Math.floor(backgroundSlideBarHeight / 2) + 1,
+        })),
+        ...backgroundSlidesBelow.map((_, index) => ({
+          key: `background-${index}`,
+          top: backgroundSlideTrackPaddingTop
+            + backgroundSlidesAbove.length * (backgroundSlideBarHeight + backgroundSlideTrackGap)
+            + backgroundSlideTrackGap
+            + index * (backgroundSlideBarHeight + backgroundSlideTrackGap)
+            + Math.floor(backgroundSlideBarHeight / 2)
+            + 1,
+        })),
+      ];
   const backgroundSlideBars = waveformDuration > 0
     ? [
         ...backgroundSlidesAbove.map((slide, index) => ({
@@ -1007,6 +1024,17 @@ export const PlayerControls = memo(function PlayerControls({
                           transform: `translate(${-waveformOverlayMetrics.scrollLeft}px, 0)`,
                         }}
                       >
+                      {backgroundSlideGuideLines.map((line) => (
+                        <div
+                          key={line.key}
+                          className="absolute left-0 right-0 pointer-events-none"
+                          style={{
+                            top: `${line.top}px`,
+                            height: '1px',
+                            backgroundColor: rgba(themeColor, isDarkMode ? 0.18 : 0.12),
+                          }}
+                        />
+                      ))}
                       {!isBackgroundSlideTrackCollapsed && backgroundSlidesBelow.length > 0 && backgroundSlidesAbove.length > 0 ? (
                         <div
                           className="absolute left-2 right-2"
