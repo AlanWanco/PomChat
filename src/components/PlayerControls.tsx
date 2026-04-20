@@ -142,12 +142,20 @@ export const PlayerControls = memo(function PlayerControls({
   const formattedExportRangeStart = formatTime(displayedExportRangeStart);
   const formattedExportRangeEnd = formatTime(displayedExportRangeEnd);
   const waveformDuration = Math.max(duration || 0, defaultExportEnd || 0, displayedExportRangeEnd || 0);
+  const waveformVisualDuration = audioPath ? Math.max(duration || 0, 0) : waveformDuration;
   const overlayTrackWidth = waveformOverlayMetrics.wrapperWidth || waveformOverlayMetrics.viewportWidth || 0;
   const hasScrollableWaveform = waveformOverlayMetrics.wrapperWidth > waveformOverlayMetrics.viewportWidth + 1;
   const waveformViewportWidth = waveformOverlayMetrics.viewportWidth || waveformOverlayMetrics.wrapperWidth || 0;
-  const fixedPlayheadX = hasScrollableWaveform
+  const clampedLiveCurrentTime = Math.max(0, Math.min(liveCurrentTime, waveformVisualDuration || 0));
+  const waveformContentX = waveformVisualDuration > 0 && overlayTrackWidth > 0
+    ? (clampedLiveCurrentTime / waveformVisualDuration) * overlayTrackWidth
+    : 0;
+  const visiblePlayheadX = hasScrollableWaveform
+    ? waveformContentX - waveformOverlayMetrics.scrollLeft
+    : waveformContentX;
+  const fixedPlayheadX = isPlaying && hasScrollableWaveform
     ? waveformViewportWidth / 2
-    : (waveformDuration > 0 && waveformViewportWidth > 0 ? (Math.max(0, Math.min(liveCurrentTime, waveformDuration)) / waveformDuration) * waveformViewportWidth : 0);
+    : visiblePlayheadX;
   const clampedExportStart = waveformDuration > 0 ? Math.max(0, Math.min(displayedExportRangeStart, waveformDuration)) : 0;
   const clampedExportEnd = waveformDuration > 0 ? Math.max(clampedExportStart, Math.min(displayedExportRangeEnd, waveformDuration)) : 0;
   const exportBarStartPercent = waveformDuration > 0 ? (clampedExportStart / waveformDuration) * 100 : 0;
@@ -617,7 +625,7 @@ export const PlayerControls = memo(function PlayerControls({
   }, [isWaveformReady, liveCurrentTime]);
 
   useEffect(() => {
-    if (!isWaveformReady || !audioPath) {
+    if (!isWaveformReady || !audioPath || !isPlaying) {
       return;
     }
 
@@ -642,7 +650,7 @@ export const PlayerControls = memo(function PlayerControls({
     }
 
     scrollElement.scrollLeft = targetScrollLeft;
-  }, [audioPath, getWaveformOverlayElements, isWaveformReady, liveCurrentTime, waveformDuration]);
+  }, [audioPath, getWaveformOverlayElements, isPlaying, isWaveformReady, liveCurrentTime, waveformDuration]);
 
   // Volume Sync
   useEffect(() => {
@@ -884,7 +892,7 @@ export const PlayerControls = memo(function PlayerControls({
     return Number(((clampedX / contentWidth) * pointerWaveformDuration).toFixed(2));
   }, [defaultExportEnd, duration, exportRangeEnd, getWaveformOverlayElements, waveformOverlayMetrics.scrollLeft, waveformOverlayMetrics.wrapperWidth]);
   const handleRealWaveformHover = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (waveformDuration <= 0) {
+    if (waveformVisualDuration <= 0) {
       setWaveformHoverPreview(null);
       return;
     }
@@ -895,9 +903,9 @@ export const PlayerControls = memo(function PlayerControls({
     const scrollRatio = rect.width > 0 ? relativeX / rect.width : 0;
     const scrollLeft = waveformOverlayMetrics.scrollLeft;
     const absoluteX = Math.max(0, Math.min(contentWidth, scrollLeft + scrollRatio * rect.width));
-    const time = contentWidth > 0 ? (absoluteX / contentWidth) * waveformDuration : 0;
+    const time = contentWidth > 0 ? (absoluteX / contentWidth) * waveformVisualDuration : 0;
     setWaveformHoverPreview({ x: relativeX, time });
-  }, [waveformDuration, waveformOverlayMetrics.scrollLeft, waveformOverlayMetrics.wrapperWidth]);
+  }, [waveformOverlayMetrics.scrollLeft, waveformOverlayMetrics.wrapperWidth, waveformVisualDuration]);
   const clearWaveformHover = useCallback(() => {
     setWaveformHoverPreview(null);
   }, []);
