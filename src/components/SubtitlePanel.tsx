@@ -627,11 +627,23 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     const isSearchMatched = currentSearchMatchId === sub.id;
                     const subtitleIndex = subtitleIndexMap.get(sub.id) ?? 0;
                     return (
-                      <button
+                      <div
                         key={`compact-${sub.id}`}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : onSeek(sub.start)}
-                        className="w-full text-left px-2 py-1 text-xs border-b transition-colors flex items-center gap-2"
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') {
+                            return;
+                          }
+                          event.preventDefault();
+                          if (multiSelectMode) {
+                            toggleSelectedSubtitle(sub.id, event.shiftKey);
+                            return;
+                          }
+                          onSeek(sub.start);
+                        }}
+                        className="w-full text-left px-2 py-1 text-xs border-b transition-colors flex items-center gap-2 cursor-pointer"
                         style={{
                           height: `${COMPACT_ROW_HEIGHT}px`,
                           borderColor: `${secondaryThemeColor}22`,
@@ -667,7 +679,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           {speakers[sub.speakerId]?.name || sub.actor || sub.style}
                         </span>
                         <span className="truncate opacity-90">{sub.text}</span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
