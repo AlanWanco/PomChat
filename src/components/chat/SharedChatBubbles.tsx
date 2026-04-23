@@ -621,7 +621,7 @@ const buildAssStyledSegments = (input: string): AssStyledSegment[] => {
   });
 };
 
-const buildInlineTextStyle = (style: AssInlineStyleState): React.CSSProperties => {
+const buildInlineTextStyle = (style: AssInlineStyleState, fontScale: number): React.CSSProperties => {
   const textDecorationLine = [style.underline ? 'underline' : '', style.strike ? 'line-through' : '']
     .filter(Boolean)
     .join(' ');
@@ -629,7 +629,7 @@ const buildInlineTextStyle = (style: AssInlineStyleState): React.CSSProperties =
   return {
     color: style.color ? applyAlphaToColor(style.color, style.alpha) : undefined,
     fontFamily: style.fontFamily,
-    fontSize: typeof style.fontSize === 'number' && Number.isFinite(style.fontSize) ? `${style.fontSize}px` : undefined,
+    fontSize: typeof style.fontSize === 'number' && Number.isFinite(style.fontSize) ? `${style.fontSize * fontScale}px` : undefined,
     fontWeight: style.bold,
     fontStyle: style.italic ? 'italic' : undefined,
     textDecorationLine: textDecorationLine || undefined,
@@ -669,9 +669,10 @@ const renderMarkdownTokens = ({
       return <span key={key} style={{ ...inheritedTextStyle, color: token.color || textColor }}>{renderMarkdownTokens({ tokens: token.children, textColor: token.color || textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, color: token.color || textColor } })}</span>;
     case 'size': {
       const normalized = token.size.trim();
-      const cssSize = /^\d+(\.\d+)?$/.test(normalized)
-        ? `${normalized}px`
-        : /^(\d+(\.\d+)?)(px|em|rem|%)$/.test(normalized)
+      const numericMatch = normalized.match(/^(\d+(\.\d+)?)(px)?$/);
+      const cssSize = numericMatch
+        ? `${(Number.parseFloat(numericMatch[1]) / 30) * baseFontSize}px`
+        : /^(\d+(\.\d+)?)(em|rem|%)$/.test(normalized)
           ? normalized
           : `${baseFontSize}px`;
       return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
@@ -689,11 +690,13 @@ const renderMarkdownContent = ({
   text,
   textColor,
   baseFontSize,
+  fontScale,
   renderInlineImage,
 }: {
   text: string;
   textColor: string;
   baseFontSize: number;
+  fontScale: number;
   renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
 }) => {
   const segments = buildAssStyledSegments(text);
@@ -703,7 +706,7 @@ const renderMarkdownContent = ({
       return <br key={key} />;
     }
 
-    const inlineStyle = buildInlineTextStyle(segment.style);
+    const inlineStyle = buildInlineTextStyle(segment.style, fontScale);
     return (
       <React.Fragment key={key}>
         {renderMarkdownTokens({
@@ -866,6 +869,7 @@ export function ChatMessageBubble({
     text: item.text,
     textColor,
     baseFontSize: fontSize,
+    fontScale: combinedScale,
     renderInlineImage: ({ src, alt, key }) => (renderInlineImage
       ? renderInlineImage({
           src,
@@ -1156,6 +1160,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       text: item.text,
       textColor,
       baseFontSize: (speaker.style?.fontSize ?? 24) * combinedScale,
+      fontScale: combinedScale,
       renderInlineImage: ({ src, alt, key }) => (renderInlineImage
         ? renderInlineImage({
             src,
