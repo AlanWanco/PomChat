@@ -313,6 +313,8 @@ const formatBubbleShadow = (shadowSize: number) => {
   return `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)`;
 };
 
+const BUBBLE_TEXT_LINE_HEIGHT = 1.35;
+
 type MarkdownToken =
   | { type: 'text'; value: string }
   | { type: 'bold' | 'italic' | 'strike'; children: MarkdownToken[] }
@@ -335,7 +337,7 @@ type AssInlineStyleState = {
 
 type AssStyledSegment =
   | { type: 'text'; value: string; style: AssInlineStyleState }
-  | { type: 'linebreak' };
+  | { type: 'linebreak'; style: AssInlineStyleState };
 
 const MARKDOWN_PATTERNS = {
   image: /!\[([^\]]*)\]\(([^)]+)\)/,
@@ -614,7 +616,7 @@ const buildAssStyledSegments = (input: string): AssStyledSegment[] => {
         nextSegments.push({ type: 'text', value: part, style: segment.style });
       }
       if (index < parts.length - 1) {
-        nextSegments.push({ type: 'linebreak' });
+        nextSegments.push({ type: 'linebreak', style: segment.style });
       }
       return nextSegments;
     });
@@ -654,11 +656,9 @@ const renderMarkdownTokens = ({
   const key = `${keyPrefix}-${index}`;
   switch (token.type) {
     case 'text':
-      return inheritedTextStyle && Object.keys(inheritedTextStyle).length > 0
-        ? <span key={key} style={inheritedTextStyle}>{token.value}</span>
-        : <React.Fragment key={key}>{token.value}</React.Fragment>;
+      return <span key={key} style={inheritedTextStyle}>{token.value}</span>;
     case 'linebreak':
-      return <br key={key} />;
+      return <React.Fragment key={key}><br /><span style={inheritedTextStyle}>{'\u200B'}</span></React.Fragment>;
     case 'bold':
       return <strong key={key} style={inheritedTextStyle}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle })}</strong>;
     case 'italic':
@@ -675,7 +675,7 @@ const renderMarkdownTokens = ({
         : /^(\d+(\.\d+)?)(em|rem|%)$/.test(normalized)
           ? normalized
           : `${baseFontSize}px`;
-      return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
+      return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize, lineHeight: BUBBLE_TEXT_LINE_HEIGHT }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize, lineHeight: BUBBLE_TEXT_LINE_HEIGHT } })}</span>;
     }
     case 'font':
       return <span key={key} style={{ ...inheritedTextStyle, fontFamily: token.font || undefined }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontFamily: token.font || undefined } })}</span>;
@@ -700,13 +700,27 @@ const renderMarkdownContent = ({
   renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
 }) => {
   const segments = buildAssStyledSegments(text);
+  const baseTextStyle: React.CSSProperties = {
+    display: 'inline',
+    fontSize: `${baseFontSize}px`,
+    lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+  };
   return segments.map((segment, index) => {
     const key = `md-ass-${index}`;
     if (segment.type === 'linebreak') {
-      return <br key={key} />;
+      const lineBreakStyle = {
+        ...baseTextStyle,
+        ...buildInlineTextStyle(segment.style, fontScale),
+        lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+      };
+      return <React.Fragment key={key}><br /><span style={lineBreakStyle}>{'\u200B'}</span></React.Fragment>;
     }
 
-    const inlineStyle = buildInlineTextStyle(segment.style, fontScale);
+    const inlineStyle = {
+      ...baseTextStyle,
+      ...buildInlineTextStyle(segment.style, fontScale),
+      lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+    };
     return (
       <React.Fragment key={key}>
         {renderMarkdownTokens({
@@ -1043,8 +1057,9 @@ export function ChatMessageBubble({
                 zIndex: 1,
                 padding: `${paddingY}px ${paddingX}px`,
                 color: textColor,
+                fontSize: `${fontSize}px`,
                 whiteSpace: 'pre-wrap',
-                lineHeight: 1.35,
+                lineHeight: 0,
                 overflowWrap: 'break-word'
               },
               children: markdownContent
