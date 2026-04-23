@@ -91,6 +91,15 @@ export interface SpeakerConfig {
   style?: SpeakerStyle;
 }
 
+export interface FontPreset {
+  id: string;
+  name: string;
+  family: string;
+  filePath: string;
+  weight?: string;
+  style?: 'normal' | 'italic';
+}
+
 export interface PodchatExportInput {
   projectTitle?: string;
   transparentBackground?: boolean;
@@ -138,4 +147,5 @@ export interface PodchatExportInput {
   speakers: Record<string, SpeakerConfig>;
   content: SubtitleContentItem[];
   exportRange: ExportRange;
+  fontPresets?: Record<string, FontPreset>;
 }

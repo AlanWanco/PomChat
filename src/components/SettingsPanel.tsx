@@ -4,6 +4,7 @@ import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, 
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
+import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue, isSupportedFontFile, type FontPresetMap } from '../fontPresets';
 
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
@@ -43,6 +44,8 @@ interface SettingsPanelProps {
   onPresetsChange: (presets: Record<string, any>) => void;
   annotationPresets: Record<string, any>;
   onAnnotationPresetsChange: (presets: Record<string, any>) => void;
+  fontPresets: FontPresetMap;
+  onFontPresetsChange: (presets: FontPresetMap) => void;
   activeTab: 'subtitle' | 'global' | 'project' | 'speakers' | 'annotation';
   setActiveTab: (tab: 'subtitle' | 'global' | 'project' | 'speakers' | 'annotation') => void;
   onSelectImage?: () => Promise<string | null>;
@@ -100,6 +103,7 @@ export function SettingsPanel({
   settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
   annotationPresets, onAnnotationPresetsChange,
+  fontPresets, onFontPresetsChange,
   onSelectImage, onRequestRemoveSpeaker, globalOnly = false, showSubtitleTab = false, subtitleContent = null,
   compactHeader = false, hideHeaderTitle = false, hideHeaderSave = false,
   hideHeader = false,
@@ -168,6 +172,8 @@ export function SettingsPanel({
   const [presetPromptKey, setPresetPromptKey] = useState<string | null>(null);
   const [presetPromptMode, setPresetPromptMode] = useState<'save' | 'rename'>('save');
   const [presetNameInput, setPresetNameInput] = useState("");
+  const [activeFontPresetId, setActiveFontPresetId] = useState<string>('');
+  const [fontPresetNameDraft, setFontPresetNameDraft] = useState('');
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
@@ -518,6 +524,118 @@ export function SettingsPanel({
     side: speaker.side || 'left'
   });
 
+  const fontPresetEntries = Object.entries(fontPresets || {});
+  const currentFontPreset = activeFontPresetId ? fontPresets?.[activeFontPresetId] : null;
+  useEffect(() => {
+    setFontPresetNameDraft(currentFontPreset?.name || '');
+  }, [currentFontPreset?.id, currentFontPreset?.name]);
+  const makeFontPresetId = () => `font-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const getFontPresetNameFromPath = (filePath: string) => {
+    const basename = filePath.replace(/\\/g, '/').split('/').pop() || 'Custom Font';
+    return basename.replace(/\.[^.]+$/, '') || 'Custom Font';
+  };
+  const chooseFontFile = async () => {
+    if (!window.electron) {
+      showToast(t('fontPresets.desktopOnly'));
+      return null;
+    }
+
+    const result = await window.electron.showOpenDialog({
+      title: t('fontPresets.selectFontFile'),
+      filters: [{ name: t('fontPresets.filterName'), extensions: FONT_FILE_EXTENSIONS }],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || !result.filePaths?.[0]) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    if (!isSupportedFontFile(filePath)) {
+      showToast(t('fontPresets.unsupportedFile'));
+      return null;
+    }
+
+    return filePath;
+  };
+  const handleAddFontPreset = async () => {
+    const filePath = await chooseFontFile();
+    if (!filePath) return;
+
+    const id = makeFontPresetId();
+    const name = getFontPresetNameFromPath(filePath);
+    const nextPreset = {
+      id,
+      name,
+      family: createFontPresetFamilyName(id),
+      filePath,
+      weight: 'normal',
+      style: 'normal' as const,
+    };
+
+    onFontPresetsChange({ ...(fontPresets || {}), [id]: nextPreset });
+    setActiveFontPresetId(id);
+    showToast(t('fontPresets.added', { name }));
+  };
+  const handleUpdateFontPresetFile = async (id: string) => {
+    const preset = fontPresets?.[id];
+    if (!preset) return;
+
+    const filePath = await chooseFontFile();
+    if (!filePath) return;
+
+    onFontPresetsChange({
+      ...(fontPresets || {}),
+      [id]: {
+        ...preset,
+        filePath,
+      },
+    });
+    showToast(t('fontPresets.updated', { name: preset.name }));
+  };
+  const handleRenameFontPreset = (id: string, name: string) => {
+    const preset = fontPresets?.[id];
+    if (!preset) return;
+    onFontPresetsChange({
+      ...(fontPresets || {}),
+      [id]: {
+        ...preset,
+        name,
+        family: preset.family || createFontPresetFamilyName(id),
+      },
+    });
+  };
+  const commitFontPresetNameDraft = (id: string) => {
+    const preset = fontPresets?.[id];
+    if (!preset) return;
+
+    const nextName = fontPresetNameDraft.trim() || preset.name;
+    if (nextName === preset.name) {
+      setFontPresetNameDraft(preset.name);
+      return;
+    }
+
+    handleRenameFontPreset(id, nextName);
+  };
+  const handleFontPresetFieldChange = (id: string, field: 'weight' | 'style', value: string) => {
+    const preset = fontPresets?.[id];
+    if (!preset) return;
+    const nextValue = field === 'style' ? (value === 'italic' ? 'italic' : 'normal') : value;
+    onFontPresetsChange({
+      ...(fontPresets || {}),
+      [id]: {
+        ...preset,
+        [field]: nextValue,
+      },
+    });
+  };
+  const handleDeleteFontPreset = (id: string) => {
+    const next = { ...(fontPresets || {}) };
+    delete next[id];
+    onFontPresetsChange(next);
+    setActiveFontPresetId((prev) => (prev === id ? '' : prev));
+  };
+
   const handleRemovePreset = (presetName: string, scope: 'speaker' | 'annotation' = 'speaker') => {
     if (!presetName) return;
     const existing = scope === 'annotation' ? { ...annotationPresets } : { ...presets };
@@ -679,10 +797,17 @@ export function SettingsPanel({
     </div>
   );
 
-  const renderFontFamilyFields = (value: string | undefined, onChange: (value: string) => void) => (
+  const renderFontFamilyFields = (value: string | undefined, onChange: (value: string) => void) => {
+    const fontPresetOptions = fontPresetEntries.map(([id, preset]) => ({
+      label: `${t('fontPresets.optionPrefix')} ${preset.name}`,
+      value: formatFontFamilyValue(preset.family),
+      id,
+    }));
+    const combinedFontOptions = [...fontPresetOptions, ...FONT_OPTIONS];
+    return (
     <div className="space-y-1.5">
       <select
-        value={FONT_OPTIONS.some((font) => font.value === (value || '')) ? value : ''}
+        value={combinedFontOptions.some((font) => font.value === (value || '')) ? value : ''}
         onChange={(e) => {
           if (e.target.value) {
             onChange(e.target.value);
@@ -692,9 +817,18 @@ export function SettingsPanel({
         style={inputSurfaceStyle}
       >
         <option value="">{t('speakers.fontPreset')}</option>
-        {FONT_OPTIONS.map((font) => (
-          <option key={font.value} value={font.value}>{font.label}</option>
-        ))}
+        {fontPresetOptions.length > 0 && (
+          <optgroup label={t('fontPresets.title')}>
+            {fontPresetOptions.map((font) => (
+              <option key={font.id} value={font.value}>{font.label}</option>
+            ))}
+          </optgroup>
+        )}
+        <optgroup label={t('fontPresets.systemFonts')}>
+          {FONT_OPTIONS.map((font) => (
+            <option key={font.value} value={font.value}>{font.label}</option>
+          ))}
+        </optgroup>
       </select>
       <input
         type="text"
@@ -713,6 +847,7 @@ export function SettingsPanel({
       </div>
     </div>
   );
+  };
 
   const renderNumberInput = (
     value: number,
@@ -995,6 +1130,155 @@ export function SettingsPanel({
                 <span>{autoSaveProject ? t('common.enabled') : t('common.disabled')}</span>
                 <span className="text-xs opacity-70">{t('global.autoSaveProjectHint')}</span>
               </button>
+            </div>
+
+            <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('fontPresets.title')}</label>
+                  <p className="mt-1 text-[11px] opacity-60 leading-relaxed">{t('fontPresets.help')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleAddFontPreset()}
+                  className="shrink-0 rounded-md px-3 py-1.5 text-xs font-medium text-white"
+                  style={{ backgroundColor: secondaryThemeColor }}
+                >
+                  {t('fontPresets.add')}
+                </button>
+              </div>
+
+              {fontPresetEntries.length > 0 ? (
+                <div className="space-y-2">
+                  <select
+                    value={currentFontPreset?.id || ''}
+                    onChange={(event) => setActiveFontPresetId(event.target.value)}
+                    className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                    style={inputSurfaceStyle}
+                  >
+                    <option value="">{t('fontPresets.choose')}</option>
+                    {fontPresetEntries.map(([id, preset]) => (
+                      <option key={id} value={id}>{preset.name}</option>
+                    ))}
+                  </select>
+
+                  {currentFontPreset ? (
+                    <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                      <div className="space-y-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.name')}</span>
+                        <input
+                          type="text"
+                          value={fontPresetNameDraft}
+                          onChange={(event) => setFontPresetNameDraft(event.target.value)}
+                          onBlur={() => commitFontPresetNameDraft(currentFontPreset.id)}
+                          onKeyDown={(event) => {
+                            if ((event.nativeEvent as KeyboardEvent).isComposing) return;
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setFontPresetNameDraft(currentFontPreset.name);
+                              event.currentTarget.blur();
+                            }
+                          }}
+                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                          style={inputSurfaceStyle}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.family')}</span>
+                        <input
+                          type="text"
+                          value={formatFontFamilyValue(currentFontPreset.family)}
+                          readOnly
+                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none font-mono ${inputClass}`}
+                          style={inputSurfaceStyle}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.file')}</span>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={currentFontPreset.filePath}
+                            readOnly
+                            className={`min-w-0 flex-1 border rounded px-2 py-1.5 text-xs focus:outline-none font-mono ${inputClass}`}
+                            style={inputSurfaceStyle}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleUpdateFontPresetFile(currentFontPreset.id)}
+                            className="shrink-0 rounded border px-2 py-1.5"
+                            title={t('fontPresets.updateFile')}
+                            aria-label={t('fontPresets.updateFile')}
+                            style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: uiTheme.panelBg }}
+                          >
+                            <FolderOpen size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
+                          <select
+                            value={currentFontPreset.weight || 'normal'}
+                            onChange={(event) => handleFontPresetFieldChange(currentFontPreset.id, 'weight', event.target.value)}
+                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                            style={inputSurfaceStyle}
+                          >
+                            <option value="normal">{t('fontWeight.normal')}</option>
+                            <option value="bold">{t('fontWeight.bold')}</option>
+                            <option value="100">100</option>
+                            <option value="300">300</option>
+                            <option value="500">500</option>
+                            <option value="700">700</option>
+                            <option value="900">900</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.style')}</span>
+                          <select
+                            value={currentFontPreset.style || 'normal'}
+                            onChange={(event) => handleFontPresetFieldChange(currentFontPreset.id, 'style', event.target.value)}
+                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                            style={inputSurfaceStyle}
+                          >
+                            <option value="normal">normal</option>
+                            <option value="italic">italic</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(formatFontFamilyValue(currentFontPreset.family))}
+                          className="rounded border px-2 py-1.5 text-xs"
+                          style={{ borderColor: uiTheme.border, color: uiTheme.text, backgroundColor: uiTheme.panelBg }}
+                        >
+                          {t('fontPresets.copyFamily')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFontPreset(currentFontPreset.id)}
+                          className="rounded border px-2 py-1.5 text-xs"
+                          style={{ borderColor: '#ef444455', color: '#ef4444', backgroundColor: uiTheme.panelBg }}
+                        >
+                          {t('fontPresets.delete')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-lg border px-3 py-2 text-xs opacity-70" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                  {t('fontPresets.empty')}
+                </div>
+              )}
             </div>
 
             {window.electron && (

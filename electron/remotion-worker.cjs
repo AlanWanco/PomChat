@@ -93,6 +93,14 @@ const getContentType = (filePath) => {
       return 'image/gif';
     case '.svg':
       return 'image/svg+xml';
+    case '.ttf':
+      return 'font/ttf';
+    case '.otf':
+      return 'font/otf';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
     default:
       return 'application/octet-stream';
   }
@@ -383,6 +391,15 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
         : item)
       : config.content,
     audioPath: toMediaUrl(config.audioPath, mediaServer),
+    fontPresets: Object.fromEntries(
+      Object.entries(config.fontPresets || {}).map(([key, preset]) => [
+        key,
+        {
+          ...preset,
+          filePath: toMediaUrl(preset?.filePath, mediaServer),
+        },
+      ]),
+    ),
     background: {
       ...config.background,
       image: backgroundImage,

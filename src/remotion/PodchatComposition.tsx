@@ -4,6 +4,7 @@ import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
+import { buildFontFaceCss } from '../fontPresets';
 
 const MESSAGE_FALLBACK_COUNT = 32;
 
@@ -345,9 +346,11 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     .sort((a, b) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0));
 
   const baseBackgroundColor = props.transparentBackground ? 'rgba(0,0,0,0)' : '#111111';
+  const fontFaceCss = buildFontFaceCss(props.fontPresets);
 
   return (
     <AbsoluteFill style={{ backgroundColor: baseBackgroundColor, overflow: 'hidden', fontFamily: 'system-ui' }}>
+      {fontFaceCss ? <style>{fontFaceCss}</style> : null}
       {props.background?.image ? (
         <AbsoluteFill>
           {/\.gif(\?|$)/i.test(props.background.image) ? (

@@ -14,6 +14,7 @@ import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
 import { createThemeTokens } from './theme';
+import { buildFontFaceCss, type FontPresetMap } from './fontPresets';
 import { PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { Tooltip } from './components/ui/Tooltip';
 import type { BackgroundSlideItem } from './remotion/types';
@@ -169,7 +170,8 @@ const DEFAULT_UI_CONFIG = {
   recentProjects: [] as string[],
   playbackPositions: {} as Record<string, number>,
   presets: {} as Record<string, any>,
-  annotationPresets: {} as Record<string, any>
+  annotationPresets: {} as Record<string, any>,
+  fontPresets: {} as FontPresetMap
 };
 
 type SubtitleFormat = 'ass' | 'srt' | 'lrc';
@@ -356,7 +358,8 @@ const sanitizeProjectConfig = (parsed: any) => {
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
       playbackPositions: parsed?.ui?.playbackPositions && typeof parsed.ui.playbackPositions === 'object' ? parsed.ui.playbackPositions : {},
       presets: parsed?.ui?.presets && typeof parsed.ui.presets === 'object' ? parsed.ui.presets : {},
-      annotationPresets: parsed?.ui?.annotationPresets && typeof parsed.ui.annotationPresets === 'object' ? parsed.ui.annotationPresets : {}
+      annotationPresets: parsed?.ui?.annotationPresets && typeof parsed.ui.annotationPresets === 'object' ? parsed.ui.annotationPresets : {},
+      fontPresets: parsed?.ui?.fontPresets && typeof parsed.ui.fontPresets === 'object' ? parsed.ui.fontPresets : {}
     }
   };
 
@@ -889,6 +892,7 @@ function App() {
   const [cachedRemoteAssets, setCachedRemoteAssets] = useState<Record<string, string>>({});
   const [presets, setPresets] = useState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
   const [annotationPresets, setAnnotationPresets] = useState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
+  const [fontPresets, setFontPresets] = useState<FontPresetMap>(() => config.ui?.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets);
   const [webAudioObjectUrl, setWebAudioObjectUrl] = useState('');
   const [webAssContent, setWebAssContent] = useState<string | null>(null);
   const webPresetInputRef = useRef<HTMLInputElement>(null);
@@ -1753,6 +1757,7 @@ const [previewScale, setPreviewScale] = useState(1);
       recentProject: ui.recentProject,
       presets: ui.presets ?? DEFAULT_UI_CONFIG.presets,
       annotationPresets: ui.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets,
+      fontPresets: ui.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets,
     });
     setThemeColorState((prev: string) => (prev === ui.themeColor ? prev : ui.themeColor));
     setSecondaryThemeColorState((prev: string) => (prev === ui.secondaryThemeColor ? prev : ui.secondaryThemeColor));
@@ -1775,6 +1780,12 @@ const [previewScale, setPreviewScale] = useState(1);
       if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
       return next;
     });
+    setFontPresets((prev: FontPresetMap) => {
+      const next = ui.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets;
+      if (prev === next) return prev;
+      if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+      return next;
+    });
   }, [config.ui]);
 
   useEffect(() => {
@@ -1793,6 +1804,7 @@ const [previewScale, setPreviewScale] = useState(1);
       recentProject,
       presets,
       annotationPresets,
+      fontPresets,
     });
 
     if (lastUiSyncSnapshotRef.current === nextUiSnapshot) {
@@ -1803,8 +1815,10 @@ const [previewScale, setPreviewScale] = useState(1);
       const prevUi = prev.ui || DEFAULT_UI_CONFIG;
       const nextPresets = presets;
       const nextAnnotationPresets = annotationPresets;
+      const nextFontPresets = fontPresets;
       const samePresets = prevUi.presets === nextPresets || JSON.stringify(prevUi.presets || {}) === JSON.stringify(nextPresets || {});
       const sameAnnotationPresets = prevUi.annotationPresets === nextAnnotationPresets || JSON.stringify(prevUi.annotationPresets || {}) === JSON.stringify(nextAnnotationPresets || {});
+      const sameFontPresets = prevUi.fontPresets === nextFontPresets || JSON.stringify(prevUi.fontPresets || {}) === JSON.stringify(nextFontPresets || {});
       if (
         prevUi.isDarkMode === isDarkMode &&
         prevUi.themeColor === (themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT)) &&
@@ -1815,7 +1829,8 @@ const [previewScale, setPreviewScale] = useState(1);
         Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
         prevUi.recentProject === recentProject &&
         samePresets &&
-        sameAnnotationPresets
+        sameAnnotationPresets &&
+        sameFontPresets
       ) {
         return prev;
       }
@@ -1836,10 +1851,11 @@ const [previewScale, setPreviewScale] = useState(1);
           recentProject,
           presets: nextPresets,
           annotationPresets: nextAnnotationPresets,
+          fontPresets: nextFontPresets,
         },
       };
     });
-  }, [autoSaveProject, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets]);
+  }, [autoSaveProject, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets, fontPresets]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -1891,6 +1907,12 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleAnnotationPresetsChangeTracked = useCallback((nextPresets: Record<string, any>) => {
     pushHistorySnapshot();
     setAnnotationPresets(nextPresets);
+    markProjectDirty();
+  }, [markProjectDirty, pushHistorySnapshot]);
+
+  const handleFontPresetsChangeTracked = useCallback((nextPresets: FontPresetMap) => {
+    pushHistorySnapshot();
+    setFontPresets(nextPresets);
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
@@ -2275,6 +2297,15 @@ const [previewScale, setPreviewScale] = useState(1);
         ? restConfig.content.map((item: any) => item?.type === 'text' ? { ...item, text: remapMarkdownImagePaths(item.text || '') } : item)
         : restConfig.content,
       speakers: remappedSpeakers,
+      fontPresets: Object.fromEntries(
+        Object.entries(fontPresets || {}).map(([key, preset]) => [
+          key,
+          {
+            ...preset,
+            filePath: resolveExportAssetPath(preset.filePath)
+          }
+        ])
+      ),
       background: restConfig.background
         ? {
             ...restConfig.background,
@@ -2919,6 +2950,15 @@ const [previewScale, setPreviewScale] = useState(1);
       });
     });
 
+    Object.entries(configToInspect.ui?.fontPresets || {}).forEach(([presetId, preset]: [string, any]) => {
+      pushResource({
+        id: `ui.fontPresets.${presetId}.filePath`,
+        label: `${t('fontPresets.title')} / ${preset?.name || presetId}`,
+        value: preset?.filePath || '',
+        kind: /^https?:\/\//i.test(preset?.filePath || '') ? 'url' : 'file'
+      });
+    });
+
     (configToInspect.content || []).forEach((item: any, itemIndex: number) => {
       if (item?.type !== 'text' || typeof item?.text !== 'string') {
         return;
@@ -3088,7 +3128,8 @@ const [previewScale, setPreviewScale] = useState(1);
     const urls = [
       config.background?.image,
       ...(config.background?.slides || []).map((slide: BackgroundSlideItem) => slide?.image),
-      ...Object.values(config.speakers || {}).map((speaker: any) => speaker?.avatar)
+      ...Object.values(config.speakers || {}).map((speaker: any) => speaker?.avatar),
+      ...Object.values(fontPresets || {}).map((preset: any) => preset?.filePath)
     ].filter((value): value is string => Boolean(value) && /^https?:\/\//i.test(value));
 
     if (!urls.length) {
@@ -3118,9 +3159,20 @@ const [previewScale, setPreviewScale] = useState(1);
     return () => {
       cancelled = true;
     };
-  }, [config.background?.image, config.background?.slides, config.speakers, cachedRemoteAssets]);
+  }, [config.background?.image, config.background?.slides, config.speakers, fontPresets, cachedRemoteAssets]);
 
   const resolvedAudioPath = webAudioObjectUrl || resolvePath(config.audioPath) || '';
+  const previewFontFaceCss = useMemo(() => buildFontFaceCss(
+    Object.fromEntries(
+      Object.entries(fontPresets || {}).map(([key, preset]) => [
+        key,
+        {
+          ...preset,
+          filePath: resolvePath(preset.filePath) || preset.filePath,
+        },
+      ])
+    )
+  ), [fontPresets, cachedRemoteAssets, projectPath]);
   const backgroundSlides = Array.isArray(config.background?.slides) ? config.background.slides : [];
   const activeInsertImageSlide = backgroundSlides.find((slide: BackgroundSlideItem) => slide.id === activeInsertImageId) || null;
   const enterInsertImageEditMode = useCallback((id: string) => {
@@ -4771,6 +4823,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onPresetsChange={handlePresetsChangeTracked}
                 annotationPresets={annotationPresets}
                 onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
+                fontPresets={fontPresets}
+                onFontPresetsChange={handleFontPresetsChangeTracked}
                 onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
                 globalOnly
                 activeTab={activeTab}
@@ -4950,6 +5004,8 @@ const [previewScale, setPreviewScale] = useState(1);
                    onPresetsChange={handlePresetsChangeTracked}
                    annotationPresets={annotationPresets}
                    onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
+                   fontPresets={fontPresets}
+                   onFontPresetsChange={handleFontPresetsChangeTracked}
                    onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
                    activeTab={activeTab}
                    setActiveTab={setActiveTab}
@@ -5128,6 +5184,8 @@ const [previewScale, setPreviewScale] = useState(1);
                    onPresetsChange={handlePresetsChangeTracked}
                    annotationPresets={annotationPresets}
                    onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
+                   fontPresets={fontPresets}
+                   onFontPresetsChange={handleFontPresetsChangeTracked}
                    onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
                    activeTab={activeTab}
                   setActiveTab={setActiveTab}
@@ -5162,6 +5220,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   transformOrigin: 'center center',
                 }}
               >
+              {previewFontFaceCss ? <style>{previewFontFaceCss}</style> : null}
               
               {/* Fallback color layer if no background image */}
               <div className="absolute inset-0 z-0" style={{ backgroundColor: isDarkMode ? '#111111' : '#ffffff', borderColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.12)' }} />
@@ -5730,6 +5789,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onPresetsChange={handlePresetsChangeTracked}
                 annotationPresets={annotationPresets}
                 onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
+                fontPresets={fontPresets}
+                onFontPresetsChange={handleFontPresetsChangeTracked}
                 onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
@@ -5868,6 +5929,8 @@ const [previewScale, setPreviewScale] = useState(1);
             onPresetsChange={handlePresetsChangeTracked}
             annotationPresets={annotationPresets}
             onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
+            fontPresets={fontPresets}
+            onFontPresetsChange={handleFontPresetsChangeTracked}
             onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
             activeTab={activeTab}
             setActiveTab={setActiveTab}

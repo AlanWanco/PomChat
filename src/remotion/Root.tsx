@@ -15,6 +15,7 @@ const defaultProps: PodchatExportInput = {
   chatLayout: {},
   speakers: {},
   content: [],
+  fontPresets: {},
   exportRange: {
     start: 0,
     end: 3,
