@@ -2919,10 +2919,51 @@ const [previewScale, setPreviewScale] = useState(1);
       });
     });
 
+    (configToInspect.content || []).forEach((item: any, itemIndex: number) => {
+      if (item?.type !== 'text' || typeof item?.text !== 'string') {
+        return;
+      }
+
+      const markdownImagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let match: RegExpExecArray | null = null;
+      let imageIndex = 0;
+      while ((match = markdownImagePattern.exec(item.text)) !== null) {
+        const rawPath = (match[2] || '').trim();
+        pushResource({
+          id: `content.${itemIndex}.markdownImage.${imageIndex}`,
+          label: `${t('subtitle.title')} #${itemIndex + 1} / Markdown 图片`,
+          value: rawPath,
+          kind: /^https?:\/\//i.test(rawPath) ? 'url' : 'file'
+        });
+        imageIndex += 1;
+      }
+    });
+
     return resources;
   }, [t]);
 
   const updateConfigValueByPath = useCallback((target: any, dottedPath: string, nextValue: string) => {
+    const markdownImageMatch = dottedPath.match(/^content\.(\d+)\.markdownImage\.(\d+)$/);
+    if (markdownImageMatch) {
+      const cloned = JSON.parse(JSON.stringify(target));
+      const contentIndex = Number(markdownImageMatch[1]);
+      const imageIndex = Number(markdownImageMatch[2]);
+      const contentItem = cloned?.content?.[contentIndex];
+      if (!contentItem || typeof contentItem.text !== 'string') {
+        return cloned;
+      }
+      let currentImageIndex = 0;
+      contentItem.text = contentItem.text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (fullMatch: string, alt: string) => {
+        if (currentImageIndex === imageIndex) {
+          currentImageIndex += 1;
+          return `![${alt}](${nextValue})`;
+        }
+        currentImageIndex += 1;
+        return fullMatch;
+      });
+      return cloned;
+    }
+
     const segments = dottedPath.split('.');
     const cloned = JSON.parse(JSON.stringify(target));
     let cursor = cloned;
@@ -2950,6 +2991,9 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     if (resourceId === 'background.image') {
       return /\.(mp4|webm|mov|mkv)(\?|$)/i.test(lowerValue) ? 'video' : 'media';
+    }
+    if (resourceId.includes('.markdownImage.')) {
+      return /\.(mp4|webm|mov|mkv)(\?|$)/i.test(lowerValue) ? 'video' : 'image';
     }
     if (resourceId.includes('.avatar') || resourceId.includes('.slides.')) {
       return /\.(mp4|webm|mov|mkv)(\?|$)/i.test(lowerValue) ? 'video' : 'image';
@@ -3086,6 +3130,22 @@ const [previewScale, setPreviewScale] = useState(1);
   const focusInsertImageSettings = useCallback(() => {
     setFocusInsertImageSettingsKey((prev) => prev + 1);
   }, []);
+  const openInsertImageEditorAtStart = useCallback((id: string, options?: { ensureSettingsVisible?: boolean; ensureProjectTab?: boolean }) => {
+    const targetSlide = backgroundSlides.find((slide: BackgroundSlideItem) => slide.id === id);
+    if (targetSlide) {
+      handleSeek(targetSlide.start ?? 0);
+    }
+    if (options?.ensureSettingsVisible) {
+      setShowSettings(true);
+    }
+    if (options?.ensureProjectTab) {
+      setActiveTab('project');
+    }
+    window.requestAnimationFrame(() => {
+      enterInsertImageEditMode(id);
+      focusInsertImageSettings();
+    });
+  }, [backgroundSlides, enterInsertImageEditMode, focusInsertImageSettings, handleSeek]);
 
   useEffect(() => {
     if (!isInsertImageEditMode || !activeInsertImageSlide) {
@@ -3784,15 +3844,12 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         });
 
-        if (missing.length > 0) {
+        if (updated.length > 0 || missing.length > 0) {
           setProjectResourceCheckDialog({ filePath, config: checkedConfig, updated, missing });
           showToast(t('projectResourceCheck.requiresAttention'));
           return;
         }
 
-        if (updated.length > 0) {
-          showToast(t('projectResourceCheck.updatedRelativeAuto', { count: updated.length }));
-        }
         finalizeLoadedProject(filePath, checkedConfig);
         return;
       }
@@ -3837,7 +3894,7 @@ const [previewScale, setPreviewScale] = useState(1);
     } : prev);
   }, []);
 
-  const handleApplyProjectResourceCheck = useCallback(() => {
+  const handleApplyProjectResourceCheck = useCallback(async () => {
     if (!projectResourceCheckDialog) {
       return;
     }
@@ -3851,9 +3908,18 @@ const [previewScale, setPreviewScale] = useState(1);
       nextConfig = updateConfigValueByPath(nextConfig, item.id, replacement);
     });
 
+    try {
+      if (window.electron) {
+        await window.electron.writeFile(projectResourceCheckDialog.filePath, JSON.stringify(nextConfig, null, 2));
+      }
+    } catch (error: any) {
+      alert(`${t('dialog.errorSaveFailed')}: ${error.message}`);
+      return;
+    }
+
     setProjectResourceCheckDialog(null);
     finalizeLoadedProject(projectResourceCheckDialog.filePath, nextConfig);
-  }, [finalizeLoadedProject, projectResourceCheckDialog, updateConfigValueByPath]);
+  }, [finalizeLoadedProject, projectResourceCheckDialog, t, updateConfigValueByPath]);
 
   const handleBrowseProjectResourceReplacement = useCallback(async (resourceId: string) => {
     if (!window.electron) {
@@ -4894,8 +4960,7 @@ const [previewScale, setPreviewScale] = useState(1);
                    focusInsertImageSettingsKey={focusInsertImageSettingsKey}
                    onActiveInsertImageChange={setActiveInsertImageId}
                     onEditInsertImage={(id) => {
-                      enterInsertImageEditMode(id);
-                      focusInsertImageSettings();
+                      openInsertImageEditorAtStart(id);
                     }}
                    resolveAssetSrc={resolvePath}
                   />
@@ -5675,8 +5740,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 focusInsertImageSettingsKey={focusInsertImageSettingsKey}
                 onActiveInsertImageChange={setActiveInsertImageId}
                 onEditInsertImage={(id) => {
-                  enterInsertImageEditMode(id);
-                  focusInsertImageSettings();
+                  openInsertImageEditorAtStart(id);
                 }}
                 resolveAssetSrc={resolvePath}
               />
@@ -5746,10 +5810,7 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         }}
         onEditInsertImage={(id) => {
-          enterInsertImageEditMode(id);
-          setShowSettings(true);
-          setActiveTab('project');
-          focusInsertImageSettings();
+          openInsertImageEditorAtStart(id, { ensureSettingsVisible: true, ensureProjectTab: true });
         }}
         compactMobile={isMobileWebLayout}
       />

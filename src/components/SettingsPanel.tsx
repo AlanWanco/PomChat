@@ -65,6 +65,35 @@ interface SettingsPanelProps {
   resolveAssetSrc?: (src?: string) => string | undefined;
 }
 
+function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onWheelStep?: (direction: 'up' | 'down') => void }) {
+  const { onWheelStep, ...inputProps } = props;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    const node = inputRef.current;
+    if (!node || !onWheelStep) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!isFocused || document.activeElement !== node) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onWheelStep(event.deltaY < 0 ? 'up' : 'down');
+    };
+
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      node.removeEventListener('wheel', handleWheel);
+    };
+  }, [isFocused, onWheelStep]);
+
+  return <input ref={inputRef} {...inputProps} onFocus={(event) => { setIsFocused(true); inputProps.onFocus?.(event); }} onBlur={(event) => { setIsFocused(false); inputProps.onBlur?.(event); }} />;
+}
+
 export function SettingsPanel({ 
   config, onConfigChange, 
   isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onProxyChange, onLanguageChange, onThemeChange, 
@@ -308,6 +337,10 @@ export function SettingsPanel({
     setActiveBackgroundSlideTab(slide.id);
     setPendingScrollSlideId(slide.id);
     onActiveInsertImageChange?.(slide.id);
+    if (type === 'image') {
+      onSeek?.(slide.start);
+      onEditInsertImage?.(slide.id);
+    }
   };
 
   const removeBackgroundSlide = (slideId: string) => {
@@ -344,6 +377,17 @@ export function SettingsPanel({
     setActiveBackgroundSlideTab(duplicatedSlide.id);
     setPendingScrollSlideId(duplicatedSlide.id);
     onActiveInsertImageChange?.(duplicatedSlide.id);
+  };
+
+  const activateImageSlideEditing = (slideId: string) => {
+    const targetSlide = backgroundSlides.find((slide: any) => slide.id === slideId);
+    if (!targetSlide || targetSlide.type === 'text') {
+      return;
+    }
+    onSeek?.(targetSlide.start ?? 0);
+    window.requestAnimationFrame(() => {
+      onEditInsertImage?.(slideId);
+    });
   };
 
   const setBackgroundSlideExplicitOrder = (slideId: string, nextOrder: number) => {
@@ -703,12 +747,13 @@ export function SettingsPanel({
 
     return (
       <div className="relative">
-        <input
+        <WheelGuardNumberInput
           type="number"
           value={safeValue}
           min={min}
           max={max}
           step={step}
+          onWheelStep={(direction) => applyDelta(direction === 'up' ? step : -step)}
           onChange={(e) => {
             const next = Number(e.target.value);
             if (Number.isFinite(next)) {
@@ -1548,6 +1593,7 @@ export function SettingsPanel({
                                   intrinsicWidth: naturalSize?.width,
                                   intrinsicHeight: naturalSize?.height,
                                 }));
+                                activateImageSlideEditing(currentBackgroundSlide.id);
                               })}
                               title={t('project.quickPasteFilePathTip')}
                               className={`flex-1 w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
@@ -1567,6 +1613,7 @@ export function SettingsPanel({
                                       intrinsicWidth: naturalSize?.width,
                                       intrinsicHeight: naturalSize?.height,
                                     }));
+                                    activateImageSlideEditing(currentBackgroundSlide.id);
                                   }
                                 }}
                                 className="px-3 border rounded-md flex items-center justify-center transition-colors"
@@ -1590,7 +1637,10 @@ export function SettingsPanel({
                         )}
 
                         <div className="space-y-1.5">
-                          <button type="button" onClick={() => onEditInsertImage?.(currentBackgroundSlide.id)} className="w-full h-8 rounded-md border px-2.5 text-[11px] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
+                          <button type="button" onClick={() => {
+                            onSeek?.(currentBackgroundSlide.start ?? 0);
+                            onEditInsertImage?.(currentBackgroundSlide.id);
+                          }} className="w-full h-8 rounded-md border px-2.5 text-[11px] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
                             <Pencil size={14} style={{ color: secondaryThemeColor }} />
                             {currentBackgroundSlide.type === 'text' ? t('project.editTextAsset') : t('project.editImageAsset')}
                           </button>
