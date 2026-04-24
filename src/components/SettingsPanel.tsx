@@ -177,8 +177,12 @@ export function SettingsPanel({
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
+  const [hoveredSettingsSection, setHoveredSettingsSection] = useState<string>('');
   const backgroundSectionHeaderRef = useRef<HTMLDivElement | null>(null);
   const backgroundSlideTabsRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const settingsSectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [pendingScrollSlideId, setPendingScrollSlideId] = useState<string | null>(null);
 
   const scrollSlideTabIntoView = (slideId: string) => {
@@ -201,6 +205,76 @@ export function SettingsPanel({
   const speakerKeys = Object.keys(config.speakers).filter((key) => config.speakers[key]?.type !== 'annotation');
   const currentSpeakerTab = activeSpeakerTab && speakerKeys.includes(activeSpeakerTab) ? activeSpeakerTab : (speakerKeys[0] || null);
   const backgroundSlides = Array.isArray(config.background?.slides) ? config.background.slides : [];
+  const projectJumpSections = [
+    { id: 'project-layout', label: t('project.layout') },
+    { id: 'project-avatar', label: t('project.avatarSettings') },
+    { id: 'project-timestamp', label: t('project.timestampStyle') },
+    { id: 'project-animation', label: t('project.animationStyle') },
+    { id: 'project-background', label: t('project.background') },
+    { id: 'project-insert-assets', label: t('project.insertImages') },
+  ];
+  const speakerJumpSections = [
+    { id: 'speaker-basic', label: t('speakers.title') },
+    { id: 'speaker-typography', label: t('speakers.typography') },
+    { id: 'speaker-colors', label: t('speakers.colors') },
+    { id: 'speaker-border', label: t('speakers.border') },
+    { id: 'speaker-layout', label: t('speakers.layout') },
+  ];
+  const visibleSettingsSections = activeTab === 'project'
+    ? projectJumpSections
+    : activeTab === 'speakers' && currentSpeakerTab
+      ? speakerJumpSections
+      : [];
+  const visibleSettingsSectionIds = visibleSettingsSections.map((section) => section.id).join('|');
+  const floatingNavTop = hideHeader ? 64 : compactHeader ? 108 : 120;
+
+  const registerSettingsSection = (id: string) => (node: HTMLDivElement | null) => {
+    settingsSectionRefs.current[id] = node;
+  };
+
+  const scrollToSettingsSection = (id: string) => {
+    const target = settingsSectionRefs.current[id];
+    if (!target) return;
+    setActiveSettingsSection(id);
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  useEffect(() => {
+    if (!visibleSettingsSections.length) {
+      setActiveSettingsSection('');
+      return;
+    }
+
+    const updateActiveSection = () => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const containerTop = container.getBoundingClientRect().top;
+      let nextActive = visibleSettingsSections[0]?.id || '';
+
+      for (const section of visibleSettingsSections) {
+        const node = settingsSectionRefs.current[section.id];
+        if (!node) continue;
+        const offsetTop = node.getBoundingClientRect().top - containerTop;
+        if (offsetTop <= 120) {
+          nextActive = section.id;
+        } else {
+          break;
+        }
+      }
+
+      setActiveSettingsSection((prev) => (prev === nextActive ? prev : nextActive));
+    };
+
+    updateActiveSection();
+    const container = scrollContainerRef.current;
+    container?.addEventListener('scroll', updateActiveSection, { passive: true });
+    window.addEventListener('resize', updateActiveSection);
+    return () => {
+      container?.removeEventListener('scroll', updateActiveSection);
+      window.removeEventListener('resize', updateActiveSection);
+    };
+  }, [activeTab, currentSpeakerTab, visibleSettingsSectionIds]);
 
   // Keep tabOrderIds in sync when slides are added/removed (not during drags)
   useEffect(() => {
@@ -921,7 +995,7 @@ export function SettingsPanel({
   };
 
   return (
-    <div className={`h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
+    <div className={`relative h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
       {!hideHeader && (
       <div className={`${compactHeader ? 'p-2.5' : 'p-4'} border-b flex items-center justify-between shrink-0 ${headerClass}`} style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
         <h2 className={`${hideHeaderTitle ? 'opacity-0 pointer-events-none select-none' : ''} font-bold flex items-center gap-2 text-sm`}>
@@ -1004,8 +1078,59 @@ export function SettingsPanel({
           )}
          </div>
 
+      {!panelCollapsed && visibleSettingsSections.length > 0 && (
+        <div className="pointer-events-none absolute -left-[2px] z-30" style={{ top: `${floatingNavTop}px` }}>
+          <div className="group pointer-events-auto flex items-start">
+            <div
+              className="flex min-h-8 w-5 shrink-0 flex-col items-center justify-center gap-1 transition-transform duration-[700ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.2]"
+              style={{ transformOrigin: 'top center' }}
+              title="Section navigation"
+            >
+              {visibleSettingsSections.map((section) => (
+                <span
+                  key={section.id}
+                  className="h-1 w-1 rounded-full transition-transform duration-[300ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+                  style={{ backgroundColor: activeSettingsSection === section.id ? secondaryThemeColor : (isDarkMode ? 'rgba(148, 163, 184, 0.42)' : 'rgba(100, 116, 139, 0.38)'), boxShadow: `0 0 0 1px ${isDarkMode ? '#111827' : '#ffffff'}`, transform: activeSettingsSection === section.id || hoveredSettingsSection === section.id ? 'scale(1.35)' : 'scale(1)' }}
+                />
+              ))}
+            </div>
+            <div
+              className="ml-[3px] max-w-0 overflow-hidden rounded-lg border opacity-0 shadow-sm translate-x-[-4px] transition-[max-width,opacity,transform] duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:max-w-[220px] group-hover:translate-x-0 group-hover:opacity-100"
+              style={{ backgroundColor: `${uiTheme.panelBgElevated}f6`, borderColor: uiTheme.border, boxShadow: `0 8px 24px ${uiTheme.shadow}, 0 0 0 1px ${secondaryThemeColor}14, 0 0 42px ${secondaryThemeColor}2e`, backdropFilter: 'blur(12px)', transformOrigin: 'left top' }}
+            >
+              <div className="flex min-w-[160px] flex-col p-1.5">
+                {visibleSettingsSections.map((section) => {
+                  const isActive = activeSettingsSection === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => scrollToSettingsSection(section.id)}
+                      className="rounded-md px-3 py-2 text-left text-xs transition-colors"
+                      style={isActive ? { backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor } : { color: uiTheme.text }}
+                      onMouseEnter={(event) => {
+                        setHoveredSettingsSection(section.id);
+                        if (isActive) return;
+                        event.currentTarget.style.backgroundColor = isDarkMode ? 'rgba(148, 163, 184, 0.10)' : 'rgba(100, 116, 139, 0.08)';
+                      }}
+                      onMouseLeave={(event) => {
+                        setHoveredSettingsSection('');
+                        if (isActive) return;
+                        event.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      {section.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!panelCollapsed && (
-      <div className={`flex-1 overflow-y-auto custom-scrollbar ${activeTab === 'speakers' ? 'px-4 pb-4 pt-0' : activeTab === 'subtitle' ? 'p-0' : 'p-4'}`}>
+      <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto custom-scrollbar ${activeTab === 'speakers' ? 'px-4 pb-4 pt-0' : activeTab === 'subtitle' ? 'p-0' : 'p-4'}`}>
         {showSubtitleTab && activeTab === 'subtitle' && (
           <div className="h-full min-h-0">{subtitleContent}</div>
         )}
@@ -1300,7 +1425,7 @@ export function SettingsPanel({
 
         {activeTab === 'project' && (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl border space-y-4 shadow-sm" style={{ backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
+            <div ref={registerSettingsSection('project-layout')} className="p-4 rounded-xl border space-y-4 shadow-sm" style={{ backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
               <label className="flex items-center gap-2 text-sm font-medium border-b pb-1" style={{ borderColor: uiTheme.border, color: uiTheme.text }}>
                 <LayoutTemplate size={14} /> {t('project.layout')}
               </label>
@@ -1467,7 +1592,7 @@ export function SettingsPanel({
 
               <hr style={{ borderColor: uiTheme.border }} />
 
-              <div className="space-y-2">
+              <div ref={registerSettingsSection('project-avatar')} className="space-y-2">
                 <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Users size={12} /> {t('project.avatarSettings')}</span>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -1573,7 +1698,7 @@ export function SettingsPanel({
 
               <hr style={{ borderColor: uiTheme.border }} />
 
-              <div className="space-y-2">
+              <div ref={registerSettingsSection('project-timestamp')} className="space-y-2">
                 <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('project.timestampStyle')}</span>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -1593,7 +1718,7 @@ export function SettingsPanel({
 
               <hr style={{ borderColor: uiTheme.border }} />
 
-                <div className="space-y-2">
+                <div ref={registerSettingsSection('project-animation')} className="space-y-2">
                   <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <span className="text-xs font-semibold opacity-80 inline-flex items-center gap-1">
@@ -1652,7 +1777,7 @@ export function SettingsPanel({
                 </div>
              </div>
 
-            <div className="p-4 rounded-xl border space-y-4 shadow-sm" style={{ backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
+            <div ref={registerSettingsSection('project-background')} className="p-4 rounded-xl border space-y-4 shadow-sm" style={{ backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
               <label className="flex items-center gap-2 text-sm font-medium border-b pb-1" style={{ borderColor: uiTheme.border, color: uiTheme.text }}>
                 <ImageIcon size={14} /> {t('project.background')}
               </label>
@@ -1777,7 +1902,10 @@ export function SettingsPanel({
                 </div>
               </div>
               <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
-                <div ref={backgroundSectionHeaderRef} className="flex items-center justify-between">
+                <div ref={(node) => {
+                  backgroundSectionHeaderRef.current = node;
+                  registerSettingsSection('project-insert-assets')(node);
+                }} className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm font-medium" style={{ color: uiTheme.text }}>
                     <LayoutTemplate size={14} /> {t('project.insertImages')}
                   </label>
@@ -2194,7 +2322,7 @@ export function SettingsPanel({
                     <div key={key} className="p-4 rounded-xl border space-y-4 shadow-sm" style={{ backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
                       
                       {/* Header & Base Settings */}
-                    <div className="flex flex-col gap-3">
+                    <div ref={registerSettingsSection('speaker-basic')} className="flex flex-col gap-3">
                       <div className="flex justify-between items-center">
                         <span className="font-bold px-2 py-0.5 rounded text-xs" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{key} ({t('speakers.role')})</span>
                         <div className="flex items-center gap-2">
@@ -2452,7 +2580,7 @@ export function SettingsPanel({
                     <hr style={{ borderColor: uiTheme.border }} />
 
                     {/* Font Settings */}
-                    <div className="space-y-2">
+                    <div ref={registerSettingsSection('speaker-typography')} className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('speakers.typography')}</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1 col-span-2">
@@ -2503,7 +2631,7 @@ export function SettingsPanel({
                     </div>
 
                     {/* Colors & Background */}
-                    <div className="space-y-2">
+                    <div ref={registerSettingsSection('speaker-colors')} className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><div className="w-3 h-3 rounded-full flex items-center justify-center border shadow-sm" style={{ backgroundColor: themeColor }}></div> {t('speakers.colors')}</span>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
@@ -2598,7 +2726,7 @@ export function SettingsPanel({
                     <hr style={{ borderColor: uiTheme.border }} />
 
                     {/* Borders */}
-                    <div className="space-y-2">
+                    <div ref={registerSettingsSection('speaker-border')} className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Box size={12} /> {t('speakers.border')}</span>
 
                       <div className="space-y-1 mb-2">
@@ -2638,7 +2766,7 @@ export function SettingsPanel({
                     <hr style={{ borderColor: uiTheme.border }} />
 
                     {/* Layout */}
-                     <div className="space-y-2">
+                     <div ref={registerSettingsSection('speaker-layout')} className="space-y-2">
                        <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Layout size={12} /> {t('speakers.layout')}</span>
                        
                        <div className="grid grid-cols-2 gap-2">
