@@ -89,7 +89,7 @@ type ProjectResourceCheckDialogState = {
   updated: UpdatedProjectResource[];
 };
 
-type ProjectResourceFileType = 'audio' | 'subtitle' | 'image' | 'video' | 'media';
+type ProjectResourceFileType = 'audio' | 'subtitle' | 'image' | 'video' | 'font' | 'media';
 
 type RenderCacheInfo = {
   remoteAssets: { path: string; files: number; bytes: number };
@@ -406,6 +406,26 @@ const createBlankProjectConfig = (projectTitle: string) => ({
   },
   ui: { ...DEFAULT_UI_CONFIG }
 });
+
+const getProjectContentEnd = (projectConfig: any, audioDuration = 0) => {
+  const subtitleEnd = Array.isArray(projectConfig?.content)
+    ? projectConfig.content.reduce((max: number, item: any) => {
+        const end = typeof item?.end === 'number' && Number.isFinite(item.end) ? item.end : 0;
+        return Math.max(max, end);
+      }, 0)
+    : 0;
+  const slideEnd = Array.isArray(projectConfig?.background?.slides)
+    ? projectConfig.background.slides.reduce((max: number, slide: any) => {
+        const end = typeof slide?.end === 'number' && Number.isFinite(slide.end) ? slide.end : 0;
+        return Math.max(max, end);
+      }, 0)
+    : 0;
+  const backgroundDuration = typeof projectConfig?.background?.duration === 'number' && Number.isFinite(projectConfig.background.duration)
+    ? projectConfig.background.duration
+    : 0;
+
+  return Number(Math.max(audioDuration || 0, subtitleEnd, slideEnd, backgroundDuration, 0).toFixed(2));
+};
 
 const sanitizeProjectOverrides = (value: unknown) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -902,6 +922,7 @@ function App() {
   const portraitAutoCollapseRef = useRef<{ subtitle: boolean; settings: boolean } | null>(null);
   const savedSpeakerNamesRef = useRef<Record<string, string>>(getSpeakerNameSnapshot(config.speakers));
   const exportRangeTouchedRef = useRef(false);
+  const isApplyingConfigExportRangeRef = useRef(false);
   const lastPlaybackPersistAtRef = useRef(0);
   const lastUiFrameAtRef = useRef(0);
   const historyPastRef = useRef<HistorySnapshot[]>([]);
@@ -1048,8 +1069,9 @@ function App() {
       if (distance < bestDistance) {
         bestDistance = distance;
         bestIndex = index;
-      }
-    });
+  }
+});
+
     return bestIndex;
   }, [subtitles, currentTime]);
   const nearbySubtitles = useMemo(() => {
@@ -1684,14 +1706,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const parsed = JSON.parse(saved);
       const validatedConfig = validateProjectConfig(parsed);
       const requiresAudioReload = Boolean(validatedConfig.audioPath);
-      const fallbackExportEnd = Array.isArray(validatedConfig.content)
-        ? Number(
-            validatedConfig.content.reduce((max: number, item: any) => {
-              const end = typeof item?.end === 'number' && Number.isFinite(item.end) ? item.end : 0;
-              return Math.max(max, end);
-            }, 0).toFixed(2)
-          )
-        : 0;
+      const fallbackExportEnd = getProjectContentEnd(validatedConfig);
       const restoredConfig = requiresAudioReload
         ? {
             ...validatedConfig,
@@ -2424,11 +2439,10 @@ const [previewScale, setPreviewScale] = useState(1);
 
 
   const getDefaultExportRange = useCallback(() => {
-    const latestSubtitle = subtitles.reduce((max, item) => Math.max(max, item.end), 0);
     const start = 0;
-    const end = Number(Math.max(duration || 0, latestSubtitle || 0, start).toFixed(2));
+    const end = getProjectContentEnd({ ...config, content: subtitles }, duration);
     return { start, end };
-  }, [duration, subtitles]);
+  }, [config, duration, subtitles]);
 
   const isSameRange = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start === b.start && a.end === b.end;
 
@@ -2548,6 +2562,7 @@ const [previewScale, setPreviewScale] = useState(1);
         start: Number(Math.max(0, sourceRange.start).toFixed(2)),
         end: Number(Math.max(sourceRange.start, sourceRange.end).toFixed(2))
       };
+      isApplyingConfigExportRangeRef.current = true;
       setExportRange((prev) => isSameRange(prev, nextRange) ? prev : nextRange);
     }
   }, [projectPath, config.projectId, config.exportRange?.start, config.exportRange?.end, config.exportRangeCustomized]);
@@ -2585,6 +2600,23 @@ const [previewScale, setPreviewScale] = useState(1);
   useEffect(() => {
     if (!hasHydratedElectronConfigRef.current) {
       return;
+    }
+
+    if (isApplyingConfigExportRangeRef.current) {
+      const sourceRange = config.exportRange;
+      const normalizedSourceRange = sourceRange && typeof sourceRange.start === 'number' && typeof sourceRange.end === 'number'
+        ? {
+            start: Number(Math.max(0, sourceRange.start).toFixed(2)),
+            end: Number(Math.max(sourceRange.start, sourceRange.end).toFixed(2))
+          }
+        : null;
+      const sameAsConfig = normalizedSourceRange
+        ? isSameRange(exportRange, normalizedSourceRange) && Boolean(config.exportRangeCustomized) === exportRangeTouchedRef.current
+        : false;
+      if (sameAsConfig) {
+        isApplyingConfigExportRangeRef.current = false;
+        return;
+      }
     }
 
     setConfig((prev: any) => {
@@ -3044,6 +3076,9 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     if (resourceId === 'assPath' || /\.(ass|srt|lrc)(\?|$)/i.test(lowerValue)) {
       return 'subtitle';
+    }
+    if (resourceId.includes('.fontPresets.') || /\.(ttf|otf|woff|woff2)(\?|$)/i.test(lowerValue)) {
+      return 'font';
     }
     if (resourceId === 'background.image') {
       return /\.(mp4|webm|mov|mkv)(\?|$)/i.test(lowerValue) ? 'video' : 'media';
@@ -4000,6 +4035,8 @@ const [previewScale, setPreviewScale] = useState(1);
         ? [{ name: t('dialog.filterAudio'), extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus'] }]
         : fileType === 'subtitle'
           ? [{ name: t('dialog.filterSubtitle'), extensions: ['ass', 'srt', 'lrc'] }]
+          : fileType === 'font'
+            ? [{ name: t('fontPresets.filterName'), extensions: ['ttf', 'otf', 'woff', 'woff2'] }]
           : fileType === 'image'
             ? [{ name: t('dialog.filterImage'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }]
             : fileType === 'video'
