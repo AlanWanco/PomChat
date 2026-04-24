@@ -3107,6 +3107,39 @@ const [previewScale, setPreviewScale] = useState(1);
     return resources;
   }, [t]);
 
+  const resourceActionAvailability = useMemo(() => {
+    if (!projectPath) {
+      return {
+        copyRemoteAssetsCount: 0,
+        copyLocalAssetsCount: 0,
+        refreshRemoteAssetCacheCount: 0,
+      };
+    }
+    const workingConfig = getCurrentConfigWithUi();
+    const resources = collectProjectResources(workingConfig);
+    const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || '';
+    const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
+    const copyRemoteAssetsCount = resources.filter((resource) => {
+      if (!resource.value?.trim()) return false;
+      if (resource.kind === 'url') return true;
+      const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
+      return isPathInsideDirectory(resolvedPath, remoteCacheDir);
+    }).length;
+    const copyLocalAssetsCount = resources.filter((resource) => {
+      if (resource.kind !== 'file' || !resource.value?.trim()) return false;
+      const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
+      if (!resolvedPath || !looksLikeLocalFsPath(resolvedPath)) return false;
+      if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) return false;
+      return true;
+    }).length;
+    const refreshRemoteAssetCacheCount = resources.filter((resource) => resource.kind === 'url' && Boolean(resource.value?.trim())).length;
+    return {
+      copyRemoteAssetsCount,
+      copyLocalAssetsCount,
+      refreshRemoteAssetCacheCount,
+    };
+  }, [collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, renderCacheInfo?.remoteAssets?.path]);
+
   const updateConfigValueByPath = useCallback((target: any, dottedPath: string, nextValue: string) => {
     const markdownImageMatch = dottedPath.match(/^content\.(\d+)\.markdownImage\.(\d+)$/);
     if (markdownImageMatch) {
@@ -5177,6 +5210,9 @@ const [previewScale, setPreviewScale] = useState(1);
                 onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
                 resourceActionBusy={projectResourceActionBusy}
                 projectResourceActionReport={projectResourceActionReport}
+                copyRemoteAssetsCount={resourceActionAvailability.copyRemoteAssetsCount}
+                copyLocalAssetsCount={resourceActionAvailability.copyLocalAssetsCount}
+                refreshRemoteAssetCacheCount={resourceActionAvailability.refreshRemoteAssetCacheCount}
               />
             </div>
           </div>
@@ -5375,6 +5411,9 @@ const [previewScale, setPreviewScale] = useState(1);
                      onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
                      resourceActionBusy={projectResourceActionBusy}
                      projectResourceActionReport={projectResourceActionReport}
+                     copyRemoteAssetsCount={resourceActionAvailability.copyRemoteAssetsCount}
+                     copyLocalAssetsCount={resourceActionAvailability.copyLocalAssetsCount}
+                     refreshRemoteAssetCacheCount={resourceActionAvailability.refreshRemoteAssetCacheCount}
                    />
             </div>
           )}
@@ -5557,6 +5596,9 @@ const [previewScale, setPreviewScale] = useState(1);
                    onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
                    resourceActionBusy={projectResourceActionBusy}
                    projectResourceActionReport={projectResourceActionReport}
+                   copyRemoteAssetsCount={resourceActionAvailability.copyRemoteAssetsCount}
+                   copyLocalAssetsCount={resourceActionAvailability.copyLocalAssetsCount}
+                   refreshRemoteAssetCacheCount={resourceActionAvailability.refreshRemoteAssetCacheCount}
                  />
               </div>
             </div>
@@ -6178,6 +6220,9 @@ const [previewScale, setPreviewScale] = useState(1);
                 onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
                 resourceActionBusy={projectResourceActionBusy}
                 projectResourceActionReport={projectResourceActionReport}
+                copyRemoteAssetsCount={resourceActionAvailability.copyRemoteAssetsCount}
+                copyLocalAssetsCount={resourceActionAvailability.copyLocalAssetsCount}
+                refreshRemoteAssetCacheCount={resourceActionAvailability.refreshRemoteAssetCacheCount}
               />
             </div>
           </div>
@@ -6323,6 +6368,9 @@ const [previewScale, setPreviewScale] = useState(1);
             onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
             resourceActionBusy={projectResourceActionBusy}
             projectResourceActionReport={projectResourceActionReport}
+            copyRemoteAssetsCount={resourceActionAvailability.copyRemoteAssetsCount}
+            copyLocalAssetsCount={resourceActionAvailability.copyLocalAssetsCount}
+            refreshRemoteAssetCacheCount={resourceActionAvailability.refreshRemoteAssetCacheCount}
             subtitleContent={(
               <div className="h-full min-h-0 flex flex-col">
                 <div className="flex-1 min-h-0">

@@ -74,6 +74,9 @@ interface SettingsPanelProps {
   onRefreshRemoteAssetCache?: () => void | Promise<void>;
   resourceActionBusy?: 'remote-copy' | 'local-copy' | 'refresh' | null;
   projectResourceActionReport?: { title: string; items: string[] } | null;
+  copyRemoteAssetsCount?: number;
+  copyLocalAssetsCount?: number;
+  refreshRemoteAssetCacheCount?: number;
 }
 
 function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onWheelStep?: (direction: 'up' | 'down') => void }) {
@@ -131,6 +134,9 @@ export function SettingsPanel({
   onRefreshRemoteAssetCache,
   resourceActionBusy = null,
   projectResourceActionReport = null,
+  copyRemoteAssetsCount = 0,
+  copyLocalAssetsCount = 0,
+  refreshRemoteAssetCacheCount = 0,
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
@@ -259,6 +265,22 @@ export function SettingsPanel({
     }
     void runner();
   };
+  const renderResourceActionLabel = (label: string, count: number) => (
+    <span className="flex items-center justify-between gap-3">
+      <span>{label}</span>
+      <span
+        className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+        style={{
+          backgroundColor: count > 0 ? `${secondaryThemeColor}22` : uiTheme.panelBgSubtle,
+          border: `1px solid ${count > 0 ? `${secondaryThemeColor}44` : uiTheme.border}`,
+          color: count > 0 ? secondaryThemeColor : uiTheme.textMuted,
+          boxShadow: count > 0 ? `0 4px 14px ${secondaryThemeColor}1f` : 'none',
+        }}
+      >
+        {count}
+      </span>
+    </span>
+  );
 
   const registerSettingsSection = (id: string) => (node: HTMLDivElement | null) => {
     settingsSectionRefs.current[id] = node;
@@ -1353,7 +1375,9 @@ export function SettingsPanel({
                   }}
                   title={t('global.resourceActionManualCheck')}
                 >
-                  {resourceActionBusy === 'remote-copy' ? t('global.resourceActionRunning') : t('global.copyRemoteAssetsToProject')}
+                  {resourceActionBusy === 'remote-copy'
+                    ? t('global.resourceActionRunning')
+                    : renderResourceActionLabel(t('global.copyRemoteAssetsToProject'), copyRemoteAssetsCount)}
                 </button>
                 <button
                   type="button"
@@ -1373,7 +1397,9 @@ export function SettingsPanel({
                   }}
                   title={t('global.resourceActionManualCheck')}
                 >
-                  {resourceActionBusy === 'local-copy' ? t('global.resourceActionRunning') : t('global.copyLocalAssetsToProject')}
+                  {resourceActionBusy === 'local-copy'
+                    ? t('global.resourceActionRunning')
+                    : renderResourceActionLabel(t('global.copyLocalAssetsToProject'), copyLocalAssetsCount)}
                 </button>
                 <button
                   type="button"
@@ -1393,7 +1419,9 @@ export function SettingsPanel({
                   }}
                   title={t('global.resourceActionManualCheck')}
                 >
-                  {resourceActionBusy === 'refresh' ? t('global.resourceActionRunning') : t('global.refreshRemoteAssetCache')}
+                  {resourceActionBusy === 'refresh'
+                    ? t('global.resourceActionRunning')
+                    : renderResourceActionLabel(t('global.refreshRemoteAssetCache'), refreshRemoteAssetCacheCount)}
                 </button>
               </div>
               {localResourceActionReport ? (

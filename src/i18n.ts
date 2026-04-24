@@ -1203,5 +1203,5 @@ export const translate = (language: Language, key: string, vars?: Record<string,
     return raw;
   }
 
-  return raw.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''));
+  return raw.replace(/\{\{?(\w+)\}?\}/g, (_, name) => String(vars[name] ?? ''));
 };
