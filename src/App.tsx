@@ -9,7 +9,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows } from './components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
@@ -164,6 +164,7 @@ const DEFAULT_UI_CONFIG = {
   themeColor: DARK_THEME_DEFAULT,
   secondaryThemeColor: SECONDARY_THEME_DEFAULT,
   autoSaveProject: false,
+  projectAssetsCacheEnabled: false,
   proxy: '',
   settingsPosition: 'right' as 'left' | 'right',
   subtitlePanelCompactMode: false,
@@ -352,6 +353,7 @@ const sanitizeProjectConfig = (parsed: any) => {
         ? parsed.ui.secondaryThemeColor
         : DEFAULT_UI_CONFIG.secondaryThemeColor,
       autoSaveProject: parsed?.ui?.autoSaveProject === true,
+      projectAssetsCacheEnabled: parsed?.ui?.projectAssetsCacheEnabled === true,
       proxy: typeof parsed?.ui?.proxy === 'string' ? parsed.ui.proxy : '',
       settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
       subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
@@ -868,6 +870,7 @@ function App() {
   const [themeColorState, setThemeColorState] = useState(() => config.ui?.themeColor ?? DEFAULT_UI_CONFIG.themeColor);
   const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => config.ui?.secondaryThemeColor ?? DEFAULT_UI_CONFIG.secondaryThemeColor);
   const [autoSaveProject, setAutoSaveProject] = useState(() => config.ui?.autoSaveProject ?? DEFAULT_UI_CONFIG.autoSaveProject);
+  const [projectAssetsCacheEnabled, setProjectAssetsCacheEnabled] = useState(() => config.ui?.projectAssetsCacheEnabled ?? DEFAULT_UI_CONFIG.projectAssetsCacheEnabled);
   const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
@@ -902,6 +905,8 @@ function App() {
   const insertImageDragRef = useRef<{ id: string; mode: 'move' | 'scale' | 'rotate'; startX: number; startY: number; initialOffsetX: number; initialOffsetY: number; initialScale: number; initialRotation: number; initialDistance?: number; initialAngle?: number } | null>(null);
   const [slideEditBoxes, setSlideEditBoxes] = useState<Record<string, { centerX: number; centerY: number; width: number; height: number }>>({});
   const [renderCacheInfo, setRenderCacheInfo] = useState<RenderCacheInfo | null>(null);
+  const [projectResourceActionBusy, setProjectResourceActionBusy] = useState<'remote-copy' | 'local-copy' | 'refresh' | null>(null);
+  const [projectResourceActionReport, setProjectResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
   const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
   const [exportHardware, setExportHardware] = useState<'auto' | 'gpu' | 'cpu'>('auto');
   const [exportParallelSegments, setExportParallelSegments] = useState(false);
@@ -1782,6 +1787,7 @@ const [previewScale, setPreviewScale] = useState(1);
       themeColor: ui.themeColor,
       secondaryThemeColor: ui.secondaryThemeColor,
       autoSaveProject: Boolean(ui.autoSaveProject),
+      projectAssetsCacheEnabled: Boolean(ui.projectAssetsCacheEnabled),
       proxy: ui.proxy || '',
       settingsPosition: ui.settingsPosition,
       subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
@@ -1793,6 +1799,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setThemeColorState((prev: string) => (prev === ui.themeColor ? prev : ui.themeColor));
     setSecondaryThemeColorState((prev: string) => (prev === ui.secondaryThemeColor ? prev : ui.secondaryThemeColor));
     setAutoSaveProject((prev: boolean) => (prev === Boolean(ui.autoSaveProject) ? prev : Boolean(ui.autoSaveProject)));
+    setProjectAssetsCacheEnabled((prev: boolean) => (prev === Boolean(ui.projectAssetsCacheEnabled) ? prev : Boolean(ui.projectAssetsCacheEnabled)));
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
     setSubtitlePanelCompactMode((prev: boolean) => (prev === Boolean(ui.subtitlePanelCompactMode) ? prev : Boolean(ui.subtitlePanelCompactMode)));
@@ -1829,6 +1836,7 @@ const [previewScale, setPreviewScale] = useState(1);
       themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
       secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
       autoSaveProject,
+      projectAssetsCacheEnabled,
       proxy: proxyState.trim(),
       settingsPosition,
       subtitlePanelCompactMode,
@@ -1855,6 +1863,7 @@ const [previewScale, setPreviewScale] = useState(1);
         prevUi.themeColor === (themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT)) &&
         prevUi.secondaryThemeColor === (secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor) &&
         prevUi.autoSaveProject === autoSaveProject &&
+        Boolean(prevUi.projectAssetsCacheEnabled) === projectAssetsCacheEnabled &&
         prevUi.proxy === proxyState.trim() &&
         prevUi.settingsPosition === settingsPosition &&
         Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
@@ -1876,6 +1885,7 @@ const [previewScale, setPreviewScale] = useState(1);
           themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
           secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
           autoSaveProject,
+          projectAssetsCacheEnabled,
           proxy: proxyState.trim(),
           settingsPosition,
           subtitlePanelCompactMode,
@@ -1886,7 +1896,7 @@ const [previewScale, setPreviewScale] = useState(1);
         },
       };
     });
-  }, [autoSaveProject, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets, fontPresets]);
+  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets, fontPresets]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -1910,6 +1920,12 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleProxyChangeTracked = useCallback((nextProxy: string) => {
     pushHistorySnapshot();
     setProxyState(nextProxy);
+    markProjectDirty();
+  }, [markProjectDirty, pushHistorySnapshot]);
+
+  const handleProjectAssetsCacheEnabledChangeTracked = useCallback((enabled: boolean) => {
+    pushHistorySnapshot();
+    setProjectAssetsCacheEnabled(enabled);
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
@@ -2311,7 +2327,10 @@ const [previewScale, setPreviewScale] = useState(1);
       const cachedPath = cachedRemoteAssets[assetPath || ''] || assetPath;
       return resolvePath(cachedPath) || cachedPath || '';
     };
-    const remapMarkdownImagePaths = (text: string) => text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => `![${alt}](${resolveExportAssetPath((src || '').trim())})`);
+    const remapMarkdownImagePaths = (text: string) => replaceMarkdownImageLinkSrcs(
+      text,
+      (match) => resolveExportAssetPath((match.src || '').trim())
+    );
     const remappedSpeakers = Object.fromEntries(
       Object.entries(restConfig.speakers || {}).map(([key, speaker]: [string, any]) => [
         key,
@@ -2723,6 +2742,17 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   }, [isExporting, t]);
 
+  useEffect(() => {
+    if (!window.electron) {
+      return;
+    }
+    window.electron.getRenderCacheInfo().then((info) => {
+      setRenderCacheInfo(info);
+    }).catch((error) => {
+      console.error('Failed to load render cache info:', error);
+    });
+  }, [projectPath]);
+
   const handleChooseExportPath = useCallback(async () => {
     if (!window.electron) return;
     const result = await window.electron.showOpenDialog({
@@ -2968,6 +2998,57 @@ const [previewScale, setPreviewScale] = useState(1);
     return resolveAssetPathAgainstProject(value, projectPath);
   }
 
+  const looksLikeLocalFsPath = useCallback((value: string | undefined) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return false;
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return false;
+    return trimmed.startsWith('file://') || /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\') || trimmed.startsWith('/');
+  }, []);
+
+  const importProjectAssetPath = useCallback(async (sourcePath: string, baseProjectFilePath?: string | null, preferredName?: string) => {
+    const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
+      ? baseProjectFilePath
+      : (projectPath && projectPath !== 'web-demo' ? projectPath : null);
+    const trimmed = sourcePath.trim();
+    if (!window.electron || !trimmed || !targetProjectPath || !looksLikeLocalFsPath(trimmed)) {
+      return { storedPath: trimmed, absolutePath: trimmed };
+    }
+    return await window.electron.importProjectAsset({ projectFilePath: targetProjectPath, sourcePath: trimmed, preferredName });
+  }, [looksLikeLocalFsPath, projectPath]);
+
+  const getCurrentConfigWithUi = useCallback(() => ({
+    ...getProjectConfig(),
+    ui: {
+      ...(config.ui || DEFAULT_UI_CONFIG),
+      isDarkMode,
+      themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
+      secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
+      autoSaveProject,
+      projectAssetsCacheEnabled,
+      proxy: proxyState.trim(),
+      settingsPosition,
+      subtitlePanelCompactMode,
+      recentProject,
+      presets,
+      annotationPresets,
+      fontPresets,
+    }
+  }), [annotationPresets, autoSaveProject, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
+
+  const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
+    const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
+      ? baseProjectFilePath
+      : projectPath;
+    return resolveAssetPathAgainstProject(value, targetProjectPath);
+  }, [projectPath]);
+
+  const isPathInsideDirectory = useCallback((targetPath: string | undefined, directoryPath: string | undefined) => {
+    if (!targetPath || !directoryPath) return false;
+    const normalizedTarget = targetPath.replace(/\\/g, '/');
+    const normalizedDirectory = directoryPath.replace(/\\/g, '/').replace(/\/$/, '');
+    return normalizedTarget === normalizedDirectory || normalizedTarget.startsWith(`${normalizedDirectory}/`);
+  }, []);
+
   const collectProjectResources = useCallback((configToInspect: any): ProjectResourceEntry[] => {
     const resources: ProjectResourceEntry[] = [];
     const pushResource = (entry: ProjectResourceEntry | null) => {
@@ -3012,19 +3093,15 @@ const [previewScale, setPreviewScale] = useState(1);
         return;
       }
 
-      const markdownImagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
-      let match: RegExpExecArray | null = null;
-      let imageIndex = 0;
-      while ((match = markdownImagePattern.exec(item.text)) !== null) {
-        const rawPath = (match[2] || '').trim();
+      extractMarkdownImageLinks(item.text).forEach((match, imageIndex) => {
+        const rawPath = (match.src || '').trim();
         pushResource({
           id: `content.${itemIndex}.markdownImage.${imageIndex}`,
           label: `${t('subtitle.title')} #${itemIndex + 1} / Markdown 图片`,
           value: rawPath,
           kind: /^https?:\/\//i.test(rawPath) ? 'url' : 'file'
         });
-        imageIndex += 1;
-      }
+      });
     });
 
     return resources;
@@ -3040,15 +3117,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (!contentItem || typeof contentItem.text !== 'string') {
         return cloned;
       }
-      let currentImageIndex = 0;
-      contentItem.text = contentItem.text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (fullMatch: string, alt: string) => {
-        if (currentImageIndex === imageIndex) {
-          currentImageIndex += 1;
-          return `![${alt}](${nextValue})`;
-        }
-        currentImageIndex += 1;
-        return fullMatch;
-      });
+      contentItem.text = replaceMarkdownImageLinkSrcAt(contentItem.text, imageIndex, nextValue);
       return cloned;
     }
 
@@ -3068,6 +3137,199 @@ const [previewScale, setPreviewScale] = useState(1);
     cursor[lastKey as keyof typeof cursor] = nextValue;
     return cloned;
   }, []);
+
+  const syncProjectResourceConfigState = useCallback((nextConfig: any, options?: { markDirty?: boolean }) => {
+    setConfig(nextConfig);
+    savedSpeakerNamesRef.current = getSpeakerNameSnapshot(nextConfig.speakers);
+    if (nextConfig?.ui?.fontPresets) {
+      setFontPresets(nextConfig.ui.fontPresets);
+    }
+    if (options?.markDirty) {
+      markProjectDirty();
+    }
+  }, [markProjectDirty]);
+
+  const applyProjectResourceMigrationResult = useCallback(async (nextConfig: any, toastKey: string) => {
+    if (window.electron && projectPath && projectPath !== 'web-demo') {
+      await window.electron.writeFile(projectPath, JSON.stringify(nextConfig, null, 2));
+    }
+    pushHistorySnapshot();
+    syncProjectResourceConfigState(nextConfig);
+    setProjectResourceCheckDialog(null);
+    clearProjectDirty();
+    showToast(t(toastKey));
+  }, [clearProjectDirty, projectPath, pushHistorySnapshot, showToast, syncProjectResourceConfigState, t]);
+
+  const handleCopyRemoteAssetsToProject = useCallback(async () => {
+    if (projectResourceActionBusy) {
+      return;
+    }
+    if (!window.electron) {
+      setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
+      return;
+    }
+    if (!projectPath || projectPath === 'web-demo') {
+      setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
+      return;
+    }
+    setProjectResourceActionBusy('remote-copy');
+    try {
+      const workingConfig = getCurrentConfigWithUi();
+      const resources = collectProjectResources(workingConfig);
+      const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
+      const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
+      let nextConfig = workingConfig;
+      let changed = 0;
+      const changedItems: string[] = [];
+
+      for (const resource of resources) {
+        const rawValue = resource.value?.trim();
+        if (!rawValue) continue;
+
+        if (resource.kind === 'url') {
+          let imported = importedBySource.get(rawValue);
+          if (typeof imported === 'undefined') {
+            const cachedPath = await window.electron.cacheRemoteAsset(rawValue);
+            imported = cachedPath ? await importProjectAssetPath(cachedPath, projectPath) : null;
+            importedBySource.set(rawValue, imported);
+          }
+          if (imported?.storedPath && imported.storedPath !== rawValue) {
+            nextConfig = updateConfigValueByPath(nextConfig, resource.id, imported.storedPath);
+            changed += 1;
+            changedItems.push(`${resource.label} -> ${imported.storedPath}`);
+          }
+          continue;
+        }
+
+        const resolvedPath = getResolvedProjectAssetPath(rawValue, projectPath);
+        if (!resolvedPath || !isPathInsideDirectory(resolvedPath, remoteCacheDir)) {
+          continue;
+        }
+        let imported = importedBySource.get(resolvedPath);
+        if (typeof imported === 'undefined') {
+          imported = await importProjectAssetPath(resolvedPath, projectPath);
+          importedBySource.set(resolvedPath, imported);
+        }
+        if (imported?.storedPath && imported.storedPath !== rawValue) {
+          nextConfig = updateConfigValueByPath(nextConfig, resource.id, imported.storedPath);
+          changed += 1;
+          changedItems.push(`${resource.label} -> ${imported.storedPath}`);
+        }
+      }
+
+      if (changed > 0) {
+        await applyProjectResourceMigrationResult(nextConfig, 'global.copyRemoteAssetsDone');
+        setProjectResourceActionReport({ title: t('global.resourceActionChanged', { count: changed }), items: changedItems });
+      } else {
+        showToast(t('global.copyRemoteAssetsNoop'));
+        setProjectResourceActionReport({ title: t('global.resourceActionNoChanges'), items: [] });
+      }
+    } catch (error: any) {
+      showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
+      setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
+    } finally {
+      setProjectResourceActionBusy(null);
+    }
+  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, projectPath, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
+
+  const handleCopyLocalAssetsToProject = useCallback(async () => {
+    if (projectResourceActionBusy) {
+      return;
+    }
+    if (!window.electron) {
+      setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
+      return;
+    }
+    if (!projectPath || projectPath === 'web-demo') {
+      setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
+      return;
+    }
+    setProjectResourceActionBusy('local-copy');
+    try {
+      const workingConfig = getCurrentConfigWithUi();
+      const resources = collectProjectResources(workingConfig);
+      const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
+      const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
+      let nextConfig = workingConfig;
+      let changed = 0;
+      const changedItems: string[] = [];
+
+      for (const resource of resources) {
+        if (resource.kind !== 'file') continue;
+        const rawValue = resource.value?.trim();
+        const resolvedPath = getResolvedProjectAssetPath(rawValue, projectPath);
+        if (!rawValue || !resolvedPath) continue;
+        if (!looksLikeLocalFsPath(resolvedPath)) continue;
+        if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) continue;
+        let imported = importedBySource.get(resolvedPath);
+        if (typeof imported === 'undefined') {
+          imported = await importProjectAssetPath(resolvedPath, projectPath);
+          importedBySource.set(resolvedPath, imported);
+        }
+        if (imported?.storedPath && imported.storedPath !== rawValue) {
+          nextConfig = updateConfigValueByPath(nextConfig, resource.id, imported.storedPath);
+          changed += 1;
+          changedItems.push(`${resource.label} -> ${imported.storedPath}`);
+        }
+      }
+
+      if (changed > 0) {
+        await applyProjectResourceMigrationResult(nextConfig, 'global.copyLocalAssetsDone');
+        setProjectResourceActionReport({ title: t('global.resourceActionChanged', { count: changed }), items: changedItems });
+      } else {
+        showToast(t('global.copyLocalAssetsNoop'));
+        setProjectResourceActionReport({ title: t('global.resourceActionNoChanges'), items: [] });
+      }
+    } catch (error: any) {
+      showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
+      setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
+    } finally {
+      setProjectResourceActionBusy(null);
+    }
+  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, showToast, t, updateConfigValueByPath]);
+
+  const handleRefreshRemoteAssetCache = useCallback(async () => {
+    if (projectResourceActionBusy) {
+      return;
+    }
+    if (!window.electron) {
+      setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
+      return;
+    }
+    if (!projectPath || projectPath === 'web-demo') {
+      setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
+      return;
+    }
+    setProjectResourceActionBusy('refresh');
+    try {
+      const workingConfig = getCurrentConfigWithUi();
+      const resources = collectProjectResources(workingConfig).filter((resource) => resource.kind === 'url');
+      let refreshed = 0;
+      const refreshedItems: string[] = [];
+      for (const resource of resources) {
+        const rawValue = resource.value?.trim();
+        if (!rawValue) continue;
+        const cachedPath = await window.electron.cacheRemoteAsset(rawValue);
+        if (cachedPath) {
+          const finalPath = projectAssetsCacheEnabled && projectPath
+            ? (await importProjectAssetPath(cachedPath, projectPath))?.absolutePath || cachedPath
+            : cachedPath;
+          setCachedRemoteAssets((prev) => (prev[rawValue] === finalPath ? prev : { ...prev, [rawValue]: finalPath || cachedPath }));
+          refreshed += 1;
+          refreshedItems.push(`${resource.label} -> ${rawValue}`);
+        }
+      }
+      const info = await window.electron.getRenderCacheInfo();
+      setRenderCacheInfo(info);
+      showToast(t(refreshed > 0 ? 'global.refreshRemoteAssetsDone' : 'global.refreshRemoteAssetsNoop'));
+      setProjectResourceActionReport({ title: refreshed > 0 ? t('global.resourceActionChanged', { count: refreshed }) : t('global.resourceActionNoChanges'), items: refreshed > 0 ? refreshedItems : [] });
+    } catch (error: any) {
+      showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
+      setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
+    } finally {
+      setProjectResourceActionBusy(null);
+    }
+  }, [collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, projectAssetsCacheEnabled, projectPath, projectResourceActionBusy, showToast, t]);
 
   const getProjectResourceFileType = useCallback((resourceId: string, resourceValue: string): ProjectResourceFileType => {
     const lowerValue = (resourceValue || '').toLowerCase();
@@ -3176,32 +3438,53 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    const urls = [
-      config.background?.image,
-      ...(config.background?.slides || []).map((slide: BackgroundSlideItem) => slide?.image),
-      ...Object.values(config.speakers || {}).map((speaker: any) => speaker?.avatar),
-      ...Object.values(fontPresets || {}).map((preset: any) => preset?.filePath)
-    ].filter((value): value is string => Boolean(value) && /^https?:\/\//i.test(value));
-
-    if (!urls.length) {
+    const workingConfig = getCurrentConfigWithUi();
+    const remoteResources = collectProjectResources(workingConfig).filter((resource) => resource.kind === 'url' && Boolean(resource.value?.trim()));
+    if (!remoteResources.length) {
       return;
     }
 
     let cancelled = false;
 
     const cacheAssets = async () => {
-      for (const url of urls) {
-        if (cachedRemoteAssets[url]) {
-          continue;
-        }
+      const importedByUrl = new Map<string, { storedPath: string; absolutePath: string } | null>();
+      let nextConfig = workingConfig;
+      let migrated = false;
+
+      for (const resource of remoteResources) {
+        const url = resource.value.trim();
+        const existingCachedPath = cachedRemoteAssets[url];
+        let finalPath = existingCachedPath || '';
+
         try {
-          const cachedPath = await window.electron.cacheRemoteAsset(url);
-          if (!cancelled && cachedPath) {
-            setCachedRemoteAssets((prev) => (prev[url] === cachedPath ? prev : { ...prev, [url]: cachedPath }));
+          if (!finalPath) {
+            const cachedPath = await window.electron.cacheRemoteAsset(url);
+            finalPath = cachedPath || '';
+          }
+
+          if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo' && finalPath) {
+            let imported = importedByUrl.get(url);
+            if (typeof imported === 'undefined') {
+              imported = await importProjectAssetPath(finalPath, projectPath);
+              importedByUrl.set(url, imported);
+            }
+            if (imported?.storedPath && imported.storedPath !== url) {
+              finalPath = imported.absolutePath;
+              nextConfig = updateConfigValueByPath(nextConfig, resource.id, imported.storedPath);
+              migrated = true;
+            }
+          }
+
+          if (!cancelled && finalPath) {
+            setCachedRemoteAssets((prev) => (prev[url] === finalPath ? prev : { ...prev, [url]: finalPath }));
           }
         } catch (error) {
           console.warn('Failed to cache remote asset:', url, error);
         }
+      }
+
+      if (!cancelled && migrated) {
+        syncProjectResourceConfigState(nextConfig, { markDirty: true });
       }
     };
 
@@ -3210,7 +3493,7 @@ const [previewScale, setPreviewScale] = useState(1);
     return () => {
       cancelled = true;
     };
-  }, [config.background?.image, config.background?.slides, config.speakers, fontPresets, cachedRemoteAssets]);
+  }, [cachedRemoteAssets, collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, projectAssetsCacheEnabled, projectPath, syncProjectResourceConfigState, updateConfigValueByPath]);
 
   const resolvedAudioPath = webAudioObjectUrl || resolvePath(config.audioPath) || '';
   const previewFontFaceCss = useMemo(() => buildFontFaceCss(
@@ -3660,11 +3943,11 @@ const [previewScale, setPreviewScale] = useState(1);
         properties: ['openFile']
       });
       if (!res.canceled && res.filePaths.length > 0) {
-        const path = res.filePaths[0];
-        const content = await window.electron.readFile(path);
-        const lower = path.toLowerCase();
+        const selectedPath = res.filePaths[0];
+        const content = await window.electron.readFile(selectedPath);
+        const lower = selectedPath.toLowerCase();
         if (lower.endsWith('.ass')) {
-          setImportAssData({ path, content });
+          setImportAssData({ path: selectedPath, content });
         } else {
           const rows = lower.endsWith('.srt') ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
           const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
@@ -3742,8 +4025,6 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!currentProjectPath) {
       // 位于欢迎页时，先询问新建项目，然后注入对应的路径
       const overrides: any = {};
-      if (isAudio) overrides.audioPath = filePath;
-      if (isImage || isVideo) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
       
       const result = await window.electron.showSaveDialog({
         title: t('dialog.newProjectTitle'),
@@ -3752,6 +4033,10 @@ const [previewScale, setPreviewScale] = useState(1);
       });
       
       if (result.canceled || !result.filePath) return;
+
+      if (isAudio) overrides.audioPath = filePath;
+      if (isImage || isVideo) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
+      if (isAss) overrides.assPath = filePath;
       
       const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...overrides };
       await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
@@ -4003,13 +4288,13 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     let nextConfig = projectResourceCheckDialog.config;
-    projectResourceCheckDialog.missing.forEach((item) => {
+    for (const item of projectResourceCheckDialog.missing) {
       const replacement = item.replacement.trim();
       if (!replacement) {
-        return;
+        continue;
       }
       nextConfig = updateConfigValueByPath(nextConfig, item.id, replacement);
-    });
+    }
 
     try {
       if (window.electron) {
@@ -4856,6 +5141,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
                 autoSaveProject={autoSaveProject}
+                projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                 proxy={proxyState}
                 onThemeColorChange={handleThemeColorChangeTracked}
                 onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
@@ -4864,6 +5150,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   setAutoSaveProject(enabled);
                   markProjectDirty();
                 }}
+                onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                 onProxyChange={handleProxyChangeTracked}
                 onLanguageChange={handleLanguageChangeTracked}
                 onThemeChange={handleThemeModeChangeTracked}
@@ -4884,6 +5171,12 @@ const [previewScale, setPreviewScale] = useState(1);
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}
                 resolveAssetSrc={resolvePath}
+                projectPath={projectPath}
+                onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
+                onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
+                onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
+                resourceActionBusy={projectResourceActionBusy}
+                projectResourceActionReport={projectResourceActionReport}
               />
             </div>
           </div>
@@ -5016,6 +5309,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 setEditingSub={setEditingSub}
                 compactMode={subtitlePanelCompactMode}
                 onCompactModeChange={setSubtitlePanelCompactMode}
+                projectPath={projectPath}
+                projectAssetsCacheEnabled={projectAssetsCacheEnabled}
               />
             </div>
           )}
@@ -5037,15 +5332,17 @@ const [previewScale, setPreviewScale] = useState(1);
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
                 autoSaveProject={autoSaveProject}
+                projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                 proxy={proxyState}
                 onThemeColorChange={handleThemeColorChangeTracked}
                 onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
                 onAutoSaveProjectChange={(enabled: boolean) => {
                   pushHistorySnapshot();
-                  setAutoSaveProject(enabled);
-                  markProjectDirty();
-                }}
-                onProxyChange={handleProxyChangeTracked}
+                   setAutoSaveProject(enabled);
+                   markProjectDirty();
+                 }}
+                   onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
+                   onProxyChange={handleProxyChangeTracked}
                 onLanguageChange={handleLanguageChangeTracked}
                 onThemeChange={handleThemeModeChangeTracked}
                 settingsPosition={settingsPosition}
@@ -5070,9 +5367,15 @@ const [previewScale, setPreviewScale] = useState(1);
                    onActiveInsertImageChange={setActiveInsertImageId}
                     onEditInsertImage={(id) => {
                       openInsertImageEditorAtStart(id);
-                    }}
-                   resolveAssetSrc={resolvePath}
-                  />
+                     }}
+                     resolveAssetSrc={resolvePath}
+                     projectPath={projectPath}
+                     onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
+                     onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
+                     onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
+                     resourceActionBusy={projectResourceActionBusy}
+                     projectResourceActionReport={projectResourceActionReport}
+                   />
             </div>
           )}
           {settingsPosition === 'left' && showSettings && !shouldHideSidePanels && (
@@ -5189,11 +5492,13 @@ const [previewScale, setPreviewScale] = useState(1);
                   onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                   onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                   onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
-                  editingSub={editingSub}
-                  setEditingSub={setEditingSub}
-                  compactMode={subtitlePanelCompactMode}
-                  onCompactModeChange={setSubtitlePanelCompactMode}
-                />
+                   editingSub={editingSub}
+                   setEditingSub={setEditingSub}
+                   compactMode={subtitlePanelCompactMode}
+                   onCompactModeChange={setSubtitlePanelCompactMode}
+                   projectPath={projectPath}
+                   projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+                 />
               </div>
             </div>
           )}
@@ -5217,6 +5522,7 @@ const [previewScale, setPreviewScale] = useState(1);
                    themeColor={themeColor}
                    secondaryThemeColor={secondaryThemeColor}
                    autoSaveProject={autoSaveProject}
+                   projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                    proxy={proxyState}
                    onThemeColorChange={handleThemeColorChangeTracked}
                    onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
@@ -5225,7 +5531,8 @@ const [previewScale, setPreviewScale] = useState(1);
                      setAutoSaveProject(enabled);
                      markProjectDirty();
                    }}
-                   onProxyChange={handleProxyChangeTracked}
+                    onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
+                    onProxyChange={handleProxyChangeTracked}
                    onLanguageChange={handleLanguageChangeTracked}
                    onThemeChange={handleThemeModeChangeTracked}
                   settingsPosition={settingsPosition}
@@ -5242,9 +5549,15 @@ const [previewScale, setPreviewScale] = useState(1);
                    onRequestRemoveSpeaker={handleRequestRemoveSpeaker}
                    activeTab={activeTab}
                   setActiveTab={setActiveTab}
-                  onSelectImage={handleSelectImage}
-                  resolveAssetSrc={resolvePath}
-                />
+                   onSelectImage={handleSelectImage}
+                   resolveAssetSrc={resolvePath}
+                   projectPath={projectPath}
+                   onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
+                   onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
+                   onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
+                   resourceActionBusy={projectResourceActionBusy}
+                   projectResourceActionReport={projectResourceActionReport}
+                 />
               </div>
             </div>
           )}
@@ -5822,6 +6135,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 themeColor={themeColor}
                 secondaryThemeColor={secondaryThemeColor}
                 autoSaveProject={autoSaveProject}
+                projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                 proxy={proxyState}
                 onThemeColorChange={handleThemeColorChangeTracked}
                 onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
@@ -5830,6 +6144,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   setAutoSaveProject(enabled);
                   markProjectDirty();
                 }}
+                onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                 onProxyChange={handleProxyChangeTracked}
                 onLanguageChange={handleLanguageChangeTracked}
                 onThemeChange={handleThemeModeChangeTracked}
@@ -5857,6 +6172,12 @@ const [previewScale, setPreviewScale] = useState(1);
                   openInsertImageEditorAtStart(id);
                 }}
                 resolveAssetSrc={resolvePath}
+                projectPath={projectPath}
+                onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
+                onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
+                onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
+                resourceActionBusy={projectResourceActionBusy}
+                projectResourceActionReport={projectResourceActionReport}
               />
             </div>
           </div>
@@ -5960,6 +6281,7 @@ const [previewScale, setPreviewScale] = useState(1);
             themeColor={themeColor}
             secondaryThemeColor={secondaryThemeColor}
             autoSaveProject={autoSaveProject}
+            projectAssetsCacheEnabled={projectAssetsCacheEnabled}
             proxy={proxyState}
             onThemeColorChange={handleThemeColorChangeTracked}
             onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
@@ -5968,6 +6290,7 @@ const [previewScale, setPreviewScale] = useState(1);
               setAutoSaveProject(enabled);
               markProjectDirty();
             }}
+            onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
             onProxyChange={handleProxyChangeTracked}
             onLanguageChange={handleLanguageChangeTracked}
             onThemeChange={handleThemeModeChangeTracked}
@@ -5994,6 +6317,12 @@ const [previewScale, setPreviewScale] = useState(1);
             panelCollapsed={isMobileBottomPanelCollapsed}
             onTogglePanelCollapsed={() => setIsMobileBottomPanelCollapsed((prev) => !prev)}
             resolveAssetSrc={resolvePath}
+            projectPath={projectPath}
+            onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
+            onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
+            onRefreshRemoteAssetCache={handleRefreshRemoteAssetCache}
+            resourceActionBusy={projectResourceActionBusy}
+            projectResourceActionReport={projectResourceActionReport}
             subtitleContent={(
               <div className="h-full min-h-0 flex flex-col">
                 <div className="flex-1 min-h-0">
@@ -6015,6 +6344,8 @@ const [previewScale, setPreviewScale] = useState(1);
                     setEditingSub={setEditingSub}
                     compactMode={subtitlePanelCompactMode}
                     onCompactModeChange={setSubtitlePanelCompactMode}
+                    projectPath={projectPath}
+                    projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                   />
                 </div>
               </div>
@@ -6077,6 +6408,7 @@ const [previewScale, setPreviewScale] = useState(1);
         secondaryThemeColor={secondaryThemeColor}
         onClose={() => setShowAboutModal(false)}
         onOpenGithub={() => { void openExternalUrl('https://github.com/AlanWanco/PomChat'); }}
+        onOpenWiki={() => { void openExternalUrl('https://github.com/AlanWanco/PomChat/wiki'); }}
         onOpenReleases={() => { void openExternalUrl('https://github.com/AlanWanco/PomChat/releases'); }}
         onCheckUpdates={() => { void handleCheckForUpdates(); }}
         isCheckingUpdates={isCheckingUpdates}

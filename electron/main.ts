@@ -441,6 +441,71 @@ function saveImageBufferToCache(buffer: Buffer, contentType?: string | null, pre
   return outputPath;
 }
 
+function ensureProjectAssetsDir(projectFilePath: string) {
+  const projectDir = path.dirname(resolveAppFilePath(projectFilePath));
+  const assetsDir = path.join(projectDir, 'assets');
+  fs.mkdirSync(assetsDir, { recursive: true });
+  return assetsDir;
+}
+
+function createUniqueProjectAssetPath(projectFilePath: string, preferredName?: string | null, fallbackExtension?: string | null) {
+  const assetsDir = ensureProjectAssetsDir(projectFilePath);
+  const rawName = (preferredName || '').trim();
+  const parsed = rawName ? path.parse(rawName) : null;
+  const extension = (parsed?.ext || fallbackExtension || '.bin').toLowerCase();
+  const baseName = sanitizeFileStem(parsed?.name || 'asset');
+  let attempt = 0;
+
+  while (true) {
+    const fileName = attempt === 0 ? `${baseName}${extension}` : `${baseName}-${attempt + 1}${extension}`;
+    const outputPath = path.join(assetsDir, fileName);
+    if (!fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+    attempt += 1;
+  }
+}
+
+function importFileToProjectAssets(projectFilePath: string, sourcePath: string, preferredName?: string | null) {
+  const resolvedSourcePath = resolveProjectResourcePath(projectFilePath, sourcePath);
+  if (!resolvedSourcePath || !fs.existsSync(resolvedSourcePath)) {
+    throw new Error('Source file does not exist');
+  }
+
+  const stat = fs.statSync(resolvedSourcePath);
+  if (!stat.isFile()) {
+    throw new Error('Source path is not a file');
+  }
+
+  const normalizedSource = path.resolve(resolvedSourcePath);
+  const assetsDir = ensureProjectAssetsDir(projectFilePath);
+  const normalizedAssetsDir = path.resolve(assetsDir);
+  if (normalizedSource === normalizedAssetsDir || normalizedSource.startsWith(`${normalizedAssetsDir}${path.sep}`)) {
+    return {
+      storedPath: toProjectRelativePath(projectFilePath, normalizedSource),
+      absolutePath: normalizedSource,
+    };
+  }
+
+  const outputPath = createUniqueProjectAssetPath(projectFilePath, preferredName || path.basename(normalizedSource), path.extname(normalizedSource));
+  fs.copyFileSync(normalizedSource, outputPath);
+  return {
+    storedPath: toProjectRelativePath(projectFilePath, outputPath),
+    absolutePath: outputPath,
+  };
+}
+
+function saveImageBufferToProjectAssets(projectFilePath: string, buffer: Buffer, contentType?: string | null, preferredName?: string | null) {
+  const preferredExtension = preferredName ? path.extname(preferredName).toLowerCase() : '';
+  const extension = guessExtensionFromContentType(contentType || null) || preferredExtension || '.png';
+  const outputPath = createUniqueProjectAssetPath(projectFilePath, preferredName || 'clipboard-image', extension);
+  fs.writeFileSync(outputPath, buffer);
+  return {
+    storedPath: toProjectRelativePath(projectFilePath, outputPath),
+    absolutePath: outputPath,
+  };
+}
+
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron');
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
@@ -487,6 +552,16 @@ function toProjectRelativePath(projectFilePath: string, absolutePath: string) {
   const baseDir = path.dirname(resolveAppFilePath(projectFilePath));
   const relativePath = path.relative(baseDir, absolutePath);
   return relativePath.replace(/\\/g, '/');
+}
+
+function isPathInsideProjectDir(projectFilePath: string, absolutePath: string) {
+  const baseDir = path.resolve(path.dirname(resolveAppFilePath(projectFilePath)));
+  const targetPath = path.resolve(absolutePath);
+  const relativePath = path.relative(baseDir, targetPath);
+  if (!relativePath) {
+    return true;
+  }
+  return relativePath !== '..' && !relativePath.startsWith(`..${path.sep}`) && relativePath !== path.parse(relativePath).root;
 }
 
 function findSiblingFileByBasename(projectFilePath: string, resourcePath: string) {
@@ -543,8 +618,12 @@ async function inspectProjectResources(projectFilePath: string, resources: Array
     }
 
     if (fs.existsSync(resolvedValue)) {
-      const suggestedValue = toProjectRelativePath(projectFilePath, resolvedValue);
-      results.push({ id: resource.id, state: suggestedValue && suggestedValue !== originalValue ? 'updated-relative' : 'ok', resolvedValue, suggestedValue });
+      if (isPathInsideProjectDir(projectFilePath, resolvedValue)) {
+        const suggestedValue = toProjectRelativePath(projectFilePath, resolvedValue);
+        results.push({ id: resource.id, state: suggestedValue && suggestedValue !== originalValue ? 'updated-relative' : 'ok', resolvedValue, suggestedValue });
+      } else {
+        results.push({ id: resource.id, state: 'ok', resolvedValue });
+      }
       continue;
     }
 
@@ -1017,6 +1096,22 @@ ipcMain.handle('save-clipboard-image-to-cache', async (_event, payload: { bytes:
   }
 
   return saveImageBufferToCache(Buffer.from(payload.bytes), payload.contentType, payload.preferredName);
+});
+
+ipcMain.handle('import-project-asset', async (_event, payload: { projectFilePath: string; sourcePath: string; preferredName?: string }) => {
+  if (!payload?.projectFilePath || !payload?.sourcePath) {
+    return null;
+  }
+
+  return importFileToProjectAssets(payload.projectFilePath, payload.sourcePath, payload.preferredName);
+});
+
+ipcMain.handle('save-clipboard-image-to-project-assets', async (_event, payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => {
+  if (!payload?.projectFilePath || !Array.isArray(payload.bytes) || payload.bytes.length === 0) {
+    return null;
+  }
+
+  return saveImageBufferToProjectAssets(payload.projectFilePath, Buffer.from(payload.bytes), payload.contentType, payload.preferredName);
 });
 
 ipcMain.handle('show-save-dialog', async (_event, options) => {

@@ -16,6 +16,8 @@ interface Window {
     clearRenderCache: (type: 'remote-assets' | 'remotion-temp') => Promise<{ cleared: boolean; type: string; targets?: string[] }>;
     cacheRemoteAsset: (assetUrl: string) => Promise<string | null>;
     saveClipboardImageToCache: (payload: { bytes: number[]; contentType?: string; preferredName?: string }) => Promise<string | null>;
+    importProjectAsset: (payload: { projectFilePath: string; sourcePath: string; preferredName?: string }) => Promise<{ storedPath: string; absolutePath: string } | null>;
+    saveClipboardImageToProjectAssets: (payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => Promise<{ storedPath: string; absolutePath: string } | null>;
     showSaveDialog: (options: any) => Promise<any>;
     showItemInFolder: (filePath: string) => Promise<boolean>;
     openExportLogDir: () => Promise<boolean>;

@@ -32,6 +32,7 @@ interface SettingsPanelProps {
   onThemeColorChange: (color: string) => void;
   onSecondaryThemeColorChange: (color: string) => void;
   onAutoSaveProjectChange: (enabled: boolean) => void;
+  onProjectAssetsCacheEnabledChange: (enabled: boolean) => void;
   onProxyChange: (proxy: string) => void;
   onLanguageChange: (language: Language) => void;
   onThemeChange: (isDark: boolean) => void;
@@ -66,6 +67,13 @@ interface SettingsPanelProps {
   onActiveInsertImageChange?: (id: string | null) => void;
   onEditInsertImage?: (id: string) => void;
   resolveAssetSrc?: (src?: string) => string | undefined;
+  projectPath?: string | null;
+  projectAssetsCacheEnabled: boolean;
+  onCopyRemoteAssetsToProject?: () => void | Promise<void>;
+  onCopyLocalAssetsToProject?: () => void | Promise<void>;
+  onRefreshRemoteAssetCache?: () => void | Promise<void>;
+  resourceActionBusy?: 'remote-copy' | 'local-copy' | 'refresh' | null;
+  projectResourceActionReport?: { title: string; items: string[] } | null;
 }
 
 function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onWheelStep?: (direction: 'up' | 'down') => void }) {
@@ -100,6 +108,7 @@ function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement
 export function SettingsPanel({ 
   config, onConfigChange, 
   isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onProxyChange, onLanguageChange, onThemeChange, 
+  onProjectAssetsCacheEnabledChange,
   settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
   annotationPresets, onAnnotationPresetsChange,
@@ -114,7 +123,14 @@ export function SettingsPanel({
   focusInsertImageSettingsKey = 0,
   onActiveInsertImageChange,
   onEditInsertImage,
-  resolveAssetSrc
+  resolveAssetSrc,
+  projectPath = null,
+  projectAssetsCacheEnabled,
+  onCopyRemoteAssetsToProject,
+  onCopyLocalAssetsToProject,
+  onRefreshRemoteAssetCache,
+  resourceActionBusy = null,
+  projectResourceActionReport = null,
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
@@ -179,6 +195,7 @@ export function SettingsPanel({
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
   const [hoveredSettingsSection, setHoveredSettingsSection] = useState<string>('');
+  const [localResourceActionReport, setLocalResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
   const backgroundSectionHeaderRef = useRef<HTMLDivElement | null>(null);
   const backgroundSlideTabsRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -227,6 +244,21 @@ export function SettingsPanel({
       : [];
   const visibleSettingsSectionIds = visibleSettingsSections.map((section) => section.id).join('|');
   const floatingNavTop = hideHeader ? 64 : compactHeader ? 108 : 120;
+
+  useEffect(() => {
+    if (projectResourceActionReport) {
+      setLocalResourceActionReport(projectResourceActionReport);
+    }
+  }, [projectResourceActionReport]);
+
+  const runResourceAction = (runner: (() => void | Promise<void>) | undefined, pendingLabel: string) => {
+    setLocalResourceActionReport({ title: pendingLabel, items: [] });
+    if (!runner) {
+      setLocalResourceActionReport({ title: t('global.resourceActionUnavailable'), items: [] });
+      return;
+    }
+    void runner();
+  };
 
   const registerSettingsSection = (id: string) => (node: HTMLDivElement | null) => {
     settingsSectionRefs.current[id] = node;
@@ -779,10 +811,23 @@ export function SettingsPanel({
 
     const directPath = window.electron.getDroppedFilePath(file) || '';
     if (directPath) {
+      if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
+        const imported = await window.electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: directPath, preferredName: file.name });
+        return imported?.storedPath || directPath;
+      }
       return directPath;
     }
 
     const arrayBuffer = await file.arrayBuffer();
+    if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
+      const imported = await window.electron.saveClipboardImageToProjectAssets({
+        projectFilePath: projectPath,
+        bytes: Array.from(new Uint8Array(arrayBuffer)),
+        contentType: file.type,
+        preferredName: file.name,
+      });
+      return imported?.storedPath || '';
+    }
     return await window.electron.saveClipboardImageToCache({
       bytes: Array.from(new Uint8Array(arrayBuffer)),
       contentType: file.type,
@@ -1255,6 +1300,114 @@ export function SettingsPanel({
                 <span>{autoSaveProject ? t('common.enabled') : t('common.disabled')}</span>
                 <span className="text-xs opacity-70">{t('global.autoSaveProjectHint')}</span>
               </button>
+            </div>
+
+            <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.projectAssetsCache')}</label>
+                    <Tooltip
+                      content={t('global.projectAssetsCacheHint')}
+                      placement="top"
+                      width={260}
+                      backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.92)' : 'rgba(255, 255, 255, 0.96)'}
+                      borderColor={`${secondaryThemeColor}33`}
+                      textColor={uiTheme.text}
+                    >
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px]" style={{ borderColor: uiTheme.border, color: uiTheme.textMuted }}>?</span>
+                    </Tooltip>
+                  </div>
+                  <p className="text-[11px] opacity-60 leading-relaxed">{t('global.projectAssetsCacheSubtle')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onProjectAssetsCacheEnabledChange(!projectAssetsCacheEnabled)}
+                className="w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors"
+                style={{
+                  backgroundColor: projectAssetsCacheEnabled ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                  borderColor: projectAssetsCacheEnabled ? `${secondaryThemeColor}55` : uiTheme.border,
+                  color: uiTheme.text,
+                }}
+              >
+                <span>{projectAssetsCacheEnabled ? t('common.enabled') : t('common.disabled')}</span>
+                <span className="text-xs opacity-70">{t('global.projectAssetsCacheToggle')}</span>
+              </button>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  disabled={resourceActionBusy !== null}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    runResourceAction(onCopyRemoteAssetsToProject, t('global.resourceActionChecking'));
+                  }}
+                  className="w-full rounded-md border px-3 py-2 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    borderColor: `${secondaryThemeColor}44`,
+                    backgroundColor: `${secondaryThemeColor}14`,
+                    color: uiTheme.text,
+                    cursor: resourceActionBusy === null ? 'pointer' : 'not-allowed',
+                    boxShadow: `0 8px 24px ${secondaryThemeColor}14`,
+                  }}
+                  title={t('global.resourceActionManualCheck')}
+                >
+                  {resourceActionBusy === 'remote-copy' ? t('global.resourceActionRunning') : t('global.copyRemoteAssetsToProject')}
+                </button>
+                <button
+                  type="button"
+                  disabled={resourceActionBusy !== null}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    runResourceAction(onCopyLocalAssetsToProject, t('global.resourceActionChecking'));
+                  }}
+                  className="w-full rounded-md border px-3 py-2 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    borderColor: `${secondaryThemeColor}44`,
+                    backgroundColor: `${secondaryThemeColor}14`,
+                    color: uiTheme.text,
+                    cursor: resourceActionBusy === null ? 'pointer' : 'not-allowed',
+                    boxShadow: `0 8px 24px ${secondaryThemeColor}14`,
+                  }}
+                  title={t('global.resourceActionManualCheck')}
+                >
+                  {resourceActionBusy === 'local-copy' ? t('global.resourceActionRunning') : t('global.copyLocalAssetsToProject')}
+                </button>
+                <button
+                  type="button"
+                  disabled={resourceActionBusy !== null}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    runResourceAction(onRefreshRemoteAssetCache, t('global.resourceActionChecking'));
+                  }}
+                  className="w-full rounded-md border px-3 py-2 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    borderColor: `${secondaryThemeColor}44`,
+                    backgroundColor: `${secondaryThemeColor}14`,
+                    color: uiTheme.text,
+                    cursor: resourceActionBusy === null ? 'pointer' : 'not-allowed',
+                    boxShadow: `0 8px 24px ${secondaryThemeColor}14`,
+                  }}
+                  title={t('global.resourceActionManualCheck')}
+                >
+                  {resourceActionBusy === 'refresh' ? t('global.resourceActionRunning') : t('global.refreshRemoteAssetCache')}
+                </button>
+              </div>
+              {localResourceActionReport ? (
+                <div className="space-y-2 rounded-lg border px-3 py-2 text-[11px]" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                  <p className="opacity-75">{localResourceActionReport.title}</p>
+                  {localResourceActionReport.items.length > 0 ? (
+                    <div className="max-h-40 overflow-auto space-y-1">
+                      {localResourceActionReport.items.map((item, index) => (
+                        <div key={`${item}-${index}`} className="break-all opacity-70">{item}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
@@ -1820,13 +1973,14 @@ export function SettingsPanel({
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs opacity-70">{t('project.audioPath')}</span>
-                <input
-                  type="text"
-                  value={config.audioPath || ''}
-                  onChange={(e) => updateConfig('audioPath', e.target.value)}
-                  title={t('project.quickPasteFilePathTip')}
-                  className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
-                  style={inputSurfaceStyle}
+                    <input
+                      type="text"
+                      value={config.audioPath || ''}
+                      onChange={(e) => updateConfig('audioPath', e.target.value)}
+                      onPaste={createImageAwarePathPasteHandler(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus'], (path) => updateConfig('audioPath', path))}
+                      title={t('project.quickPasteFilePathTip')}
+                      className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
+                      style={inputSurfaceStyle}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">

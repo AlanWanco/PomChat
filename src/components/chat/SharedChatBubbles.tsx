@@ -340,8 +340,11 @@ type AssStyledSegment =
   | { type: 'text'; value: string; style: AssInlineStyleState }
   | { type: 'linebreak'; style: AssInlineStyleState };
 
+type MarkdownInlineCandidate =
+  | { type: 'image'; match: string[]; index: number }
+  | { type: 'color' | 'size' | 'font' | 'bold' | 'strike' | 'italic'; match: RegExpMatchArray; index: number };
+
 const MARKDOWN_PATTERNS = {
-  image: /!\[([^\]]*)\]\(([^)]+)\)/,
   color: /<color=([^>]+)>([\s\S]*?)<\/color>/,
   size: /<size=([^>]+)>([\s\S]*?)<\/size>/,
   font: /<font=([^>]+)>([\s\S]*?)<\/font>/,
@@ -350,22 +353,176 @@ const MARKDOWN_PATTERNS = {
   italic: /(^|[^*])\*([^*][\s\S]*?)\*/,
 };
 
+export type MarkdownImageLinkMatch = {
+  fullMatch: string;
+  alt: string;
+  src: string;
+  start: number;
+  end: number;
+};
+
+const parseMarkdownImageLinkAt = (input: string, startIndex: number): MarkdownImageLinkMatch | null => {
+  if (!input.startsWith('![', startIndex)) {
+    return null;
+  }
+
+  let cursor = startIndex + 2;
+  let alt = '';
+  while (cursor < input.length) {
+    const char = input[cursor];
+    if (char === ']' && input[cursor - 1] !== '\\') {
+      break;
+    }
+    alt += char;
+    cursor += 1;
+  }
+
+  if (cursor >= input.length || input[cursor] !== ']' || input[cursor + 1] !== '(') {
+    return null;
+  }
+
+  cursor += 2;
+  while (cursor < input.length && /\s/.test(input[cursor])) {
+    cursor += 1;
+  }
+
+  let src = '';
+  if (input[cursor] === '<') {
+    cursor += 1;
+    while (cursor < input.length) {
+      const char = input[cursor];
+      if (char === '>' && input[cursor - 1] !== '\\') {
+        cursor += 1;
+        break;
+      }
+      src += char;
+      cursor += 1;
+    }
+    while (cursor < input.length && input[cursor] !== ')') {
+      cursor += 1;
+    }
+  } else {
+    let depth = 0;
+    while (cursor < input.length) {
+      const char = input[cursor];
+      if (char === '\\' && cursor + 1 < input.length) {
+        src += input[cursor + 1];
+        cursor += 2;
+        continue;
+      }
+      if (char === '(') {
+        depth += 1;
+        src += char;
+        cursor += 1;
+        continue;
+      }
+      if (char === ')') {
+        if (depth === 0) {
+          break;
+        }
+        depth -= 1;
+        src += char;
+        cursor += 1;
+        continue;
+      }
+      src += char;
+      cursor += 1;
+    }
+  }
+
+  if (cursor >= input.length || input[cursor] !== ')') {
+    return null;
+  }
+
+  const end = cursor + 1;
+  return {
+    fullMatch: input.slice(startIndex, end),
+    alt,
+    src: src.trim(),
+    start: startIndex,
+    end,
+  };
+};
+
+export const extractMarkdownImageLinks = (input: string): MarkdownImageLinkMatch[] => {
+  const matches: MarkdownImageLinkMatch[] = [];
+  let cursor = 0;
+  while (cursor < input.length) {
+    const start = input.indexOf('![', cursor);
+    if (start < 0) {
+      break;
+    }
+    const match = parseMarkdownImageLinkAt(input, start);
+    if (match) {
+      matches.push(match);
+      cursor = match.end;
+    } else {
+      cursor = start + 2;
+    }
+  }
+  return matches;
+};
+
+export const replaceMarkdownImageLinkSrcAt = (input: string, imageIndex: number, nextSrc: string): string => {
+  const matches = extractMarkdownImageLinks(input);
+  const target = matches[imageIndex];
+  if (!target) {
+    return input;
+  }
+  return `${input.slice(0, target.start)}![${target.alt}](${nextSrc})${input.slice(target.end)}`;
+};
+
+export const replaceMarkdownImageLinkSrcs = (input: string, replacer: (match: MarkdownImageLinkMatch, index: number) => string): string => {
+  const matches = extractMarkdownImageLinks(input);
+  if (!matches.length) {
+    return input;
+  }
+  let result = '';
+  let cursor = 0;
+  matches.forEach((match, index) => {
+    result += input.slice(cursor, match.start);
+    result += `![${match.alt}](${replacer(match, index)})`;
+    cursor = match.end;
+  });
+  result += input.slice(cursor);
+  return result;
+};
+
 const tokenizeMarkdownInline = (input: string): MarkdownToken[] => {
   const tokens: MarkdownToken[] = [];
   let rest = input;
 
   while (rest.length > 0) {
+    const imageMatch = extractMarkdownImageLinks(rest)[0] || null;
     const candidates = [
-      { type: 'image' as const, match: rest.match(MARKDOWN_PATTERNS.image) },
-      { type: 'color' as const, match: rest.match(MARKDOWN_PATTERNS.color) },
-      { type: 'size' as const, match: rest.match(MARKDOWN_PATTERNS.size) },
-      { type: 'font' as const, match: rest.match(MARKDOWN_PATTERNS.font) },
-      { type: 'bold' as const, match: rest.match(MARKDOWN_PATTERNS.bold) },
-      { type: 'strike' as const, match: rest.match(MARKDOWN_PATTERNS.strike) },
-      { type: 'italic' as const, match: rest.match(MARKDOWN_PATTERNS.italic) },
+      imageMatch ? { type: 'image' as const, match: [imageMatch.fullMatch, imageMatch.alt, imageMatch.src], index: imageMatch.start } : null,
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.color);
+        return match && typeof match.index === 'number' ? { type: 'color' as const, match, index: match.index } : null;
+      })(),
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.size);
+        return match && typeof match.index === 'number' ? { type: 'size' as const, match, index: match.index } : null;
+      })(),
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.font);
+        return match && typeof match.index === 'number' ? { type: 'font' as const, match, index: match.index } : null;
+      })(),
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.bold);
+        return match && typeof match.index === 'number' ? { type: 'bold' as const, match, index: match.index } : null;
+      })(),
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.strike);
+        return match && typeof match.index === 'number' ? { type: 'strike' as const, match, index: match.index } : null;
+      })(),
+      (() => {
+        const match = rest.match(MARKDOWN_PATTERNS.italic);
+        return match && typeof match.index === 'number' ? { type: 'italic' as const, match, index: match.index } : null;
+      })(),
     ]
-      .filter((candidate) => candidate.match && typeof candidate.match.index === 'number')
-      .sort((a, b) => (a.match!.index ?? 0) - (b.match!.index ?? 0));
+      .filter((candidate): candidate is MarkdownInlineCandidate => candidate !== null)
+      .sort((a, b) => a.index - b.index);
 
     const next = candidates[0];
     if (!next?.match) {
@@ -373,7 +530,7 @@ const tokenizeMarkdownInline = (input: string): MarkdownToken[] => {
       break;
     }
 
-    const matchIndex = next.match.index ?? 0;
+    const matchIndex = next.index ?? 0;
     if (matchIndex > 0) {
       tokens.push({ type: 'text', value: rest.slice(0, matchIndex) });
     }

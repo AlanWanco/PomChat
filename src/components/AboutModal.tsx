@@ -20,6 +20,7 @@ interface AboutModalProps {
   secondaryThemeColor: string;
   onClose: () => void;
   onOpenGithub: () => void;
+  onOpenWiki: () => void;
   onOpenReleases: () => void;
   onCheckUpdates: () => void;
   isCheckingUpdates: boolean;
@@ -34,6 +35,7 @@ export function AboutModal({
   secondaryThemeColor,
   onClose,
   onOpenGithub,
+  onOpenWiki,
   onOpenReleases,
   onCheckUpdates,
   isCheckingUpdates,
@@ -138,6 +140,10 @@ export function AboutModal({
             <button type="button" onClick={onOpenGithub} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-colors" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
               <GitBranch size={16} />
               {t('about.githubRepo')}
+            </button>
+            <button type="button" onClick={onOpenWiki} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-colors" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
+              <ExternalLink size={16} />
+              {t('about.wikiPage')}
             </button>
             <button type="button" onClick={onOpenReleases} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-colors" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
               <ExternalLink size={16} />

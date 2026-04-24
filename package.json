@@ -1,7 +1,7 @@
 {
   "name": "pomchat",
   "private": true,
-  "version": "0.3.6",
+  "version": "0.3.7-beta.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -60,6 +60,7 @@
       "dist/**",
       "dist-electron/**",
       "electron/remotion-worker.cjs",
+      "src/fontPresets.ts",
       "src/remotion/**",
       "src/components/chat/**",
       "package.json"

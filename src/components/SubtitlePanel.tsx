@@ -23,9 +23,11 @@ interface SubtitlePanelProps {
   setEditingSub?: (sub: { id: string, start: number, end: number, text: string } | null) => void;
   compactMode: boolean;
   onCompactModeChange: (next: boolean) => void;
+  projectPath?: string | null;
+  projectAssetsCacheEnabled?: boolean;
 }
 
-export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, editingSub, setEditingSub, compactMode, onCompactModeChange }: SubtitlePanelProps) {
+export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false }: SubtitlePanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
@@ -367,16 +369,29 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
       if (window.electron) {
         imagePath = window.electron.getDroppedFilePath(file) || '';
+        if (imagePath && projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
+          const imported = await window.electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: imagePath, preferredName: file.name });
+          imagePath = imported?.storedPath || imagePath;
+        }
       }
 
       if (!imagePath) {
         if (window.electron) {
           const arrayBuffer = await file.arrayBuffer();
-          imagePath = await window.electron.saveClipboardImageToCache({
-            bytes: Array.from(new Uint8Array(arrayBuffer)),
-            contentType: file.type,
-            preferredName: file.name,
-          }) || '';
+          if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
+            imagePath = await window.electron.saveClipboardImageToProjectAssets({
+              projectFilePath: projectPath,
+              bytes: Array.from(new Uint8Array(arrayBuffer)),
+              contentType: file.type,
+              preferredName: file.name,
+            }).then((result) => result?.storedPath || '');
+          } else {
+            imagePath = await window.electron.saveClipboardImageToCache({
+              bytes: Array.from(new Uint8Array(arrayBuffer)),
+              contentType: file.type,
+              preferredName: file.name,
+            }) || '';
+          }
         } else {
           imagePath = URL.createObjectURL(file);
         }
