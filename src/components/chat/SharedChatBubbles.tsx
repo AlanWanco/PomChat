@@ -53,6 +53,7 @@ export interface SharedChatSpeaker {
 export interface SharedChatLayout {
   bubbleScale?: number;
   bubbleMaxWidthPercent?: number;
+  bubbleLineHeight?: number;
   avatarSize?: number;
   speakerNameSize?: number;
   timestampFontFamily?: string;
@@ -675,7 +676,7 @@ const renderMarkdownTokens = ({
         : /^(\d+(\.\d+)?)(em|rem|%)$/.test(normalized)
           ? normalized
           : `${baseFontSize}px`;
-      return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize, lineHeight: BUBBLE_TEXT_LINE_HEIGHT }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize, lineHeight: BUBBLE_TEXT_LINE_HEIGHT } })}</span>;
+      return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
     }
     case 'font':
       return <span key={key} style={{ ...inheritedTextStyle, fontFamily: token.font || undefined }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontFamily: token.font || undefined } })}</span>;
@@ -690,12 +691,14 @@ const renderMarkdownContent = ({
   text,
   textColor,
   baseFontSize,
+  lineHeight,
   fontScale,
   renderInlineImage,
 }: {
   text: string;
   textColor: string;
   baseFontSize: number;
+  lineHeight: number;
   fontScale: number;
   renderInlineImage: (args: { src: string; alt: string; key: string }) => React.ReactNode;
 }) => {
@@ -703,7 +706,7 @@ const renderMarkdownContent = ({
   const baseTextStyle: React.CSSProperties = {
     display: 'inline',
     fontSize: `${baseFontSize}px`,
-    lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+    lineHeight,
   };
   return segments.map((segment, index) => {
     const key = `md-ass-${index}`;
@@ -711,7 +714,7 @@ const renderMarkdownContent = ({
       const lineBreakStyle = {
         ...baseTextStyle,
         ...buildInlineTextStyle(segment.style, fontScale),
-        lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+        lineHeight,
       };
       return <React.Fragment key={key}><br /><span style={lineBreakStyle}>{'\u200B'}</span></React.Fragment>;
     }
@@ -719,7 +722,7 @@ const renderMarkdownContent = ({
     const inlineStyle = {
       ...baseTextStyle,
       ...buildInlineTextStyle(segment.style, fontScale),
-      lineHeight: BUBBLE_TEXT_LINE_HEIGHT,
+      lineHeight,
     };
     return (
       <React.Fragment key={key}>
@@ -838,6 +841,7 @@ export function ChatMessageBubble({
   const shadowSize = snapPx((speaker.style?.shadowSize ?? 1) * combinedScale);
   // compactSpacing controls inter-bubble gap globally in both modes.
   const compactSpacing = chatLayout?.compactSpacing ?? 14;
+  const bubbleLineHeight = chatLayout?.bubbleLineHeight ?? BUBBLE_TEXT_LINE_HEIGHT;
   const margin = snapPx(compactSpacing * combinedScale);
   const paddingX = snapPx((speaker.style?.paddingX ?? 20) * combinedScale);
   const paddingY = snapPx((speaker.style?.paddingY ?? 12) * combinedScale);
@@ -883,6 +887,7 @@ export function ChatMessageBubble({
     text: item.text,
     textColor,
     baseFontSize: fontSize,
+    lineHeight: bubbleLineHeight,
     fontScale: combinedScale,
     renderInlineImage: ({ src, alt, key }) => (renderInlineImage
       ? renderInlineImage({
@@ -1126,6 +1131,7 @@ interface ChatAnnotationBubbleProps {
 
 export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, chatLayout, renderInlineImage, renderBubble }: ChatAnnotationBubbleProps) {
   const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
+  const bubbleLineHeight = chatLayout?.bubbleLineHeight ?? BUBBLE_TEXT_LINE_HEIGHT;
   const combinedScale = Math.max(MIN_LAYOUT_SCALE, layoutScale) * bubbleScale;
   const annotationAnimationStyle = speaker.style?.animationStyle || chatLayout?.animationStyle || 'rise';
   const annotationAnimationDuration = chatLayout?.animationDuration ?? 0.2;
@@ -1166,7 +1172,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       fontFamily: speaker.style?.fontFamily || 'system-ui',
       fontSize: `${(speaker.style?.fontSize ?? 24) * combinedScale}px`,
       fontWeight: speaker.style?.fontWeight || 'normal',
-      lineHeight: 1.35,
+      lineHeight: 0,
       textAlign: annotationAlign as 'left' | 'center' | 'right',
       whiteSpace: 'pre-wrap' as const,
       color: textColor
@@ -1175,6 +1181,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       text: item.text,
       textColor,
       baseFontSize: (speaker.style?.fontSize ?? 24) * combinedScale,
+      lineHeight: bubbleLineHeight,
       fontScale: combinedScale,
       renderInlineImage: ({ src, alt, key }) => (renderInlineImage
         ? renderInlineImage({

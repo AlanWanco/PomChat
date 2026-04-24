@@ -139,6 +139,7 @@ const DEFAULT_CHAT_LAYOUT = {
   paddingRight: 48,
   bubbleScale: 1.5,
   bubbleMaxWidthPercent: 70,
+  bubbleLineHeight: 1.35,
   avatarSize: 80,
   speakerNameSize: 22,
   timestampFontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',

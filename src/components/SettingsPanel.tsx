@@ -1370,6 +1370,13 @@ export function SettingsPanel({
                     {renderNumberInput(config.chatLayout?.paddingBottom ?? 40, (value) => updateChatLayout('paddingBottom', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
                   <div className="space-y-1.5">
+                    <span className="text-xs opacity-70">{t('project.bubbleLineHeight')}</span>
+                    {renderNumberInput(config.chatLayout?.bubbleLineHeight ?? 1.35, (value) => updateChatLayout('bubbleLineHeight', Math.min(2.5, Math.max(0.8, Number(value.toFixed(2))))), { min: 0.8, max: 2.5, step: 0.05, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                    <p className="text-[11px] opacity-60 leading-relaxed">
+                      {t('project.bubbleLineHeight.title')}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.paddingLeft')}</span>
                     {renderNumberInput(config.chatLayout?.paddingLeft ?? config.chatLayout?.paddingX ?? 48, (value) => updateChatLayout('paddingLeft', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                   </div>
