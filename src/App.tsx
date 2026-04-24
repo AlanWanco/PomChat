@@ -1684,7 +1684,22 @@ const [previewScale, setPreviewScale] = useState(1);
       const parsed = JSON.parse(saved);
       const validatedConfig = validateProjectConfig(parsed);
       const requiresAudioReload = Boolean(validatedConfig.audioPath);
-      const restoredConfig = requiresAudioReload ? { ...validatedConfig, audioPath: '' } : validatedConfig;
+      const fallbackExportEnd = Array.isArray(validatedConfig.content)
+        ? Number(
+            validatedConfig.content.reduce((max: number, item: any) => {
+              const end = typeof item?.end === 'number' && Number.isFinite(item.end) ? item.end : 0;
+              return Math.max(max, end);
+            }, 0).toFixed(2)
+          )
+        : 0;
+      const restoredConfig = requiresAudioReload
+        ? {
+            ...validatedConfig,
+            audioPath: '',
+            exportRange: { start: 0, end: fallbackExportEnd },
+            exportRangeCustomized: false,
+          }
+        : validatedConfig;
       const normalizedRestoredConfig = restoredConfig.subtitleFormat
         ? restoredConfig
         : { ...restoredConfig, subtitleFormat: restoredConfig.assPath ? 'ass' : (restoredConfig.content?.length ? 'srt' : 'ass') };
