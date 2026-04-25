@@ -1379,6 +1379,16 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
     const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height: captureHeight });
     const targetWidth = Math.max(1, Math.round(width * scale));
     const targetHeight = Math.max(1, Math.round(captureHeight * scale));
+    const capturedSize = image.getSize();
+    const widthRatio = capturedSize.width / targetWidth;
+    const heightRatio = capturedSize.height / targetHeight;
+
+    // On Windows long captures can silently return only the top slice.
+    // Never stretch a truncated bitmap into the requested output size.
+    if ((capturedSize.height < targetHeight && heightRatio < 0.9) || Math.abs(widthRatio - heightRatio) > 0.08) {
+      throw new Error(`Captured image height is smaller than expected (${capturedSize.width}x${capturedSize.height} vs ${targetWidth}x${targetHeight})`);
+    }
+
     const normalizedImage = image.getSize().width === targetWidth && image.getSize().height === targetHeight
       ? image
       : image.resize({ width: targetWidth, height: targetHeight, quality: 'best' });
