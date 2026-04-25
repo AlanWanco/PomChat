@@ -361,6 +361,8 @@ export type MarkdownImageLinkMatch = {
   end: number;
 };
 
+const MARKDOWN_ESCAPABLE_CHARS = new Set(['\\', '[', ']', '(', ')', '<', '>', '!', '*', '_', '`', '#', '+', '-', '.', '|', '{', '}']);
+
 const parseMarkdownImageLinkAt = (input: string, startIndex: number): MarkdownImageLinkMatch | null => {
   if (!input.startsWith('![', startIndex)) {
     return null;
@@ -406,8 +408,15 @@ const parseMarkdownImageLinkAt = (input: string, startIndex: number): MarkdownIm
     while (cursor < input.length) {
       const char = input[cursor];
       if (char === '\\' && cursor + 1 < input.length) {
-        src += input[cursor + 1];
-        cursor += 2;
+        const nextChar = input[cursor + 1];
+        if (MARKDOWN_ESCAPABLE_CHARS.has(nextChar)) {
+          src += nextChar;
+          cursor += 2;
+        } else {
+          // Preserve Windows-style paths like C:\foo\bar.png.
+          src += char;
+          cursor += 1;
+        }
         continue;
       }
       if (char === '(') {
