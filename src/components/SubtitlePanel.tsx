@@ -19,15 +19,17 @@ interface SubtitlePanelProps {
   onBulkDeleteSubtitles: (ids: string[]) => void | Promise<void>;
   onBulkUpdateSpeaker: (ids: string[], speakerId: string) => void | Promise<void>;
   onBulkUpdateVisibility: (ids: string[], visible: boolean) => void | Promise<void>;
+  onCreateBubbleSnapshot?: (ids: string[]) => void | Promise<void>;
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   setEditingSub?: (sub: { id: string, start: number, end: number, text: string } | null) => void;
   compactMode: boolean;
   onCompactModeChange: (next: boolean) => void;
   projectPath?: string | null;
   projectAssetsCacheEnabled?: boolean;
+  showToast?: (message: string) => void;
 }
 
-export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false }: SubtitlePanelProps) {
+export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, onCreateBubbleSnapshot, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false, showToast }: SubtitlePanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
@@ -244,6 +246,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const handleBulkDelete = () => {
     if (validSelectedSubtitleIds.length === 0) return;
     setPendingBulkAction({ type: 'delete' });
+  };
+
+  const handleCreateBubbleSnapshot = () => {
+    if (validSelectedSubtitleIds.length === 0) return;
+    if (validSelectedSubtitleIds.length > 100) {
+      showToast?.(t('subtitle.bubbleSnapshotLimit', { count: 100 }));
+      return;
+    }
+    void onCreateBubbleSnapshot?.(validSelectedSubtitleIds);
   };
 
   const confirmBulkAction = () => {
@@ -574,6 +585,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkChangeSpeaker')}
+          </button>
+          <button
+            type="button"
+            disabled={validSelectedSubtitleIds.length === 0}
+            onClick={handleCreateBubbleSnapshot}
+            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {t('subtitle.bubbleSnapshot')}
           </button>
           {showSelectionSpeakerPicker ? (
             <>

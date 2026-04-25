@@ -9,12 +9,13 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
+import { BubbleSnapshotModal } from './components/BubbleSnapshotModal';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
 import { createThemeTokens } from './theme';
-import { buildFontFaceCss, type FontPresetMap } from './fontPresets';
+import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId, formatFontFamilyValue, replaceFontPresetFamilyReferences, type FontPresetMap } from './fontPresets';
 import { PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { Tooltip } from './components/ui/Tooltip';
 import type { BackgroundSlideItem } from './remotion/types';
@@ -170,6 +171,17 @@ const DEFAULT_UI_CONFIG = {
   subtitlePanelCompactMode: false,
   recentProject: null as string | null,
   recentProjects: [] as string[],
+  bubbleSnapshotIncludeBackground: true,
+  bubbleSnapshotBackgroundMode: 'project' as 'project' | 'transparent' | 'solid' | 'custom-image',
+  bubbleSnapshotBackgroundColor: '#0F172A',
+  bubbleSnapshotCustomBackgroundImage: '',
+  bubbleSnapshotBackgroundImageSizing: 'fit-width' as 'fit-width' | 'tile',
+  bubbleSnapshotTileAlign: 'center' as 'left' | 'center' | 'right',
+  bubbleSnapshotBackgroundBlur: 8,
+  bubbleSnapshotBackgroundBrightness: 1,
+  bubbleSnapshotSidePadding: 40,
+  bubbleSnapshotBubbleWidthPercent: 70,
+  bubbleSnapshotExportScale: 1,
   playbackPositions: {} as Record<string, number>,
   presets: {} as Record<string, any>,
   annotationPresets: {} as Record<string, any>,
@@ -248,6 +260,8 @@ const DEFAULT_PROJECT_CONFIG = {
     }
   }
 };
+
+const makeFontPresetId = () => `font-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 const sanitizeImportedAssContent = (content: string) => {
   const lines = content.split(/\r?\n/);
@@ -359,6 +373,17 @@ const sanitizeProjectConfig = (parsed: any) => {
       subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
+      bubbleSnapshotIncludeBackground: parsed?.ui?.bubbleSnapshotIncludeBackground !== false,
+      bubbleSnapshotBackgroundMode: parsed?.ui?.bubbleSnapshotBackgroundMode === 'transparent' || parsed?.ui?.bubbleSnapshotBackgroundMode === 'solid' || parsed?.ui?.bubbleSnapshotBackgroundMode === 'custom-image' ? parsed.ui.bubbleSnapshotBackgroundMode : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode,
+      bubbleSnapshotBackgroundColor: typeof parsed?.ui?.bubbleSnapshotBackgroundColor === 'string' ? parsed.ui.bubbleSnapshotBackgroundColor : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor,
+      bubbleSnapshotCustomBackgroundImage: typeof parsed?.ui?.bubbleSnapshotCustomBackgroundImage === 'string' ? parsed.ui.bubbleSnapshotCustomBackgroundImage : DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage,
+      bubbleSnapshotBackgroundImageSizing: parsed?.ui?.bubbleSnapshotBackgroundImageSizing === 'tile' ? 'tile' : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing,
+      bubbleSnapshotTileAlign: parsed?.ui?.bubbleSnapshotTileAlign === 'left' || parsed?.ui?.bubbleSnapshotTileAlign === 'right' ? parsed.ui.bubbleSnapshotTileAlign : 'center',
+      bubbleSnapshotBackgroundBlur: typeof parsed?.ui?.bubbleSnapshotBackgroundBlur === 'number' && Number.isFinite(parsed.ui.bubbleSnapshotBackgroundBlur) ? parsed.ui.bubbleSnapshotBackgroundBlur : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur,
+      bubbleSnapshotBackgroundBrightness: typeof parsed?.ui?.bubbleSnapshotBackgroundBrightness === 'number' && Number.isFinite(parsed.ui.bubbleSnapshotBackgroundBrightness) ? parsed.ui.bubbleSnapshotBackgroundBrightness : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness,
+      bubbleSnapshotSidePadding: typeof parsed?.ui?.bubbleSnapshotSidePadding === 'number' && Number.isFinite(parsed.ui.bubbleSnapshotSidePadding) ? parsed.ui.bubbleSnapshotSidePadding : DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding,
+      bubbleSnapshotBubbleWidthPercent: typeof parsed?.ui?.bubbleSnapshotBubbleWidthPercent === 'number' && Number.isFinite(parsed.ui.bubbleSnapshotBubbleWidthPercent) ? parsed.ui.bubbleSnapshotBubbleWidthPercent : DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent,
+      bubbleSnapshotExportScale: typeof parsed?.ui?.bubbleSnapshotExportScale === 'number' && Number.isFinite(parsed.ui.bubbleSnapshotExportScale) ? parsed.ui.bubbleSnapshotExportScale : DEFAULT_UI_CONFIG.bubbleSnapshotExportScale,
       playbackPositions: parsed?.ui?.playbackPositions && typeof parsed.ui.playbackPositions === 'object' ? parsed.ui.playbackPositions : {},
       presets: parsed?.ui?.presets && typeof parsed.ui.presets === 'object' ? parsed.ui.presets : {},
       annotationPresets: parsed?.ui?.annotationPresets && typeof parsed.ui.annotationPresets === 'object' ? parsed.ui.annotationPresets : {},
@@ -907,6 +932,18 @@ function App() {
   const [renderCacheInfo, setRenderCacheInfo] = useState<RenderCacheInfo | null>(null);
   const [projectResourceActionBusy, setProjectResourceActionBusy] = useState<'remote-copy' | 'local-copy' | 'refresh' | null>(null);
   const [projectResourceActionReport, setProjectResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
+  const [bubbleSnapshotSubtitleIds, setBubbleSnapshotSubtitleIds] = useState<string[]>([]);
+  const [bubbleSnapshotIncludeBackground, setBubbleSnapshotIncludeBackground] = useState(() => Boolean(config.ui?.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground));
+  const [bubbleSnapshotBackgroundMode, setBubbleSnapshotBackgroundMode] = useState<'project' | 'transparent' | 'solid' | 'custom-image'>(() => config.ui?.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode);
+  const [bubbleSnapshotBackgroundColor, setBubbleSnapshotBackgroundColor] = useState(() => String(config.ui?.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor));
+  const [bubbleSnapshotCustomBackgroundImage, setBubbleSnapshotCustomBackgroundImage] = useState(() => String(config.ui?.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage));
+  const [bubbleSnapshotBackgroundImageSizing, setBubbleSnapshotBackgroundImageSizing] = useState<'fit-width' | 'tile'>(() => config.ui?.bubbleSnapshotBackgroundImageSizing ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing);
+  const [bubbleSnapshotTileAlign, setBubbleSnapshotTileAlign] = useState<'left' | 'center' | 'right'>(() => config.ui?.bubbleSnapshotTileAlign ?? DEFAULT_UI_CONFIG.bubbleSnapshotTileAlign);
+  const [bubbleSnapshotBackgroundBlur, setBubbleSnapshotBackgroundBlur] = useState(() => Number(config.ui?.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur));
+  const [bubbleSnapshotBackgroundBrightness, setBubbleSnapshotBackgroundBrightness] = useState(() => Number(config.ui?.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness));
+  const [bubbleSnapshotSidePadding, setBubbleSnapshotSidePadding] = useState(() => Number(config.ui?.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding));
+  const [bubbleSnapshotBubbleWidthPercent, setBubbleSnapshotBubbleWidthPercent] = useState(() => Number(config.ui?.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent));
+  const [bubbleSnapshotExportScale, setBubbleSnapshotExportScale] = useState(() => Number(config.ui?.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale));
   const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
   const [exportHardware, setExportHardware] = useState<'auto' | 'gpu' | 'cpu'>('auto');
   const [exportParallelSegments, setExportParallelSegments] = useState(false);
@@ -1792,6 +1829,17 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition: ui.settingsPosition,
       subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
       recentProject: ui.recentProject,
+      bubbleSnapshotIncludeBackground: Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground),
+      bubbleSnapshotBackgroundMode: ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode,
+      bubbleSnapshotBackgroundColor: String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor),
+      bubbleSnapshotCustomBackgroundImage: String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage),
+      bubbleSnapshotBackgroundImageSizing: ui.bubbleSnapshotBackgroundImageSizing === 'tile' ? 'tile' : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing,
+      bubbleSnapshotTileAlign: ui.bubbleSnapshotTileAlign === 'left' || ui.bubbleSnapshotTileAlign === 'right' ? ui.bubbleSnapshotTileAlign : 'center',
+      bubbleSnapshotBackgroundBlur: Number(ui.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur),
+      bubbleSnapshotBackgroundBrightness: Number(ui.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness),
+      bubbleSnapshotSidePadding: Number(ui.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding),
+      bubbleSnapshotBubbleWidthPercent: Number(ui.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent),
+      bubbleSnapshotExportScale: Number(ui.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale),
       presets: ui.presets ?? DEFAULT_UI_CONFIG.presets,
       annotationPresets: ui.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets,
       fontPresets: ui.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets,
@@ -1803,6 +1851,20 @@ const [previewScale, setPreviewScale] = useState(1);
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
     setSubtitlePanelCompactMode((prev: boolean) => (prev === Boolean(ui.subtitlePanelCompactMode) ? prev : Boolean(ui.subtitlePanelCompactMode)));
+    setBubbleSnapshotIncludeBackground((prev: boolean) => (prev === Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground) ? prev : Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground)));
+    setBubbleSnapshotBackgroundMode((prev: 'project' | 'transparent' | 'solid' | 'custom-image') => (prev === (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) ? prev : (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode)));
+    setBubbleSnapshotBackgroundColor((prev: string) => (prev === String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor) ? prev : String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor)));
+    setBubbleSnapshotCustomBackgroundImage((prev: string) => (prev === String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage) ? prev : String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage)));
+    setBubbleSnapshotBackgroundImageSizing((prev: 'fit-width' | 'tile') => (prev === (ui.bubbleSnapshotBackgroundImageSizing === 'tile' ? 'tile' : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing) ? prev : (ui.bubbleSnapshotBackgroundImageSizing === 'tile' ? 'tile' : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing)));
+    setBubbleSnapshotTileAlign((prev: 'left' | 'center' | 'right') => {
+      const next = ui.bubbleSnapshotTileAlign === 'left' || ui.bubbleSnapshotTileAlign === 'right' ? ui.bubbleSnapshotTileAlign : 'center';
+      return prev === next ? prev : next;
+    });
+    setBubbleSnapshotBackgroundBlur((prev: number) => (prev === Number(ui.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur) ? prev : Number(ui.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur)));
+    setBubbleSnapshotBackgroundBrightness((prev: number) => (prev === Number(ui.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness) ? prev : Number(ui.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness)));
+    setBubbleSnapshotSidePadding((prev: number) => (prev === Number(ui.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding) ? prev : Number(ui.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding)));
+    setBubbleSnapshotBubbleWidthPercent((prev: number) => (prev === Number(ui.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent) ? prev : Number(ui.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent)));
+    setBubbleSnapshotExportScale((prev: number) => (prev === Number(ui.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale) ? prev : Number(ui.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale)));
     if (window.electron) {
       setRecentProject((prev: string | null) => (prev === ui.recentProject ? prev : ui.recentProject));
     }
@@ -1841,6 +1903,17 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition,
       subtitlePanelCompactMode,
       recentProject,
+      bubbleSnapshotIncludeBackground,
+      bubbleSnapshotBackgroundMode,
+      bubbleSnapshotBackgroundColor,
+      bubbleSnapshotCustomBackgroundImage,
+      bubbleSnapshotBackgroundImageSizing,
+      bubbleSnapshotTileAlign,
+      bubbleSnapshotBackgroundBlur,
+      bubbleSnapshotBackgroundBrightness,
+      bubbleSnapshotSidePadding,
+      bubbleSnapshotBubbleWidthPercent,
+      bubbleSnapshotExportScale,
       presets,
       annotationPresets,
       fontPresets,
@@ -1868,6 +1941,17 @@ const [previewScale, setPreviewScale] = useState(1);
         prevUi.settingsPosition === settingsPosition &&
         Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
         prevUi.recentProject === recentProject &&
+        Boolean(prevUi.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground) === bubbleSnapshotIncludeBackground &&
+        String(prevUi.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) === bubbleSnapshotBackgroundMode &&
+        String(prevUi.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor) === bubbleSnapshotBackgroundColor &&
+        String(prevUi.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage) === bubbleSnapshotCustomBackgroundImage &&
+        String(prevUi.bubbleSnapshotBackgroundImageSizing ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing) === bubbleSnapshotBackgroundImageSizing &&
+        (prevUi.bubbleSnapshotTileAlign === 'left' || prevUi.bubbleSnapshotTileAlign === 'right' ? prevUi.bubbleSnapshotTileAlign : 'center') === bubbleSnapshotTileAlign &&
+        Number(prevUi.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur) === bubbleSnapshotBackgroundBlur &&
+        Number(prevUi.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness) === bubbleSnapshotBackgroundBrightness &&
+        Number(prevUi.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding) === bubbleSnapshotSidePadding &&
+        Number(prevUi.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent) === bubbleSnapshotBubbleWidthPercent &&
+        Number(prevUi.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale) === bubbleSnapshotExportScale &&
         samePresets &&
         sameAnnotationPresets &&
         sameFontPresets
@@ -1890,13 +1974,24 @@ const [previewScale, setPreviewScale] = useState(1);
           settingsPosition,
           subtitlePanelCompactMode,
           recentProject,
+          bubbleSnapshotIncludeBackground,
+          bubbleSnapshotBackgroundMode,
+          bubbleSnapshotBackgroundColor,
+          bubbleSnapshotCustomBackgroundImage,
+          bubbleSnapshotBackgroundImageSizing,
+          bubbleSnapshotTileAlign,
+          bubbleSnapshotBackgroundBlur,
+          bubbleSnapshotBackgroundBrightness,
+          bubbleSnapshotSidePadding,
+          bubbleSnapshotBubbleWidthPercent,
+          bubbleSnapshotExportScale,
           presets: nextPresets,
           annotationPresets: nextAnnotationPresets,
           fontPresets: nextFontPresets,
         },
       };
     });
-  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, presets, annotationPresets, fontPresets]);
+  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, bubbleSnapshotIncludeBackground, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -2701,6 +2796,27 @@ const [previewScale, setPreviewScale] = useState(1);
     return unsubscribe;
   }, [t]);
 
+  const handleOpenBubbleSnapshot = useCallback((ids: string[]) => {
+    const validSpeakerIds = new Set(
+      Object.entries(config.speakers || {})
+        .filter(([, speaker]) => (speaker as { type?: string } | undefined)?.type !== 'annotation')
+        .map(([speakerId]) => speakerId)
+    );
+    const limitedIds = subtitles
+      .filter((subtitle) => ids.includes(subtitle.id) && validSpeakerIds.has(subtitle.speakerId))
+      .map((subtitle) => subtitle.id)
+      .slice(0, 100);
+    if (limitedIds.length === 0) {
+      showToast(t('subtitle.bubbleSnapshotEmpty'));
+      return;
+    }
+    setBubbleSnapshotSubtitleIds(limitedIds);
+  }, [config.speakers, showToast, subtitles, t]);
+
+  const handleCloseBubbleSnapshot = useCallback(() => {
+    setBubbleSnapshotSubtitleIds([]);
+  }, []);
+
   const handleOpenExportModal = useCallback(async () => {
     if (!window.electron) {
       alert(t('export.clientOnly'));
@@ -3029,11 +3145,22 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition,
       subtitlePanelCompactMode,
       recentProject,
+      bubbleSnapshotIncludeBackground,
+      bubbleSnapshotBackgroundMode,
+      bubbleSnapshotBackgroundColor,
+      bubbleSnapshotCustomBackgroundImage,
+      bubbleSnapshotBackgroundImageSizing,
+      bubbleSnapshotTileAlign,
+      bubbleSnapshotBackgroundBlur,
+      bubbleSnapshotBackgroundBrightness,
+      bubbleSnapshotSidePadding,
+      bubbleSnapshotBubbleWidthPercent,
+      bubbleSnapshotExportScale,
       presets,
       annotationPresets,
       fontPresets,
     }
-  }), [annotationPresets, autoSaveProject, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
+  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotIncludeBackground, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
 
   const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
@@ -3129,6 +3256,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (resource.kind !== 'file' || !resource.value?.trim()) return false;
       const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
       if (!resolvedPath || !looksLikeLocalFsPath(resolvedPath)) return false;
+      if (isPathInsideDirectory(resolvedPath, remoteCacheDir)) return false;
       if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) return false;
       return true;
     }).length;
@@ -3282,6 +3410,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const workingConfig = getCurrentConfigWithUi();
       const resources = collectProjectResources(workingConfig);
       const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
+      const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
       const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
       let nextConfig = workingConfig;
       let changed = 0;
@@ -3293,6 +3422,7 @@ const [previewScale, setPreviewScale] = useState(1);
         const resolvedPath = getResolvedProjectAssetPath(rawValue, projectPath);
         if (!rawValue || !resolvedPath) continue;
         if (!looksLikeLocalFsPath(resolvedPath)) continue;
+        if (isPathInsideDirectory(resolvedPath, remoteCacheDir)) continue;
         if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) continue;
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
@@ -3319,7 +3449,7 @@ const [previewScale, setPreviewScale] = useState(1);
     } finally {
       setProjectResourceActionBusy(null);
     }
-  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, showToast, t, updateConfigValueByPath]);
+  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
 
   const handleRefreshRemoteAssetCache = useCallback(async () => {
     if (projectResourceActionBusy) {
@@ -3386,6 +3516,90 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     return 'media';
   }, []);
+
+  const reconcileProjectFontPresets = useCallback((targetConfig: any, options?: { missingFontPresetIds?: Set<string>; skipFontPresetIds?: Set<string> }) => {
+    const projectFontPresets: FontPresetMap = targetConfig?.ui?.fontPresets && typeof targetConfig.ui.fontPresets === 'object'
+      ? targetConfig.ui.fontPresets
+      : {};
+    if (!Object.keys(projectFontPresets).length) {
+      return { nextConfig: targetConfig, nextGlobalFontPresets: fontPresets };
+    }
+
+    let nextConfig = targetConfig;
+    const nextProjectFontPresets: FontPresetMap = {};
+    const nextGlobalFontPresets: FontPresetMap = { ...(fontPresets || {}) };
+
+    Object.entries(projectFontPresets).forEach(([projectPresetId, preset]) => {
+      if (!preset?.family) {
+        return;
+      }
+
+      if (options?.skipFontPresetIds?.has(projectPresetId)) {
+        nextProjectFontPresets[projectPresetId] = preset;
+        return;
+      }
+
+      const replacementTargets = [formatFontFamilyValue(preset.family), preset.family];
+      if (options?.missingFontPresetIds?.has(projectPresetId)) {
+        nextConfig = replaceFontPresetFamilyReferences(nextConfig, replacementTargets, {
+          speakerFontFamily: DEFAULT_BUBBLE_STYLE.fontFamily,
+          nameFontFamily: DEFAULT_BUBBLE_STYLE.fontFamily,
+          timestampFontFamily: DEFAULT_CHAT_LAYOUT.timestampFontFamily,
+          slideFontFamily: 'system-ui',
+        });
+        return;
+      }
+
+      const matchedPresetId = findMatchingFontPresetId(nextGlobalFontPresets, preset);
+      if (matchedPresetId) {
+        const matchedPreset = nextGlobalFontPresets[matchedPresetId];
+        const matchedTargets = matchedPreset?.family ? [formatFontFamilyValue(matchedPreset.family), matchedPreset.family] : [];
+        nextConfig = replaceFontPresetFamilyReferences(nextConfig, replacementTargets, {
+          speakerFontFamily: matchedTargets[0] || DEFAULT_BUBBLE_STYLE.fontFamily,
+          nameFontFamily: matchedTargets[0] || DEFAULT_BUBBLE_STYLE.fontFamily,
+          timestampFontFamily: matchedTargets[0] || DEFAULT_CHAT_LAYOUT.timestampFontFamily,
+          slideFontFamily: matchedTargets[0] || 'system-ui',
+        });
+        nextProjectFontPresets[matchedPresetId] = matchedPreset;
+        return;
+      }
+
+      let nextPresetId = projectPresetId;
+      if (nextGlobalFontPresets[nextPresetId]) {
+        nextPresetId = makeFontPresetId();
+      }
+      const nextFamily = nextPresetId === projectPresetId ? preset.family : createFontPresetFamilyName(nextPresetId);
+      const importedPreset = {
+        ...preset,
+        id: nextPresetId,
+        family: nextFamily,
+      };
+
+      if (nextFamily !== preset.family) {
+        const nextFontValue = formatFontFamilyValue(nextFamily);
+        nextConfig = replaceFontPresetFamilyReferences(nextConfig, replacementTargets, {
+          speakerFontFamily: nextFontValue,
+          nameFontFamily: nextFontValue,
+          timestampFontFamily: nextFontValue,
+          slideFontFamily: nextFontValue,
+        });
+      }
+
+      nextGlobalFontPresets[nextPresetId] = importedPreset;
+      nextProjectFontPresets[nextPresetId] = importedPreset;
+    });
+
+    return {
+      nextConfig: {
+        ...nextConfig,
+        ui: {
+          ...(nextConfig?.ui || {}),
+          fontPresets: nextProjectFontPresets,
+        },
+      },
+      nextGlobalFontPresets,
+    };
+  }, [fontPresets]);
 
   const finalizeLoadedProject = useCallback((filePath: string, normalizedConfig: any) => {
     const shouldUseAssSource = !window.electron && normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
@@ -4265,6 +4479,15 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         });
 
+        const skippedFontPresetIds = new Set(
+          missing
+            .map((item) => item.id.match(/^ui\.fontPresets\.([^\.]+)\.filePath$/)?.[1] || '')
+            .filter(Boolean)
+        );
+        const reconciled = reconcileProjectFontPresets(checkedConfig, { skipFontPresetIds: skippedFontPresetIds });
+        checkedConfig = reconciled.nextConfig;
+        setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
+
         if (updated.length > 0 || missing.length > 0) {
           setProjectResourceCheckDialog({ filePath, config: checkedConfig, updated, missing });
           showToast(t('projectResourceCheck.requiresAttention'));
@@ -4321,13 +4544,22 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     let nextConfig = projectResourceCheckDialog.config;
+    const unresolvedFontPresetIds = new Set<string>();
     for (const item of projectResourceCheckDialog.missing) {
       const replacement = item.replacement.trim();
       if (!replacement) {
+        const presetId = item.id.match(/^ui\.fontPresets\.([^\.]+)\.filePath$/)?.[1] || '';
+        if (presetId) {
+          unresolvedFontPresetIds.add(presetId);
+        }
         continue;
       }
       nextConfig = updateConfigValueByPath(nextConfig, item.id, replacement);
     }
+
+    const reconciled = reconcileProjectFontPresets(nextConfig, { missingFontPresetIds: unresolvedFontPresetIds });
+    nextConfig = reconciled.nextConfig;
+    setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
 
     try {
       if (window.electron) {
@@ -4340,7 +4572,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
     setProjectResourceCheckDialog(null);
     finalizeLoadedProject(projectResourceCheckDialog.filePath, nextConfig);
-  }, [finalizeLoadedProject, projectResourceCheckDialog, t, updateConfigValueByPath]);
+  }, [finalizeLoadedProject, projectResourceCheckDialog, reconcileProjectFontPresets, t, updateConfigValueByPath]);
 
   const handleBrowseProjectResourceReplacement = useCallback(async (resourceId: string) => {
     if (!window.electron) {
@@ -4877,6 +5109,16 @@ const [previewScale, setPreviewScale] = useState(1);
     () => visibleMessageRows.flatMap((row) => [row.left, row.right].filter(Boolean)),
     [visibleMessageRows]
   );
+  const bubbleSnapshotSubtitles = useMemo(() => {
+    if (bubbleSnapshotSubtitleIds.length === 0) {
+      return [];
+    }
+    const selectedSet = new Set(bubbleSnapshotSubtitleIds);
+    return subtitles
+      .filter((subtitle) => selectedSet.has(subtitle.id) && config.speakers?.[subtitle.speakerId]?.type !== 'annotation')
+      .slice(0, 100);
+  }, [bubbleSnapshotSubtitleIds, config.speakers, subtitles]);
+
   useEffect(() => {
     const bgVideo = previewBackgroundVideoRef.current;
     const backgroundImage = config.background?.image || '';
@@ -5341,12 +5583,14 @@ const [previewScale, setPreviewScale] = useState(1);
                 onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                 onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                 onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
+                onCreateBubbleSnapshot={handleOpenBubbleSnapshot}
                 editingSub={editingSub}
                 setEditingSub={setEditingSub}
                 compactMode={subtitlePanelCompactMode}
                 onCompactModeChange={setSubtitlePanelCompactMode}
                 projectPath={projectPath}
                 projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+                showToast={showToast}
               />
             </div>
           )}
@@ -5531,13 +5775,15 @@ const [previewScale, setPreviewScale] = useState(1);
                   onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                   onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                   onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
-                   editingSub={editingSub}
-                   setEditingSub={setEditingSub}
-                   compactMode={subtitlePanelCompactMode}
-                   onCompactModeChange={setSubtitlePanelCompactMode}
-                   projectPath={projectPath}
-                   projectAssetsCacheEnabled={projectAssetsCacheEnabled}
-                 />
+                  onCreateBubbleSnapshot={handleOpenBubbleSnapshot}
+                  editingSub={editingSub}
+                  setEditingSub={setEditingSub}
+                  compactMode={subtitlePanelCompactMode}
+                  onCompactModeChange={setSubtitlePanelCompactMode}
+                  projectPath={projectPath}
+                  projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+                  showToast={showToast}
+                />
               </div>
             </div>
           )}
@@ -5831,7 +6077,7 @@ const [previewScale, setPreviewScale] = useState(1);
                                         nextSpeakerId={nextSpeakerId}
                                         isLatestVisible={itemIndex === track.items.length - 1}
                                         bubbleMaxWidthOverridePx={bubbleWidth}
-                                        renderInlineImage={({ src, alt, style }) => <img key={`${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                                        renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
                                         renderAvatar={({ src, alt, style }) => {
                                           const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
                                           const combinedScale = Math.max(0.1, 1) * bubbleScale;
@@ -5884,9 +6130,9 @@ const [previewScale, setPreviewScale] = useState(1);
                                 prevSpeakerId={prevSpeakerId}
                                 nextSpeakerId={nextSpeakerId}
                                 isLatestVisible={isLatestRow}
-                                renderInlineImage={({ src, alt, style }) => (
+                                renderInlineImage={({ src, alt, key, style }) => (
                                   <img
-                                    key={`${item.id}-${src}`}
+                                    key={key || `${item.id}-${src}`}
                                     src={resolvePath(src)}
                                     alt={alt}
                                     referrerPolicy="no-referrer"
@@ -6040,7 +6286,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
-                            renderInlineImage={({ src, alt, style }) => <img key={`${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                            renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
                           />
                         </div>
                       );
@@ -6057,7 +6303,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
-                            renderInlineImage={({ src, alt, style }) => <img key={`${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                            renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
                           />
                         </div>
                       );
@@ -6388,12 +6634,14 @@ const [previewScale, setPreviewScale] = useState(1);
                     onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                     onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
                     onBulkUpdateVisibility={handleBulkUpdateSubtitleVisibility}
+                    onCreateBubbleSnapshot={handleOpenBubbleSnapshot}
                     editingSub={editingSub}
                     setEditingSub={setEditingSub}
                     compactMode={subtitlePanelCompactMode}
                     onCompactModeChange={setSubtitlePanelCompactMode}
                     projectPath={projectPath}
                     projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+                    showToast={showToast}
                   />
                 </div>
               </div>
@@ -6401,6 +6649,44 @@ const [previewScale, setPreviewScale] = useState(1);
           />
         </div>
       )}
+
+      <BubbleSnapshotModal
+        open={bubbleSnapshotSubtitles.length > 0}
+        subtitles={bubbleSnapshotSubtitles}
+        speakers={config.speakers}
+        chatLayout={config.chatLayout || DEFAULT_PROJECT_CONFIG.chatLayout}
+        background={config.background || DEFAULT_PROJECT_CONFIG.background}
+        canvasWidth={canvasWidth}
+        language={language}
+        isDarkMode={isDarkMode}
+        themeColor={themeColor}
+        secondaryThemeColor={secondaryThemeColor}
+        resolveAssetSrc={resolvePath}
+        includeBackground={bubbleSnapshotIncludeBackground}
+        onIncludeBackgroundChange={setBubbleSnapshotIncludeBackground}
+        backgroundMode={bubbleSnapshotBackgroundMode}
+        onBackgroundModeChange={setBubbleSnapshotBackgroundMode}
+        backgroundColor={bubbleSnapshotBackgroundColor}
+        onBackgroundColorChange={setBubbleSnapshotBackgroundColor}
+        customBackgroundImage={bubbleSnapshotCustomBackgroundImage}
+        onCustomBackgroundImageChange={setBubbleSnapshotCustomBackgroundImage}
+        backgroundImageSizing={bubbleSnapshotBackgroundImageSizing}
+        onBackgroundImageSizingChange={setBubbleSnapshotBackgroundImageSizing}
+        tileAlign={bubbleSnapshotTileAlign}
+        onTileAlignChange={setBubbleSnapshotTileAlign}
+        backgroundBlur={bubbleSnapshotBackgroundBlur}
+        onBackgroundBlurChange={setBubbleSnapshotBackgroundBlur}
+        backgroundBrightness={bubbleSnapshotBackgroundBrightness}
+        onBackgroundBrightnessChange={setBubbleSnapshotBackgroundBrightness}
+        sidePadding={bubbleSnapshotSidePadding}
+        onSidePaddingChange={setBubbleSnapshotSidePadding}
+        bubbleMaxWidthPercent={bubbleSnapshotBubbleWidthPercent}
+        onBubbleMaxWidthPercentChange={setBubbleSnapshotBubbleWidthPercent}
+        exportScale={bubbleSnapshotExportScale}
+        onExportScaleChange={setBubbleSnapshotExportScale}
+        onClose={handleCloseBubbleSnapshot}
+        showToast={showToast}
+      />
 
       <ExportModal
          isOpen={showExportModal}
@@ -6609,6 +6895,8 @@ const [previewScale, setPreviewScale] = useState(1);
         <AssImportModal 
           assPath={importAssData.path}
           assContent={importAssData.content}
+          existingPresets={presets}
+          existingAnnotationPresets={annotationPresets}
           isDarkMode={isDarkMode}
           language={language}
           themeColor={themeColor}

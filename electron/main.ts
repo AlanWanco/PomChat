@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session, nativeImage } from 'electron';
 import { execFileSync, fork } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, fileURLToPath as urlToPath } from 'node:url';
@@ -1148,6 +1148,223 @@ ipcMain.handle('write-file', async (_event, filePath, content) => {
     return true;
   } catch (error: any) {
     throw new Error(`Failed to write file: ${error.message}`);
+  }
+});
+
+ipcMain.handle('write-binary-file', async (_event, payload: { filePath: string; bytes: number[] }) => {
+  try {
+    if (!payload?.filePath || !Array.isArray(payload.bytes)) {
+      return false;
+    }
+    fs.writeFileSync(resolveAppFilePath(payload.filePath), Buffer.from(payload.bytes));
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to write binary file: ${error.message}`);
+  }
+});
+
+ipcMain.handle('copy-image-bytes-to-clipboard', async (_event, payload: { bytes: number[] }) => {
+  try {
+    if (!payload || !Array.isArray(payload.bytes) || payload.bytes.length === 0) {
+      return false;
+    }
+    const image = nativeImage.createFromBuffer(Buffer.from(payload.bytes));
+    clipboard.writeImage(image);
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to copy image to clipboard: ${error.message}`);
+  }
+});
+
+ipcMain.handle('copy-image-data-url-to-clipboard', async (_event, payload: { dataUrl: string }) => {
+  try {
+    if (!payload?.dataUrl) {
+      return false;
+    }
+    const image = nativeImage.createFromDataURL(payload.dataUrl);
+    clipboard.writeImage(image);
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to copy image data URL to clipboard: ${error.message}`);
+  }
+});
+
+ipcMain.handle('write-image-data-url-to-file', async (_event, payload: { filePath: string; dataUrl: string }) => {
+  try {
+    if (!payload?.filePath || !payload?.dataUrl) {
+      return false;
+    }
+    const image = nativeImage.createFromDataURL(payload.dataUrl);
+    fs.writeFileSync(resolveAppFilePath(payload.filePath), image.toPNG());
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to write image data URL to file: ${error.message}`);
+  }
+});
+
+ipcMain.handle('render-svg-data-url-to-png', async (_event, payload: { dataUrl: string; width: number; height: number }) => {
+  let tempWindow: BrowserWindow | null = null;
+  try {
+    if (!payload?.dataUrl || !Number.isFinite(payload.width) || !Number.isFinite(payload.height)) {
+      return null;
+    }
+    const width = Math.max(1, Math.ceil(payload.width));
+    const height = Math.max(1, Math.ceil(payload.height));
+
+    tempWindow = new BrowserWindow({
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      useContentSize: true,
+      width,
+      height,
+      webPreferences: {
+        sandbox: false,
+      },
+    });
+
+    const html = `
+      <!doctype html>
+      <html>
+        <body style="margin:0;padding:0;overflow:hidden;background:transparent;">
+          <img src="${payload.dataUrl.replace(/"/g, '&quot;')}" style="display:block;width:${width}px;height:${height}px;" />
+        </body>
+      </html>
+    `;
+    await tempWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height });
+    return Array.from(image.toPNG());
+  } catch (error: any) {
+    throw new Error(`Failed to render SVG data URL to PNG: ${error.message}`);
+  } finally {
+    if (tempWindow && !tempWindow.isDestroyed()) {
+      tempWindow.destroy();
+    }
+  }
+});
+
+ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; width: number; height: number; scale?: number }) => {
+  let tempWindow: BrowserWindow | null = null;
+  try {
+    if (!payload?.html || !Number.isFinite(payload.width) || !Number.isFinite(payload.height)) {
+      return null;
+    }
+    const width = Math.max(1, Math.ceil(payload.width));
+    const height = Math.max(1, Math.ceil(payload.height));
+    const scale = Number.isFinite(payload.scale) ? Math.max(0.1, Math.min(8, Number(payload.scale))) : 1;
+
+    tempWindow = new BrowserWindow({
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      useContentSize: true,
+      width,
+      height,
+      webPreferences: {
+        sandbox: false,
+      },
+    });
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: ${width}px;
+              height: ${height}px;
+              overflow: hidden;
+              background: transparent;
+            }
+            body > div {
+              width: ${width}px;
+              height: ${height}px;
+            }
+          </style>
+        </head>
+        <body>${payload.html}</body>
+      </html>
+    `;
+    await tempWindow.loadURL('about:blank');
+    await tempWindow.webContents.executeJavaScript(`
+      document.open();
+      document.write(${JSON.stringify(html)});
+      document.close();
+      true;
+    `);
+    await tempWindow.webContents.executeJavaScript(`
+      (async () => {
+        const waitForImages = (images) => Promise.all(images.map((image) => new Promise((resolve) => {
+          if (image.complete) {
+            resolve();
+            return;
+          }
+          const done = () => {
+            image.removeEventListener('load', done);
+            image.removeEventListener('error', done);
+            resolve();
+          };
+          image.addEventListener('load', done, { once: true });
+          image.addEventListener('error', done, { once: true });
+        })));
+        const preloadUrls = async (urls) => {
+          await Promise.all(Array.from(urls).map((url) => new Promise((resolve) => {
+            const image = new Image();
+            const done = () => resolve();
+            image.onload = done;
+            image.onerror = done;
+            image.src = url;
+          })));
+        };
+        const collectBackgroundUrls = () => {
+          const urls = new Set();
+          const nodes = [document.body, ...Array.from(document.body.querySelectorAll('*'))];
+          const pattern = /url\\((["']?)(.*?)\\1\\)/g;
+          nodes.forEach((node) => {
+            const value = window.getComputedStyle(node).backgroundImage;
+            if (!value || value === 'none') {
+              return;
+            }
+            pattern.lastIndex = 0;
+            let match;
+            while ((match = pattern.exec(value))) {
+              if (match[2]) {
+                urls.add(match[2]);
+              }
+            }
+          });
+          return urls;
+        };
+        if (document.fonts?.ready) {
+          try {
+            await document.fonts.ready;
+          } catch {}
+        }
+        await waitForImages(Array.from(document.images));
+        await preloadUrls(collectBackgroundUrls());
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return true;
+      })();
+    `);
+    const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height });
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+    const normalizedImage = image.getSize().width === targetWidth && image.getSize().height === targetHeight
+      ? image
+      : image.resize({ width: targetWidth, height: targetHeight, quality: 'best' });
+    return Array.from(normalizedImage.toPNG());
+  } catch (error: any) {
+    throw new Error(`Failed to render HTML to PNG: ${error.message}`);
+  } finally {
+    if (tempWindow && !tempWindow.isDestroyed()) {
+      tempWindow.destroy();
+    }
   }
 });
 

@@ -4,7 +4,7 @@ import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, 
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
-import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue, isSupportedFontFile, type FontPresetMap } from '../fontPresets';
+import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue, isSupportedFontFile, replaceFontPresetFamilyReferences, type FontPresetMap } from '../fontPresets';
 
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
@@ -758,10 +758,14 @@ export function SettingsPanel({
     });
   };
   const handleDeleteFontPreset = (id: string) => {
+    const preset = fontPresets?.[id];
     const next = { ...(fontPresets || {}) };
     delete next[id];
     onFontPresetsChange(next);
     setActiveFontPresetId((prev) => (prev === id ? '' : prev));
+    if (preset?.family) {
+      onConfigChange(replaceFontPresetFamilyReferences({ ...config }, [formatFontFamilyValue(preset.family), preset.family]));
+    }
   };
 
   const handleRemovePreset = (presetName: string, scope: 'speaker' | 'annotation' = 'speaker') => {

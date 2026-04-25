@@ -25,8 +25,14 @@ interface Window {
     readFile: (filePath: string) => Promise<string>;
     inspectProjectResources: (payload: { projectFilePath: string; resources: Array<{ id: string; value: string }> }) => Promise<Array<{ id: string; state: 'ok' | 'updated-relative' | 'missing'; resolvedValue: string; suggestedValue?: string }>>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
+    writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => Promise<boolean>;
     backupAssFile: (filePath: string) => Promise<string | null>;
     captureRectToClipboard: (rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+    copyImageBytesToClipboard: (payload: { bytes: number[] }) => Promise<boolean>;
+    copyImageDataUrlToClipboard: (payload: { dataUrl: string }) => Promise<boolean>;
+    writeImageDataUrlToFile: (payload: { filePath: string; dataUrl: string }) => Promise<boolean>;
+    renderSvgDataUrlToPng: (payload: { dataUrl: string; width: number; height: number }) => Promise<number[] | null>;
+    renderHtmlToPng: (payload: { html: string; width: number; height: number; scale?: number }) => Promise<number[] | null>;
     loadConfig: () => Promise<any>;
     saveConfig: (config: any) => Promise<boolean>;
     setProxy: (proxy: string) => Promise<boolean>;

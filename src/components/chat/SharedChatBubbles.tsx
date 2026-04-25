@@ -914,7 +914,7 @@ interface ChatMessageBubbleProps {
   nextSpeakerId?: string;
   isLatestVisible?: boolean;
   bubbleMaxWidthOverridePx?: number | string;
-  renderInlineImage?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
+  renderInlineImage?: (args: { src: string; alt: string; key?: string; style: React.CSSProperties }) => React.ReactNode;
   renderAvatar?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
   renderBubble: (args: BubbleRenderArgs) => React.ReactNode;
 }
@@ -1050,6 +1050,7 @@ export function ChatMessageBubble({
       ? renderInlineImage({
           src,
           alt,
+          key,
           style: {
             display: 'block',
             maxWidth: `${inlineImageMaxWidthPx}px`,
@@ -1282,7 +1283,7 @@ interface ChatAnnotationBubbleProps {
   currentTime: number;
   layoutScale: number;
   chatLayout?: SharedChatLayout;
-  renderInlineImage?: (args: { src: string; alt: string; style: React.CSSProperties }) => React.ReactNode;
+  renderInlineImage?: (args: { src: string; alt: string; key?: string; style: React.CSSProperties }) => React.ReactNode;
   renderBubble?: (args: BubbleRenderArgs) => React.ReactNode;
 }
 
@@ -1344,6 +1345,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
         ? renderInlineImage({
             src,
             alt,
+            key,
             style: {
               display: 'block',
               maxWidth: `${inlineImageMaxWidthPx}px`,

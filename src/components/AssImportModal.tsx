@@ -71,6 +71,30 @@ type StylePreviewRow = {
 
 const PREVIEW_ROWS_PER_TAB = 8;
 const buildAssPresetKey = (styleName: string) => `ASS:${styleName || 'Default'}:${Math.floor(Date.now() / 1000)}`;
+const ASS_PRESET_KEY_RE = /^ASS:(.*?):\d+$/;
+
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const findMatchingAssPresetKey = (styleName: string, style: Record<string, string | number>, presets: ImportedPresetMap) => {
+  const normalizedStyleName = (styleName || 'Default').trim();
+  const styleSignature = stableStringify(style);
+  return Object.entries(presets).find(([presetKey, preset]) => {
+    const match = presetKey.match(ASS_PRESET_KEY_RE);
+    if (!match) {
+      return false;
+    }
+    return match[1] === normalizedStyleName && stableStringify(preset?.style || {}) === styleSignature;
+  })?.[0];
+};
 
 const getPreferredStylesByName = (dialogues: ParsedAssDialogue[]) => {
   const counts = new Map<string, Map<string, number>>();
@@ -175,6 +199,8 @@ const getBaseImportedStyle = (isAnnotation: boolean, charCode: number) => ({
 interface AssImportModalProps {
   assPath: string;
   assContent: string;
+  existingPresets: ImportedPresetMap;
+  existingAnnotationPresets: ImportedPresetMap;
   onConfirm: (path: string, newSpeakers: ImportedSpeakerMap, newPresets: ImportedPresetMap, newAnnotationPresets: ImportedPresetMap) => void | Promise<void>;
   onCancel: () => void;
   isDarkMode: boolean;
@@ -183,7 +209,7 @@ interface AssImportModalProps {
   secondaryThemeColor: string;
 }
 
-export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDarkMode, language, themeColor, secondaryThemeColor }: AssImportModalProps): React.JSX.Element {
+export function AssImportModal({ assPath, assContent, existingPresets, existingAnnotationPresets, onConfirm, onCancel, isDarkMode, language, themeColor, secondaryThemeColor }: AssImportModalProps): React.JSX.Element {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [names, setNames] = useState<string[]>([]);
@@ -299,26 +325,38 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
     const newSpeakers: ImportedSpeakerMap = {};
     const newPresets: ImportedPresetMap = {};
     const newAnnotationPresets: ImportedPresetMap = {};
+    const availablePresets: ImportedPresetMap = { ...(existingPresets || {}) };
+    const availableAnnotationPresets: ImportedPresetMap = { ...(existingAnnotationPresets || {}) };
     const createdSpeakerKeys = new Set<string>();
     const stylesBoundByNames = new Set<string>();
     let charCode = 65; // 'A'
+
+    const ensurePresetKey = (styleName: string, mergedStyle: Record<string, string | number>, isAnnotation: boolean) => {
+      const presetPool = isAnnotation ? availableAnnotationPresets : availablePresets;
+      const pendingPool = isAnnotation ? newAnnotationPresets : newPresets;
+      const matchedExistingKey = findMatchingAssPresetKey(styleName, mergedStyle, presetPool);
+      if (matchedExistingKey) {
+        return matchedExistingKey;
+      }
+      const assPresetKey = buildAssPresetKey(styleName || 'Default');
+      pendingPool[assPresetKey] = {
+        style: mergedStyle,
+        avatar: '',
+        side: isAnnotation ? 'center' : 'left'
+      };
+      presetPool[assPresetKey] = pendingPool[assPresetKey];
+      return assPresetKey;
+    };
 
     selectedStyles.forEach((styleName) => {
       const isAnnotationStyle = /注释/.test(styleName);
       if (isAnnotationStyle) {
         return;
       }
-      const assPresetKey = buildAssPresetKey(styleName || 'Default');
       const baseStyle = getBaseImportedStyle(false, charCode);
       const importedStyle = getImportedSpeakerStyle(assStylesByName.get(styleName), false);
       const mergedStyle = { ...baseStyle, ...importedStyle };
-      if (!newPresets[assPresetKey]) {
-        newPresets[assPresetKey] = {
-          style: mergedStyle,
-          avatar: '',
-          side: 'left'
-        };
-      }
+      ensurePresetKey(styleName || 'Default', mergedStyle, false);
     });
 
     Array.from(selectedNames).forEach((name) => {
@@ -330,10 +368,10 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
 
       styleVariants.forEach((styleName) => {
         const hasSelectedStyle = selectedStyles.has(styleName);
-        const assPresetKey = buildAssPresetKey(styleName || name || 'Default');
         const baseStyle = getBaseImportedStyle(isAnnotation, charCode);
         const importedStyle = getImportedSpeakerStyle(assStylesByName.get(styleName), isAnnotation);
         const mergedStyle = hasSelectedStyle ? { ...baseStyle, ...importedStyle } : baseStyle;
+        const assPresetKey = hasSelectedStyle ? ensurePresetKey(styleName || name || 'Default', mergedStyle, isAnnotation) : undefined;
         const displayName = isAnnotation
           ? '注释'
           : formatImportedSpeakerName(language, name || `角色${String.fromCharCode(charCode)}`, styleName, shouldIncludeStyleInName);
@@ -356,14 +394,6 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
           }
         };
 
-        if (hasSelectedStyle && isAnnotation && !newAnnotationPresets[assPresetKey]) {
-          newAnnotationPresets[assPresetKey] = {
-            style: mergedStyle,
-            avatar: '',
-            side: 'center'
-          };
-        }
-
         if (hasSelectedStyle) {
           stylesBoundByNames.add(styleName);
         }
@@ -382,10 +412,10 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
       }
       createdSpeakerKeys.add(speakerUniqueKey);
 
-      const assPresetKey = buildAssPresetKey(styleName || 'Default');
       const baseStyle = getBaseImportedStyle(isAnnotation, charCode);
       const importedStyle = getImportedSpeakerStyle(assStylesByName.get(styleName), isAnnotation);
       const mergedStyle = { ...baseStyle, ...importedStyle };
+      const assPresetKey = ensurePresetKey(styleName || 'Default', mergedStyle, isAnnotation);
       const speakerId = isAnnotation ? 'ANNOTATION' : String.fromCharCode(charCode++);
 
       newSpeakers[speakerId] = {
@@ -399,13 +429,6 @@ export function AssImportModal({ assPath, assContent, onConfirm, onCancel, isDar
         }
       };
 
-      if (isAnnotation && !newAnnotationPresets[assPresetKey]) {
-        newAnnotationPresets[assPresetKey] = {
-          style: mergedStyle,
-          avatar: '',
-          side: 'center'
-        };
-      }
     });
     
     // If nothing selected, just provide a default A
