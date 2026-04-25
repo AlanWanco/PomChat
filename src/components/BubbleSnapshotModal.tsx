@@ -61,6 +61,13 @@ interface BubbleSnapshotModalProps {
 
 type TileAlign = 'left' | 'center' | 'right';
 
+type SnapshotPayload = {
+  html: string;
+  width: number;
+  height: number;
+  previewUrl: string;
+};
+
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|mkv|m4v)(\?|$)/i;
 const CSS_URL_RE = /url\((['"]?)(.*?)\1\)/g;
 
@@ -227,16 +234,12 @@ export function BubbleSnapshotModal({
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const themedRangeStyle = useMemo(() => ({ accentColor: themeColor }) as React.CSSProperties, [themeColor]);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [snapshotHtml, setSnapshotHtml] = useState('');
-  const [snapshotSize, setSnapshotSize] = useState({ width: 0, height: 0 });
+  const [snapshotHeight, setSnapshotHeight] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isZoomDirty, setIsZoomDirty] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [localBackgroundMode, setLocalBackgroundMode] = useState(backgroundMode);
   const [localBackgroundColor, setLocalBackgroundColor] = useState(backgroundColor);
   const [localCustomBackgroundImage, setLocalCustomBackgroundImage] = useState(customBackgroundImage);
@@ -249,7 +252,11 @@ export function BubbleSnapshotModal({
   const [localExportScale, setLocalExportScale] = useState(exportScale);
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewTransformRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const transformStateRef = useRef({ zoom: 1, x: 0, y: 0 });
+  const transformFrameRef = useRef<number | null>(null);
   const resourceCacheRef = useRef(new Map<string, string>());
   const subtitleSignature = useMemo(
     () => subtitles.map((subtitle) => `${subtitle.id}:${subtitle.start}:${subtitle.end}:${subtitle.speakerId}:${subtitle.text}:${subtitle.visible !== false}`).join('|'),
@@ -264,7 +271,7 @@ export function BubbleSnapshotModal({
 
   const snapshotWidth = useMemo(() => contentWidth + localSidePadding * 2, [contentWidth, localSidePadding]);
   const exportWidth = useMemo(() => Math.max(1, Math.round(snapshotWidth * localExportScale)), [localExportScale, snapshotWidth]);
-  const exportHeight = useMemo(() => Math.max(1, Math.round(snapshotSize.height * localExportScale)), [localExportScale, snapshotSize.height]);
+  const exportHeight = useMemo(() => Math.max(1, Math.round(snapshotHeight * localExportScale)), [localExportScale, snapshotHeight]);
   const snapshotChatLayout = useMemo(() => ({
     ...chatLayout,
     bubbleMaxWidthPercent: localBubbleMaxWidthPercent,
@@ -300,9 +307,10 @@ export function BubbleSnapshotModal({
       : (isDarkMode ? '#0f172a' : '#f8fafc');
 
   useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    transformStateRef.current = { zoom: 1, x: 0, y: 0 };
+    isDraggingRef.current = false;
     setIsZoomDirty(false);
+    setIsDragging(false);
   }, [subtitleSignature, open]);
 
   useEffect(() => {
@@ -442,14 +450,14 @@ export function BubbleSnapshotModal({
     );
   }, [contentWidth, renderAvatar, renderInlineImage, snapshotChatLayout, speakers, subtitles]);
 
-  const handlePreviewWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsZoomDirty(true);
-    setZoom((current) => {
-      const nextZoom = Math.max(0.35, Math.min(4, current * (event.deltaY < 0 ? 1.12 : 0.9)));
-      return Number(nextZoom.toFixed(3));
-    });
+  const applyPreviewTransform = useCallback((options?: { immediate?: boolean }) => {
+    const node = previewTransformRef.current;
+    if (!node) {
+      return;
+    }
+    const { zoom, x, y } = transformStateRef.current;
+    node.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    node.style.transition = options?.immediate || isDraggingRef.current ? 'none' : 'transform 140ms ease-out';
   }, []);
 
   const fitPreviewToWidth = useCallback(() => {
@@ -459,9 +467,13 @@ export function BubbleSnapshotModal({
     }
     const availableWidth = Math.max(1, node.clientWidth - 40);
     const nextZoom = Number(Math.min(1, availableWidth / snapshotWidth).toFixed(3));
-    setZoom((current) => (current === nextZoom ? current : nextZoom));
-    setPan((current) => (current.x === 0 && current.y === 0 ? current : { x: 0, y: 0 }));
-  }, [snapshotWidth]);
+    transformStateRef.current = { zoom: nextZoom, x: 0, y: 0 };
+    applyPreviewTransform();
+  }, [applyPreviewTransform, snapshotWidth]);
+
+  useEffect(() => {
+    applyPreviewTransform({ immediate: true });
+  }, [applyPreviewTransform, snapshotWidth, subtitleSignature, localBackgroundMode, localBackgroundColor, localBackgroundBlur, localBackgroundBrightness, localBubbleMaxWidthPercent, localSidePadding, localTileAlign, localBackgroundImageSizing, backgroundImageSrc]);
 
   useEffect(() => {
     if (!open || isZoomDirty) {
@@ -471,14 +483,69 @@ export function BubbleSnapshotModal({
     return () => window.cancelAnimationFrame(rafId);
   }, [fitPreviewToWidth, isZoomDirty, open, subtitleSignature]);
 
-  const regeneratePreview = useCallback(async () => {
-    const sourceEl = sourceRef.current;
-    if (!open || !sourceEl || subtitles.length === 0) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const node = previewViewportRef.current;
+    if (!node) {
+      return;
+    }
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setIsZoomDirty(true);
+      const { zoom, x, y } = transformStateRef.current;
+      const nextZoom = Number(Math.max(0.35, Math.min(4, zoom * (event.deltaY < 0 ? 1.12 : 0.9))).toFixed(3));
+      if (nextZoom === zoom) {
+        return;
+      }
+      transformStateRef.current = { zoom: nextZoom, x, y };
+      applyPreviewTransform({ immediate: true });
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [applyPreviewTransform, open]);
+
+  useEffect(() => {
+    return () => {
+      if (transformFrameRef.current !== null) {
+        window.cancelAnimationFrame(transformFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const node = sourceRef.current;
+    if (!node) {
       return;
     }
 
+    const updateHeight = () => {
+      const nextHeight = Math.max(0, Math.ceil(node.offsetHeight));
+      setSnapshotHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    updateHeight();
+    const rafId = window.requestAnimationFrame(updateHeight);
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [open, subtitleSignature, snapshotWidth, localBackgroundMode, localBackgroundColor, localBackgroundBlur, localBackgroundBrightness, localBubbleMaxWidthPercent, localSidePadding, localTileAlign, localBackgroundImageSizing, backgroundImageSrc]);
+
+  const generateSnapshotData = useCallback(async (): Promise<SnapshotPayload> => {
+    const sourceEl = sourceRef.current;
+    if (!open || !sourceEl || subtitles.length === 0) {
+      throw new Error('Snapshot source unavailable');
+    }
+
     setIsGenerating(true);
-    setGenerateError(null);
     try {
       if (document.fonts?.ready) {
         await document.fonts.ready;
@@ -495,19 +562,17 @@ export function BubbleSnapshotModal({
       wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
       wrapper.appendChild(clone);
       const serialized = new XMLSerializer().serializeToString(wrapper);
-      setSnapshotHtml(serialized);
-      setSnapshotSize({ width, height });
       const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
           <foreignObject width="100%" height="100%">${serialized}</foreignObject>
         </svg>
       `;
-      setPreviewUrl(svgToDataUrl(svg));
-    } catch (error: any) {
-      setGenerateError(error?.message || t('bubbleSnapshot.generateFailed'));
-      setPreviewUrl('');
-      setSnapshotHtml('');
-      setSnapshotSize({ width: 0, height: 0 });
+      return {
+        html: serialized,
+        width,
+        height,
+        previewUrl: svgToDataUrl(svg),
+      };
     } finally {
       setIsGenerating(false);
     }
@@ -527,28 +592,23 @@ export function BubbleSnapshotModal({
     speakers,
     subtitleSignature,
     subtitles.length,
-    t,
     localTileAlign,
   ]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void regeneratePreview();
-    }, 90);
-    return () => window.clearTimeout(timer);
-  }, [regeneratePreview]);
-
   const handleCopyImage = useCallback(async () => {
-    if (!snapshotHtml || !snapshotSize.width || !snapshotSize.height) {
+    if (subtitles.length === 0) {
       return;
     }
     setCopying(true);
     try {
+      const snapshot = await generateSnapshotData();
+      const targetWidth = Math.max(1, Math.round(snapshot.width * localExportScale));
+      const targetHeight = Math.max(1, Math.round(snapshot.height * localExportScale));
       if (window.electron) {
         const bytes = await window.electron.renderHtmlToPng({
-          html: snapshotHtml,
-          width: snapshotSize.width,
-          height: snapshotSize.height,
+          html: snapshot.html,
+          width: snapshot.width,
+          height: snapshot.height,
           scale: localExportScale,
         });
         if (!bytes) {
@@ -556,10 +616,10 @@ export function BubbleSnapshotModal({
         }
         await window.electron.copyImageBytesToClipboard({ bytes });
       } else {
-        if (!previewUrl || !navigator.clipboard || typeof ClipboardItem === 'undefined') {
+        if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
           throw new Error('Clipboard image API unavailable');
         }
-        const canvas = await renderSvgPreviewToCanvas({ previewUrl, width: exportWidth, height: exportHeight });
+        const canvas = await renderSvgPreviewToCanvas({ previewUrl: snapshot.previewUrl, width: targetWidth, height: targetHeight });
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
         if (!blob) {
           throw new Error('Failed to build PNG blob');
@@ -573,10 +633,10 @@ export function BubbleSnapshotModal({
     } finally {
       setCopying(false);
     }
-  }, [exportHeight, exportWidth, localExportScale, previewUrl, showToast, snapshotHtml, snapshotSize.height, snapshotSize.width, t]);
+  }, [generateSnapshotData, localExportScale, showToast, subtitles.length, t]);
 
   const handleSaveImage = useCallback(async () => {
-    if (!snapshotHtml || !snapshotSize.width || !snapshotSize.height) {
+    if (subtitles.length === 0) {
       return;
     }
     setSaving(true);
@@ -591,10 +651,11 @@ export function BubbleSnapshotModal({
         if (result?.canceled || !result?.filePath) {
           return;
         }
+        const snapshot = await generateSnapshotData();
         const bytes = await window.electron.renderHtmlToPng({
-          html: snapshotHtml,
-          width: snapshotSize.width,
-          height: snapshotSize.height,
+          html: snapshot.html,
+          width: snapshot.width,
+          height: snapshot.height,
           scale: localExportScale,
         });
         if (!bytes) {
@@ -602,7 +663,10 @@ export function BubbleSnapshotModal({
         }
         await window.electron.writeBinaryFile({ filePath: result.filePath, bytes });
       } else {
-        const canvas = await renderSvgPreviewToCanvas({ previewUrl, width: exportWidth, height: exportHeight });
+        const snapshot = await generateSnapshotData();
+        const targetWidth = Math.max(1, Math.round(snapshot.width * localExportScale));
+        const targetHeight = Math.max(1, Math.round(snapshot.height * localExportScale));
+        const canvas = await renderSvgPreviewToCanvas({ previewUrl: snapshot.previewUrl, width: targetWidth, height: targetHeight });
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
         if (!blob) {
           throw new Error('Failed to build PNG blob');
@@ -620,20 +684,24 @@ export function BubbleSnapshotModal({
     } finally {
       setSaving(false);
     }
-  }, [exportHeight, exportWidth, localExportScale, previewUrl, showToast, snapshotHtml, snapshotSize.height, snapshotSize.width, t]);
+  }, [generateSnapshotData, localExportScale, showToast, subtitles.length, t]);
 
   const handlePreviewPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
       return;
     }
+    const { x, y } = transformStateRef.current;
     dragStateRef.current = {
       startX: event.clientX,
       startY: event.clientY,
-      originX: pan.x,
-      originY: pan.y,
+      originX: x,
+      originY: y,
     };
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    applyPreviewTransform({ immediate: true });
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [pan.x, pan.y]);
+  }, [applyPreviewTransform]);
 
   const handlePreviewPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStateRef.current) {
@@ -641,15 +709,29 @@ export function BubbleSnapshotModal({
     }
     const nextX = dragStateRef.current.originX + (event.clientX - dragStateRef.current.startX);
     const nextY = dragStateRef.current.originY + (event.clientY - dragStateRef.current.startY);
-    setPan({ x: Math.round(nextX), y: Math.round(nextY) });
-  }, []);
+    transformStateRef.current = {
+      ...transformStateRef.current,
+      x: Math.round(nextX),
+      y: Math.round(nextY),
+    };
+    if (transformFrameRef.current !== null) {
+      window.cancelAnimationFrame(transformFrameRef.current);
+    }
+    transformFrameRef.current = window.requestAnimationFrame(() => {
+      transformFrameRef.current = null;
+      applyPreviewTransform({ immediate: true });
+    });
+  }, [applyPreviewTransform]);
 
   const handlePreviewPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (dragStateRef.current) {
       dragStateRef.current = null;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      applyPreviewTransform();
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, []);
+  }, [applyPreviewTransform]);
 
   if (!open) {
     return null;
@@ -943,8 +1025,8 @@ export function BubbleSnapshotModal({
                     if (node) {
                       fitPreviewToWidth();
                     } else {
-                      setZoom(1);
-                      setPan({ x: 0, y: 0 });
+                      transformStateRef.current = { zoom: 1, x: 0, y: 0 };
+                      applyPreviewTransform();
                     }
                   }}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm"
@@ -955,7 +1037,7 @@ export function BubbleSnapshotModal({
                 </button>
                 <button
                   type="button"
-                  disabled={!snapshotHtml || isGenerating || saving}
+                  disabled={subtitles.length === 0 || isGenerating || saving}
                   onClick={() => void handleSaveImage()}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
                   style={{ borderColor: `${secondaryThemeColor}44`, backgroundColor: `${secondaryThemeColor}12`, color: uiTheme.text }}
@@ -965,7 +1047,7 @@ export function BubbleSnapshotModal({
                 </button>
                 <button
                   type="button"
-                  disabled={!snapshotHtml || isGenerating || copying}
+                  disabled={subtitles.length === 0 || isGenerating || copying}
                   onClick={() => void handleCopyImage()}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
                   style={{ borderColor: `${secondaryThemeColor}44`, backgroundColor: `${secondaryThemeColor}12`, color: uiTheme.text }}
@@ -979,29 +1061,18 @@ export function BubbleSnapshotModal({
             <div
               ref={previewViewportRef}
               className="min-h-0 h-full overflow-hidden p-5"
-              onWheel={handlePreviewWheel}
               onPointerDown={handlePreviewPointerDown}
               onPointerMove={handlePreviewPointerMove}
               onPointerUp={handlePreviewPointerUp}
               onPointerCancel={handlePreviewPointerUp}
-              style={{ backgroundColor: isDarkMode ? 'rgba(2, 6, 23, 0.55)' : 'rgba(248, 250, 252, 0.88)', cursor: dragStateRef.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+              style={{ backgroundColor: isDarkMode ? 'rgba(2, 6, 23, 0.55)' : 'rgba(248, 250, 252, 0.88)', cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
             >
-              {isGenerating ? (
-                <div className="flex h-full min-h-[320px] items-center justify-center text-sm opacity-70">{t('bubbleSnapshot.generating')}</div>
-              ) : generateError ? (
-                <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-red-400">{generateError}</div>
-              ) : subtitles.length > 0 ? (
+              {subtitles.length > 0 ? (
                 <div
                   className="h-full min-h-[320px] flex items-start justify-center overflow-hidden"
                   style={{ userSelect: 'none' }}
                 >
-                  <div
-                    style={{
-                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                      transformOrigin: 'top center',
-                      transition: dragStateRef.current ? 'none' : 'transform 140ms ease-out',
-                    }}
-                  >
+                  <div ref={previewTransformRef} style={{ transformOrigin: 'top center', transition: 'transform 140ms ease-out', willChange: 'transform' }}>
                 <div className="mx-auto inline-block rounded-xl border shadow-2xl overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: '#00000008' }}>
                   <div
                     style={{
