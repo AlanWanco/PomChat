@@ -1278,17 +1278,18 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
               margin: 0;
               padding: 0;
               width: ${width}px;
-              height: ${height}px;
-              overflow: hidden;
               background: transparent;
             }
-            body > div {
+            body {
+              min-height: ${height}px;
+              overflow: hidden;
+            }
+            #capture-root {
               width: ${width}px;
-              height: ${height}px;
             }
           </style>
         </head>
-        <body>${payload.html}</body>
+        <body><div id="capture-root">${payload.html}</div></body>
       </html>
     `;
     await tempWindow.loadURL('about:blank');
@@ -1352,9 +1353,32 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
         return true;
       })();
     `);
-    const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height });
+    const renderedHeight = await tempWindow.webContents.executeJavaScript(`
+      (() => {
+        const root = document.getElementById('capture-root');
+        if (!root) {
+          return ${height};
+        }
+        const rect = root.getBoundingClientRect();
+        return Math.max(
+          ${height},
+          Math.ceil(rect.height || 0),
+          root.scrollHeight || 0,
+          root.clientHeight || 0
+        );
+      })();
+    `);
+    const captureHeight = Math.max(1, Math.ceil(Number(renderedHeight) || height));
+    if (captureHeight !== height) {
+      tempWindow.setContentSize(width, captureHeight);
+      await tempWindow.webContents.executeJavaScript(`
+        document.body.style.minHeight = '${captureHeight}px';
+        new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      `);
+    }
+    const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height: captureHeight });
     const targetWidth = Math.max(1, Math.round(width * scale));
-    const targetHeight = Math.max(1, Math.round(height * scale));
+    const targetHeight = Math.max(1, Math.round(captureHeight * scale));
     const normalizedImage = image.getSize().width === targetWidth && image.getSize().height === targetHeight
       ? image
       : image.resize({ width: targetWidth, height: targetHeight, quality: 'best' });
