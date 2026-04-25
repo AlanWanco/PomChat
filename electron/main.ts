@@ -1245,7 +1245,7 @@ ipcMain.handle('render-svg-data-url-to-png', async (_event, payload: { dataUrl: 
   }
 });
 
- ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; width: number; height: number; scale?: number }) => {
+ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; width: number; height: number; scale?: number }) => {
   let tempWindow: BrowserWindow | null = null;
   try {
     if (!payload?.html || !Number.isFinite(payload.width) || !Number.isFinite(payload.height)) {
