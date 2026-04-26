@@ -1254,6 +1254,26 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
     const width = Math.max(1, Math.ceil(payload.width));
     const height = Math.max(1, Math.ceil(payload.height));
     const scale = Number.isFinite(payload.scale) ? Math.max(0.1, Math.min(8, Number(payload.scale))) : 1;
+    const applyViewport = async (viewportHeight: number, topOffset = 0) => {
+      if (!tempWindow || tempWindow.isDestroyed()) {
+        throw new Error('Temporary capture window is unavailable');
+      }
+      tempWindow.setContentSize(width, viewportHeight);
+      await tempWindow.webContents.executeJavaScript(`
+        (() => {
+          const viewport = document.getElementById('capture-viewport');
+          const root = document.getElementById('capture-root');
+          if (!viewport || !root) {
+            return false;
+          }
+          document.body.style.minHeight = '${viewportHeight}px';
+          viewport.style.height = '${viewportHeight}px';
+          root.style.transform = 'translateY(-${topOffset}px)';
+          return true;
+        })();
+      `);
+      await tempWindow.webContents.executeJavaScript(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));`);
+    };
 
     tempWindow = new BrowserWindow({
       show: false,
@@ -1284,12 +1304,23 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
               min-height: ${height}px;
               overflow: hidden;
             }
+            #capture-viewport {
+              width: ${width}px;
+              height: ${height}px;
+              overflow: hidden;
+              position: relative;
+              background: transparent;
+            }
             #capture-root {
               width: ${width}px;
+              position: absolute;
+              left: 0;
+              top: 0;
+              transform-origin: top left;
             }
           </style>
         </head>
-        <body><div id="capture-root">${payload.html}</div></body>
+        <body><div id="capture-viewport"><div id="capture-root">${payload.html}</div></div></body>
       </html>
     `;
     await tempWindow.loadURL('about:blank');
@@ -1369,13 +1400,7 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
       })();
     `);
     const captureHeight = Math.max(1, Math.ceil(Number(renderedHeight) || height));
-    if (captureHeight !== height) {
-      tempWindow.setContentSize(width, captureHeight);
-      await tempWindow.webContents.executeJavaScript(`
-        document.body.style.minHeight = '${captureHeight}px';
-        new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      `);
-    }
+    await applyViewport(captureHeight, 0);
     const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height: captureHeight });
     const targetWidth = Math.max(1, Math.round(width * scale));
     const targetHeight = Math.max(1, Math.round(captureHeight * scale));
@@ -1383,9 +1408,57 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
     const widthRatio = capturedSize.width / targetWidth;
     const heightRatio = capturedSize.height / targetHeight;
 
+    const isTruncatedCapture = (capturedSize.height < targetHeight && heightRatio < 0.9) || Math.abs(widthRatio - heightRatio) > 0.08;
+
+    if (isTruncatedCapture && process.platform === 'win32') {
+      const maxSliceHeight = Math.max(256, Math.floor((capturedSize.height / Math.max(scale, 0.1)) * 0.85));
+      const sliceHeight = Math.min(captureHeight, maxSliceHeight);
+      if (sliceHeight >= captureHeight) {
+        throw new Error(`Captured image height is smaller than expected (${capturedSize.width}x${capturedSize.height} vs ${targetWidth}x${targetHeight})`);
+      }
+      const slices: Array<{ top: number; height: number; dataUrl: string }> = [];
+      for (let top = 0; top < captureHeight; top += sliceHeight) {
+        const currentSliceHeight = Math.min(sliceHeight, captureHeight - top);
+        await applyViewport(currentSliceHeight, top);
+        const sliceImage = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height: currentSliceHeight });
+        const sliceSize = sliceImage.getSize();
+        const expectedSliceHeight = Math.max(1, Math.round(currentSliceHeight * scale));
+        if (sliceSize.height < expectedSliceHeight * 0.95) {
+          throw new Error(`Captured slice height is smaller than expected (${sliceSize.width}x${sliceSize.height} vs ${targetWidth}x${expectedSliceHeight})`);
+        }
+        slices.push({ top, height: currentSliceHeight, dataUrl: sliceImage.toDataURL() });
+      }
+      const pngDataUrl = await tempWindow.webContents.executeJavaScript(`
+        (async () => {
+          const slices = ${JSON.stringify(slices)};
+          const canvas = document.createElement('canvas');
+          canvas.width = ${targetWidth};
+          canvas.height = ${targetHeight};
+          const context = canvas.getContext('2d');
+          if (!context) {
+            throw new Error('Canvas 2D context unavailable');
+          }
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          for (const slice of slices) {
+            const image = await new Promise((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img);
+              img.onerror = () => reject(new Error('Failed to load capture slice'));
+              img.src = slice.dataUrl;
+            });
+            const destY = Math.round(slice.top * ${scale});
+            const destHeight = Math.max(1, Math.round((slice.top + slice.height) * ${scale}) - destY);
+            context.drawImage(image, 0, 0, image.width, image.height, 0, destY, canvas.width, destHeight);
+          }
+          return canvas.toDataURL('image/png');
+        })();
+      `);
+      return Array.from(nativeImage.createFromDataURL(pngDataUrl).toPNG());
+    }
+
     // On Windows long captures can silently return only the top slice.
     // Never stretch a truncated bitmap into the requested output size.
-    if ((capturedSize.height < targetHeight && heightRatio < 0.9) || Math.abs(widthRatio - heightRatio) > 0.08) {
+    if (isTruncatedCapture) {
       throw new Error(`Captured image height is smaller than expected (${capturedSize.width}x${capturedSize.height} vs ${targetWidth}x${targetHeight})`);
     }
 
