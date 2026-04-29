@@ -171,7 +171,6 @@ const DEFAULT_UI_CONFIG = {
   subtitlePanelCompactMode: false,
   recentProject: null as string | null,
   recentProjects: [] as string[],
-  bubbleSnapshotIncludeBackground: true,
   bubbleSnapshotBackgroundMode: 'project' as 'project' | 'transparent' | 'solid' | 'custom-image',
   bubbleSnapshotBackgroundColor: '#0F172A',
   bubbleSnapshotCustomBackgroundImage: '',
@@ -373,7 +372,6 @@ const sanitizeProjectConfig = (parsed: any) => {
       subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
-      bubbleSnapshotIncludeBackground: parsed?.ui?.bubbleSnapshotIncludeBackground !== false,
       bubbleSnapshotBackgroundMode: parsed?.ui?.bubbleSnapshotBackgroundMode === 'transparent' || parsed?.ui?.bubbleSnapshotBackgroundMode === 'solid' || parsed?.ui?.bubbleSnapshotBackgroundMode === 'custom-image' ? parsed.ui.bubbleSnapshotBackgroundMode : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode,
       bubbleSnapshotBackgroundColor: typeof parsed?.ui?.bubbleSnapshotBackgroundColor === 'string' ? parsed.ui.bubbleSnapshotBackgroundColor : DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor,
       bubbleSnapshotCustomBackgroundImage: typeof parsed?.ui?.bubbleSnapshotCustomBackgroundImage === 'string' ? parsed.ui.bubbleSnapshotCustomBackgroundImage : DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage,
@@ -855,6 +853,8 @@ function getPreviewSlideBounds(slide: BackgroundSlideItem, canvasWidth: number, 
   };
 }
 
+type InsertAssetAlignMode = 'center-horizontal' | 'center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'align-bottom';
+
 function App() {
   const getSpeakerNameSnapshot = (speakers: Record<string, any>) =>
     Object.fromEntries(Object.entries(speakers || {}).map(([key, speaker]) => [key, speaker?.name || '']));
@@ -933,7 +933,6 @@ function App() {
   const [projectResourceActionBusy, setProjectResourceActionBusy] = useState<'remote-copy' | 'local-copy' | 'refresh' | null>(null);
   const [projectResourceActionReport, setProjectResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
   const [bubbleSnapshotSubtitleIds, setBubbleSnapshotSubtitleIds] = useState<string[]>([]);
-  const [bubbleSnapshotIncludeBackground, setBubbleSnapshotIncludeBackground] = useState(() => Boolean(config.ui?.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground));
   const [bubbleSnapshotBackgroundMode, setBubbleSnapshotBackgroundMode] = useState<'project' | 'transparent' | 'solid' | 'custom-image'>(() => config.ui?.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode);
   const [bubbleSnapshotBackgroundColor, setBubbleSnapshotBackgroundColor] = useState(() => String(config.ui?.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor));
   const [bubbleSnapshotCustomBackgroundImage, setBubbleSnapshotCustomBackgroundImage] = useState(() => String(config.ui?.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage));
@@ -1829,7 +1828,6 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition: ui.settingsPosition,
       subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
       recentProject: ui.recentProject,
-      bubbleSnapshotIncludeBackground: Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground),
       bubbleSnapshotBackgroundMode: ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode,
       bubbleSnapshotBackgroundColor: String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor),
       bubbleSnapshotCustomBackgroundImage: String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage),
@@ -1851,7 +1849,6 @@ const [previewScale, setPreviewScale] = useState(1);
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
     setSubtitlePanelCompactMode((prev: boolean) => (prev === Boolean(ui.subtitlePanelCompactMode) ? prev : Boolean(ui.subtitlePanelCompactMode)));
-    setBubbleSnapshotIncludeBackground((prev: boolean) => (prev === Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground) ? prev : Boolean(ui.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground)));
     setBubbleSnapshotBackgroundMode((prev: 'project' | 'transparent' | 'solid' | 'custom-image') => (prev === (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) ? prev : (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode)));
     setBubbleSnapshotBackgroundColor((prev: string) => (prev === String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor) ? prev : String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor)));
     setBubbleSnapshotCustomBackgroundImage((prev: string) => (prev === String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage) ? prev : String(ui.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage)));
@@ -1903,7 +1900,6 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition,
       subtitlePanelCompactMode,
       recentProject,
-      bubbleSnapshotIncludeBackground,
       bubbleSnapshotBackgroundMode,
       bubbleSnapshotBackgroundColor,
       bubbleSnapshotCustomBackgroundImage,
@@ -1941,7 +1937,6 @@ const [previewScale, setPreviewScale] = useState(1);
         prevUi.settingsPosition === settingsPosition &&
         Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
         prevUi.recentProject === recentProject &&
-        Boolean(prevUi.bubbleSnapshotIncludeBackground ?? DEFAULT_UI_CONFIG.bubbleSnapshotIncludeBackground) === bubbleSnapshotIncludeBackground &&
         String(prevUi.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) === bubbleSnapshotBackgroundMode &&
         String(prevUi.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor) === bubbleSnapshotBackgroundColor &&
         String(prevUi.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage) === bubbleSnapshotCustomBackgroundImage &&
@@ -1974,7 +1969,6 @@ const [previewScale, setPreviewScale] = useState(1);
           settingsPosition,
           subtitlePanelCompactMode,
           recentProject,
-          bubbleSnapshotIncludeBackground,
           bubbleSnapshotBackgroundMode,
           bubbleSnapshotBackgroundColor,
           bubbleSnapshotCustomBackgroundImage,
@@ -1991,7 +1985,7 @@ const [previewScale, setPreviewScale] = useState(1);
         },
       };
     });
-  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, bubbleSnapshotIncludeBackground, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
+  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -3145,7 +3139,6 @@ const [previewScale, setPreviewScale] = useState(1);
       settingsPosition,
       subtitlePanelCompactMode,
       recentProject,
-      bubbleSnapshotIncludeBackground,
       bubbleSnapshotBackgroundMode,
       bubbleSnapshotBackgroundColor,
       bubbleSnapshotCustomBackgroundImage,
@@ -3160,7 +3153,7 @@ const [previewScale, setPreviewScale] = useState(1);
       annotationPresets,
       fontPresets,
     }
-  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotIncludeBackground, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
+  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
 
   const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
@@ -3806,6 +3799,65 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     return getPreviewSlideBounds(activeInsertImageSlide, canvasWidth, canvasHeight);
   }, [activeInsertImageSlide, canvasWidth, canvasHeight, slideEditBoxes]);
+  const alignInsertImageSlide = useCallback((mode: InsertAssetAlignMode) => {
+    if (!activeInsertImageSlide || !activeInsertImageBounds) {
+      return;
+    }
+
+    const boundsCenterX = activeInsertImageBounds.left + activeInsertImageBounds.width / 2;
+    const boundsCenterY = activeInsertImageBounds.top + activeInsertImageBounds.height / 2;
+    let nextOffsetX = activeInsertImageSlide.offsetX ?? 0;
+    let nextOffsetY = activeInsertImageSlide.offsetY ?? 0;
+
+    switch (mode) {
+      case 'center-horizontal':
+        nextOffsetX = 0;
+        break;
+      case 'center-vertical':
+        nextOffsetY = 0;
+        break;
+      case 'align-left':
+        nextOffsetX = Math.round((activeInsertImageSlide.offsetX ?? 0) - activeInsertImageBounds.left);
+        break;
+      case 'align-right':
+        nextOffsetX = Math.round((activeInsertImageSlide.offsetX ?? 0) + (canvasWidth - (activeInsertImageBounds.left + activeInsertImageBounds.width)));
+        break;
+      case 'align-top':
+        nextOffsetY = Math.round((activeInsertImageSlide.offsetY ?? 0) - activeInsertImageBounds.top);
+        break;
+      case 'align-bottom':
+        nextOffsetY = Math.round((activeInsertImageSlide.offsetY ?? 0) + (canvasHeight - (activeInsertImageBounds.top + activeInsertImageBounds.height)));
+        break;
+    }
+
+    if (nextOffsetX === (activeInsertImageSlide.offsetX ?? 0) && nextOffsetY === (activeInsertImageSlide.offsetY ?? 0)) {
+      return;
+    }
+
+    applyTrackedConfigUpdater((prev: any) => ({
+      ...prev,
+      background: {
+        ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+        slides: (prev?.background?.slides || []).map((slide: BackgroundSlideItem) => slide.id === activeInsertImageSlide.id
+          ? { ...slide, offsetX: nextOffsetX, offsetY: nextOffsetY }
+          : slide),
+      },
+    }));
+    setSlideEditBoxes((prev) => {
+      const current = prev[activeInsertImageSlide.id];
+      if (!current) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [activeInsertImageSlide.id]: {
+          ...current,
+          centerX: boundsCenterX + (nextOffsetX - (activeInsertImageSlide.offsetX ?? 0)),
+          centerY: boundsCenterY + (nextOffsetY - (activeInsertImageSlide.offsetY ?? 0)),
+        },
+      };
+    });
+  }, [activeInsertImageBounds, activeInsertImageSlide, applyTrackedConfigUpdater, canvasHeight, canvasWidth]);
   const updateSlideEditBox = useCallback((slideId: string, box: { centerX: number; centerY: number; width: number; height: number }) => {
     if (!Number.isFinite(box.width) || !Number.isFinite(box.height) || box.width <= 1 || box.height <= 1) {
       return;
@@ -5647,8 +5699,9 @@ const [previewScale, setPreviewScale] = useState(1);
                    onActiveInsertImageChange={setActiveInsertImageId}
                     onEditInsertImage={(id) => {
                       openInsertImageEditorAtStart(id);
-                     }}
-                     resolveAssetSrc={resolvePath}
+                    }}
+                    onAlignInsertAsset={alignInsertImageSlide}
+                    resolveAssetSrc={resolvePath}
                      projectPath={projectPath}
                      onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
                      onCopyLocalAssetsToProject={handleCopyLocalAssetsToProject}
@@ -6459,6 +6512,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onEditInsertImage={(id) => {
                   openInsertImageEditorAtStart(id);
                 }}
+                onAlignInsertAsset={alignInsertImageSlide}
                 resolveAssetSrc={resolvePath}
                 projectPath={projectPath}
                 onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
@@ -6662,8 +6716,6 @@ const [previewScale, setPreviewScale] = useState(1);
         themeColor={themeColor}
         secondaryThemeColor={secondaryThemeColor}
         resolveAssetSrc={resolvePath}
-        includeBackground={bubbleSnapshotIncludeBackground}
-        onIncludeBackgroundChange={setBubbleSnapshotIncludeBackground}
         backgroundMode={bubbleSnapshotBackgroundMode}
         onBackgroundModeChange={setBubbleSnapshotBackgroundMode}
         backgroundColor={bubbleSnapshotBackgroundColor}

@@ -47,12 +47,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const COMPACT_ROW_HEIGHT = 34;
   const searchMatches = subtitles.filter((sub) => sub.text.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const currentSearchMatchId = searchQuery.trim() && searchMatches.length > 0 ? searchMatches[searchIndex % searchMatches.length]?.id : undefined;
-  const selectableSpeakers = useMemo(() => Object.entries(speakers).filter(([, speaker]) => speaker?.type !== 'annotation'), [speakers]);
+  const allSpeakerOptions = useMemo(() => Object.entries(speakers), [speakers]);
+  const selectableSpeakers = useMemo(() => allSpeakerOptions.filter(([, speaker]) => speaker?.type !== 'annotation'), [allSpeakerOptions]);
+  const bulkSpeakerOptions = useMemo(() => allSpeakerOptions, [allSpeakerOptions]);
   const subtitleSpeakerOptions = useMemo(() => {
     const presentSpeakerIds = new Set(subtitles.map((sub) => sub.speakerId));
     return selectableSpeakers.filter(([speakerId]) => presentSpeakerIds.has(speakerId));
   }, [selectableSpeakers, subtitles]);
-  const selectableSpeakerIds = useMemo(() => selectableSpeakers.map(([speakerId]) => speakerId), [selectableSpeakers]);
+  const bulkSpeakerIds = useMemo(() => bulkSpeakerOptions.map(([speakerId]) => speakerId), [bulkSpeakerOptions]);
   const subtitleSpeakerIds = useMemo(() => subtitleSpeakerOptions.map(([speakerId]) => speakerId), [subtitleSpeakerOptions]);
   const [selectionSpeakerId, setSelectionSpeakerId] = useState('');
   const [bulkSpeakerId, setBulkSpeakerId] = useState('');
@@ -80,9 +82,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     setSelectedSubtitleIds(subtitles.map((sub) => sub.id));
     setLastSelectedSubtitleId(subtitles[subtitles.length - 1]?.id ?? null);
   }, [subtitles]);
-  const effectiveBulkSpeakerId = bulkSpeakerId && selectableSpeakerIds.includes(bulkSpeakerId)
+  const effectiveBulkSpeakerId = bulkSpeakerId && bulkSpeakerIds.includes(bulkSpeakerId)
     ? bulkSpeakerId
-    : (selectableSpeakerIds[0] ?? '');
+    : (bulkSpeakerIds[0] ?? '');
   const effectiveSelectionSpeakerId = selectionSpeakerId && subtitleSpeakerIds.includes(selectionSpeakerId)
     ? selectionSpeakerId
     : (subtitleSpeakerIds[0] ?? '');
@@ -576,7 +578,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </button>
           <button
             type="button"
-            disabled={validSelectedSubtitleIds.length === 0 || selectableSpeakers.length === 0}
+            disabled={validSelectedSubtitleIds.length === 0 || bulkSpeakerOptions.length === 0}
             onClick={() => {
               setShowBulkSpeakerPicker((prev) => !prev);
               setShowSelectionSpeakerPicker(false);
@@ -626,7 +628,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 className="px-2 py-1 rounded border text-[10px] focus:outline-none"
                 style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
               >
-                {selectableSpeakers.map(([speakerId, speaker]) => (
+                {bulkSpeakerOptions.map(([speakerId, speaker]) => (
                   <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
                 ))}
               </select>

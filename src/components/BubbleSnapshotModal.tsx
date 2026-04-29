@@ -33,8 +33,6 @@ interface BubbleSnapshotModalProps {
   themeColor: string;
   secondaryThemeColor: string;
   resolveAssetSrc?: (src?: string) => string | undefined;
-  includeBackground: boolean;
-  onIncludeBackgroundChange: (value: boolean) => void;
   backgroundMode: 'project' | 'transparent' | 'solid' | 'custom-image';
   onBackgroundModeChange: (value: 'project' | 'transparent' | 'solid' | 'custom-image') => void;
   backgroundColor: string;
@@ -206,8 +204,6 @@ export function BubbleSnapshotModal({
   themeColor,
   secondaryThemeColor,
   resolveAssetSrc,
-  includeBackground,
-  onIncludeBackgroundChange,
   backgroundMode,
   onBackgroundModeChange,
   backgroundColor,
@@ -335,7 +331,6 @@ export function BubbleSnapshotModal({
     }
     const timer = window.setTimeout(() => {
       onBackgroundModeChange(localBackgroundMode);
-      onIncludeBackgroundChange(localBackgroundMode !== 'transparent');
       onBackgroundColorChange(localBackgroundColor);
       onCustomBackgroundImageChange(localCustomBackgroundImage);
       onBackgroundImageSizingChange(localBackgroundImageSizing);
@@ -347,7 +342,7 @@ export function BubbleSnapshotModal({
       onExportScaleChange(localExportScale);
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [localBackgroundMode, localBackgroundColor, localCustomBackgroundImage, localBackgroundImageSizing, localTileAlign, localBackgroundBlur, localBackgroundBrightness, localSidePadding, localBubbleMaxWidthPercent, localExportScale, onBackgroundModeChange, onIncludeBackgroundChange, onBackgroundColorChange, onCustomBackgroundImageChange, onBackgroundImageSizingChange, onTileAlignChange, onBackgroundBlurChange, onBackgroundBrightnessChange, onSidePaddingChange, onBubbleMaxWidthPercentChange, onExportScaleChange, open]);
+  }, [localBackgroundMode, localBackgroundColor, localCustomBackgroundImage, localBackgroundImageSizing, localTileAlign, localBackgroundBlur, localBackgroundBrightness, localSidePadding, localBubbleMaxWidthPercent, localExportScale, onBackgroundModeChange, onBackgroundColorChange, onCustomBackgroundImageChange, onBackgroundImageSizingChange, onTileAlignChange, onBackgroundBlurChange, onBackgroundBrightnessChange, onSidePaddingChange, onBubbleMaxWidthPercentChange, onExportScaleChange, open]);
 
   const renderAvatar = useCallback((speaker: SharedChatSpeaker, style: React.CSSProperties) => {
     if (!speaker.avatar) {
@@ -583,7 +578,6 @@ export function BubbleSnapshotModal({
     contentWidth,
     effectiveBackgroundBlur,
     effectiveBackgroundBrightness,
-    includeBackground,
     open,
     renderAvatar,
     renderInlineImage,

@@ -1405,13 +1405,13 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
     const targetWidth = Math.max(1, Math.round(width * scale));
     const targetHeight = Math.max(1, Math.round(captureHeight * scale));
     const capturedSize = image.getSize();
-    const widthRatio = capturedSize.width / targetWidth;
-    const heightRatio = capturedSize.height / targetHeight;
+    const widthRatio = capturedSize.width / width;
+    const heightRatio = capturedSize.height / captureHeight;
 
-    const isTruncatedCapture = (capturedSize.height < targetHeight && heightRatio < 0.9) || Math.abs(widthRatio - heightRatio) > 0.08;
+    const isTruncatedCapture = (capturedSize.height < captureHeight && heightRatio < 0.9) || Math.abs(widthRatio - heightRatio) > 0.08;
 
     if (isTruncatedCapture && process.platform === 'win32') {
-      const maxSliceHeight = Math.max(256, Math.floor((capturedSize.height / Math.max(scale, 0.1)) * 0.85));
+      const maxSliceHeight = Math.max(256, Math.floor(capturedSize.height * 0.85));
       const sliceHeight = Math.min(captureHeight, maxSliceHeight);
       if (sliceHeight >= captureHeight) {
         throw new Error(`Captured image height is smaller than expected (${capturedSize.width}x${capturedSize.height} vs ${targetWidth}x${targetHeight})`);
@@ -1422,7 +1422,7 @@ ipcMain.handle('render-html-to-png', async (_event, payload: { html: string; wid
         await applyViewport(currentSliceHeight, top);
         const sliceImage = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height: currentSliceHeight });
         const sliceSize = sliceImage.getSize();
-        const expectedSliceHeight = Math.max(1, Math.round(currentSliceHeight * scale));
+        const expectedSliceHeight = currentSliceHeight;
         if (sliceSize.height < expectedSliceHeight * 0.95) {
           throw new Error(`Captured slice height is smaller than expected (${sliceSize.width}x${sliceSize.height} vs ${targetWidth}x${expectedSliceHeight})`);
         }

@@ -66,6 +66,7 @@ interface SettingsPanelProps {
   focusInsertImageSettingsKey?: number;
   onActiveInsertImageChange?: (id: string | null) => void;
   onEditInsertImage?: (id: string) => void;
+  onAlignInsertAsset?: (mode: 'center-horizontal' | 'center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'align-bottom') => void;
   resolveAssetSrc?: (src?: string) => string | undefined;
   projectPath?: string | null;
   projectAssetsCacheEnabled: boolean;
@@ -126,6 +127,7 @@ export function SettingsPanel({
   focusInsertImageSettingsKey = 0,
   onActiveInsertImageChange,
   onEditInsertImage,
+  onAlignInsertAsset,
   resolveAssetSrc,
   projectPath = null,
   projectAssetsCacheEnabled,
@@ -2295,6 +2297,30 @@ export function SettingsPanel({
                           <div className="space-y-1.5">
                             <span className="text-xs opacity-70">{t('project.slideOffsetY')}</span>
                             {renderNumberInput(currentBackgroundSlide.offsetY ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, offsetY: value })), { step: 2, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <span className="text-xs opacity-70">{t('project.assetAlign')}</span>
+                          <div className="grid grid-cols-3 gap-2">
+                            {([
+                              ['center-horizontal', t('project.alignHorizontalCenter')],
+                              ['center-vertical', t('project.alignVerticalCenter')],
+                              ['align-left', t('project.alignLeftEdge')],
+                              ['align-right', t('project.alignRightEdge')],
+                              ['align-top', t('project.alignTopEdge')],
+                              ['align-bottom', t('project.alignBottomEdge')],
+                            ] as const).map(([mode, label]) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => onAlignInsertAsset?.(mode)}
+                                className="rounded-md border px-2 py-2 text-[11px] transition-colors"
+                                style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg, color: uiTheme.text }}
+                              >
+                                {label}
+                              </button>
+                            ))}
                           </div>
                         </div>
 
