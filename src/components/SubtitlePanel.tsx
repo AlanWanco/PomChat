@@ -48,12 +48,11 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const searchMatches = subtitles.filter((sub) => sub.text.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const currentSearchMatchId = searchQuery.trim() && searchMatches.length > 0 ? searchMatches[searchIndex % searchMatches.length]?.id : undefined;
   const allSpeakerOptions = useMemo(() => Object.entries(speakers), [speakers]);
-  const selectableSpeakers = useMemo(() => allSpeakerOptions.filter(([, speaker]) => speaker?.type !== 'annotation'), [allSpeakerOptions]);
   const bulkSpeakerOptions = useMemo(() => allSpeakerOptions, [allSpeakerOptions]);
   const subtitleSpeakerOptions = useMemo(() => {
     const presentSpeakerIds = new Set(subtitles.map((sub) => sub.speakerId));
-    return selectableSpeakers.filter(([speakerId]) => presentSpeakerIds.has(speakerId));
-  }, [selectableSpeakers, subtitles]);
+    return allSpeakerOptions.filter(([speakerId]) => presentSpeakerIds.has(speakerId));
+  }, [allSpeakerOptions, subtitles]);
   const bulkSpeakerIds = useMemo(() => bulkSpeakerOptions.map(([speakerId]) => speakerId), [bulkSpeakerOptions]);
   const subtitleSpeakerIds = useMemo(() => subtitleSpeakerOptions.map(([speakerId]) => speakerId), [subtitleSpeakerOptions]);
   const [selectionSpeakerId, setSelectionSpeakerId] = useState('');

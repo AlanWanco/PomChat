@@ -3120,11 +3120,14 @@ const [previewScale, setPreviewScale] = useState(1);
       ? baseProjectFilePath
       : (projectPath && projectPath !== 'web-demo' ? projectPath : null);
     const trimmed = sourcePath.trim();
-    if (!window.electron || !trimmed || !targetProjectPath || !looksLikeLocalFsPath(trimmed)) {
+    if (!window.electron || !trimmed || !targetProjectPath) {
+      return { storedPath: trimmed, absolutePath: trimmed };
+    }
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
       return { storedPath: trimmed, absolutePath: trimmed };
     }
     return await window.electron.importProjectAsset({ projectFilePath: targetProjectPath, sourcePath: trimmed, preferredName });
-  }, [looksLikeLocalFsPath, projectPath]);
+  }, [projectPath]);
 
   const getCurrentConfigWithUi = useCallback(() => ({
     ...getProjectConfig(),
