@@ -578,18 +578,26 @@ export function SettingsPanel({
     newSpeakers[speakerKey] = { ...newSpeakers[speakerKey] };
     newSpeakers[speakerKey].style = { ...(newSpeakers[speakerKey].style || {}) };
     newSpeakers[speakerKey].style[styleKey] = value;
+    if (newSpeakers[speakerKey].preset) {
+      newSpeakers[speakerKey].preset = "";
+    }
     updateConfig('speakers', newSpeakers);
   };
 
-  const updateSpeaker = (speakerKey: string, updater: (speaker: any) => any) => {
+  const updateSpeaker = (speakerKey: string, updater: (speaker: any) => any, options?: { preservePreset?: boolean }) => {
     const newSpeakers = { ...config.speakers };
     const currentSpeaker = newSpeakers[speakerKey];
     if (!currentSpeaker) return;
 
-    newSpeakers[speakerKey] = updater({
+    const nextSpeaker = updater({
       ...currentSpeaker,
       style: { ...(currentSpeaker.style || {}) }
     });
+    const preservePreset = options?.preservePreset === true;
+    if (!preservePreset && currentSpeaker.preset) {
+      nextSpeaker.preset = "";
+    }
+    newSpeakers[speakerKey] = nextSpeaker;
 
     updateConfig('speakers', newSpeakers);
   };
@@ -2638,7 +2646,7 @@ export function SettingsPanel({
                                 }
                                 nextSpeaker.preset = val;
                                 return nextSpeaker;
-                              });
+                              }, { preservePreset: true });
                             }}
                             className={`flex-1 border rounded px-1 py-1 text-xs focus:outline-none w-full ${inputClass}`}
                             style={inputSurfaceStyle}
@@ -3035,7 +3043,7 @@ export function SettingsPanel({
                               }
                               nextSpeaker.preset = val;
                               return nextSpeaker;
-                            });
+                            }, { preservePreset: true });
                           }}
                           className={`flex-1 border rounded px-1 py-1 text-xs focus:outline-none w-full ${inputClass}`}
                           style={inputSurfaceStyle}

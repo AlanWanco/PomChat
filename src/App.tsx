@@ -1361,6 +1361,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const backupAssIfSpeakerNamesChanged = async () => {
+    const resolvedAssPath = resolveProjectAssetPath(config.assPath) || config.assPath;
     if (!window.electron || !resolvedAssPath) return;
 
     const previousNames = savedSpeakerNamesRef.current;
@@ -3422,7 +3423,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
-          imported = await importProjectAssetPath(resolvedPath, projectPath);
+          imported = await importProjectAssetPath(rawValue, projectPath);
           importedBySource.set(resolvedPath, imported);
         }
         if (imported?.storedPath && imported.storedPath !== rawValue) {
@@ -3480,7 +3481,7 @@ const [previewScale, setPreviewScale] = useState(1);
         if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) continue;
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
-          imported = await importProjectAssetPath(resolvedPath, projectPath);
+          imported = await importProjectAssetPath(rawValue, projectPath);
           importedBySource.set(resolvedPath, imported);
         }
         if (imported?.storedPath && imported.storedPath !== rawValue) {
@@ -3677,8 +3678,6 @@ const [previewScale, setPreviewScale] = useState(1);
     setShowSettings(true);
     showToast(t('app.projectLoaded'));
   }, [rememberRecentProject, showToast, t]);
-
-  const resolvedAssPath = resolveProjectAssetPath(config.assPath) || config.assPath;
 
   const detectVideoMediaInfo = useCallback(async (src: string) => {
     return await new Promise<{ hasAudio: boolean; duration: number | null }>((resolve) => {
@@ -7020,15 +7019,86 @@ const [previewScale, setPreviewScale] = useState(1);
 
             pushHistorySnapshot();
             setConfig((prev: any) => {
-              const nextSpeakers = Object.fromEntries(
-                Object.entries(newSpeakers || {}).map(([speakerId, speaker]: [string, any]) => [
-                  speakerId,
-                  {
-                    ...speaker,
-                    preset: speaker?.preset ?? prev?.speakers?.[speakerId]?.preset
+              const existingSpeakers = { ...(prev?.speakers || {}) };
+              const nextSpeakers = { ...existingSpeakers };
+              const importedEntries = Object.entries(newSpeakers || {}) as Array<[string, any]>;
+
+              const findMatchingExistingSpeakerId = (incomingSpeaker: any) => {
+                const incomingActor = String(incomingSpeaker?.assActorName || '').trim();
+                const incomingStyle = String(incomingSpeaker?.assStyleName || '').trim();
+                const incomingName = String(incomingSpeaker?.name || '').trim();
+
+                return Object.entries(nextSpeakers).find(([_, existingSpeaker]: [string, any]) => {
+                  const existingActor = String(existingSpeaker?.assActorName || '').trim();
+                  const existingStyle = String(existingSpeaker?.assStyleName || '').trim();
+                  const existingName = String(existingSpeaker?.name || '').trim();
+
+                  if (incomingStyle && existingStyle && incomingStyle === existingStyle) {
+                    if (!incomingActor || !existingActor || incomingActor === existingActor) {
+                      return true;
+                    }
                   }
-                ])
-              );
+
+                  if (incomingActor && existingActor && incomingActor === existingActor) {
+                    if (!incomingStyle || !existingStyle || incomingStyle === existingStyle) {
+                      return true;
+                    }
+                  }
+
+                  return incomingName && existingName && incomingName === existingName;
+                })?.[0] || null;
+              };
+
+              const allocateSpeakerId = (preferredId: string) => {
+                if (!nextSpeakers[preferredId]) {
+                  return preferredId;
+                }
+                if (/^[A-Z]$/.test(preferredId)) {
+                  for (let charCode = 65; charCode <= 90; charCode += 1) {
+                    const candidate = String.fromCharCode(charCode);
+                    if (!nextSpeakers[candidate]) {
+                      return candidate;
+                    }
+                  }
+                }
+                let counter = 2;
+                let candidate = `${preferredId}_${counter}`;
+                while (nextSpeakers[candidate]) {
+                  counter += 1;
+                  candidate = `${preferredId}_${counter}`;
+                }
+                return candidate;
+              };
+
+              importedEntries.forEach(([speakerId, speaker]) => {
+                if (!speaker) {
+                  return;
+                }
+                if (speakerId === 'ANNOTATION') {
+                  nextSpeakers.ANNOTATION = {
+                    ...(nextSpeakers.ANNOTATION || DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION),
+                    ...speaker,
+                    preset: speaker?.preset ?? nextSpeakers.ANNOTATION?.preset ?? prev?.speakers?.ANNOTATION?.preset,
+                  };
+                  return;
+                }
+
+                const matchedExistingSpeakerId = findMatchingExistingSpeakerId(speaker);
+                if (matchedExistingSpeakerId) {
+                  nextSpeakers[matchedExistingSpeakerId] = {
+                    ...nextSpeakers[matchedExistingSpeakerId],
+                    ...speaker,
+                    preset: speaker?.preset ?? nextSpeakers[matchedExistingSpeakerId]?.preset,
+                  };
+                  return;
+                }
+
+                const allocatedSpeakerId = allocateSpeakerId(speakerId);
+                nextSpeakers[allocatedSpeakerId] = {
+                  ...speaker,
+                  preset: speaker?.preset ?? prev?.speakers?.[allocatedSpeakerId]?.preset
+                };
+              });
 
               if (!nextSpeakers.ANNOTATION) {
                 nextSpeakers.ANNOTATION = prev?.speakers?.ANNOTATION || DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION;

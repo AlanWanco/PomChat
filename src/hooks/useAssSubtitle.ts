@@ -157,13 +157,7 @@ export function useAssSubtitle(
 
     const shouldUseProjectContent = Array.isArray(projectContent)
       && projectContent.length > 0
-      && (
-        subtitleFormat === 'srt'
-        || subtitleFormat === 'lrc'
-        || (subtitleFormat === 'ass' && !hasAssOverride && !assPath)
-        || (!window.electron && !hasAssOverride && !assPath)
-        || !assPath
-      );
+      && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || subtitleFormat === 'ass' || (!window.electron && !hasAssOverride) || !assPath);
 
     if (hasAssOverride && !shouldUseProjectContent) {
       Promise.resolve().then(() => {
