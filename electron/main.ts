@@ -659,24 +659,58 @@ function normalizeVersionTag(version: string) {
 }
 
 function compareVersions(a: string, b: string) {
-  const tokenize = (value: string) => normalizeVersionTag(value).split(/[-.]/g).map((part) => {
-    const numeric = Number(part);
-    return Number.isFinite(numeric) ? numeric : part;
-  });
-  const left = tokenize(a);
-  const right = tokenize(b);
-  const length = Math.max(left.length, right.length);
+  const parse = (value: string) => {
+    const normalized = normalizeVersionTag(value);
+    const [core, prerelease = ''] = normalized.split('-', 2);
+    const coreParts = core.split('.').map((part) => {
+      const numeric = Number(part);
+      return Number.isFinite(numeric) ? numeric : 0;
+    });
+    const prereleaseParts = prerelease
+      ? prerelease.split('.').map((part) => {
+          const numeric = Number(part);
+          return Number.isFinite(numeric) ? numeric : part;
+        })
+      : [];
+    return { coreParts, prereleaseParts };
+  };
 
-  for (let index = 0; index < length; index += 1) {
-    const l = left[index] ?? 0;
-    const r = right[index] ?? 0;
-    if (typeof l === 'number' && typeof r === 'number') {
-      if (l !== r) return l > r ? 1 : -1;
-      continue;
+  const compareIdentifiers = (leftValue: string | number, rightValue: string | number) => {
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+      return leftValue === rightValue ? 0 : leftValue > rightValue ? 1 : -1;
     }
-    const ls = String(l);
-    const rs = String(r);
-    if (ls !== rs) return ls > rs ? 1 : -1;
+    if (typeof leftValue === 'number') return -1;
+    if (typeof rightValue === 'number') return 1;
+    if (leftValue === rightValue) return 0;
+    return leftValue > rightValue ? 1 : -1;
+  };
+
+  const left = parse(a);
+  const right = parse(b);
+  const coreLength = Math.max(left.coreParts.length, right.coreParts.length);
+  for (let index = 0; index < coreLength; index += 1) {
+    const diff = compareIdentifiers(left.coreParts[index] ?? 0, right.coreParts[index] ?? 0);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+
+  const leftHasPrerelease = left.prereleaseParts.length > 0;
+  const rightHasPrerelease = right.prereleaseParts.length > 0;
+  if (!leftHasPrerelease && !rightHasPrerelease) return 0;
+  if (!leftHasPrerelease) return 1;
+  if (!rightHasPrerelease) return -1;
+
+  const prereleaseLength = Math.max(left.prereleaseParts.length, right.prereleaseParts.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftPart = left.prereleaseParts[index];
+    const rightPart = right.prereleaseParts[index];
+    if (typeof leftPart === 'undefined') return -1;
+    if (typeof rightPart === 'undefined') return 1;
+    const diff = compareIdentifiers(leftPart, rightPart);
+    if (diff !== 0) {
+      return diff;
+    }
   }
 
   return 0;

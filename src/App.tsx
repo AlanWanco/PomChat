@@ -855,6 +855,64 @@ function getPreviewSlideBounds(slide: BackgroundSlideItem, canvasWidth: number, 
 
 type InsertAssetAlignMode = 'center-horizontal' | 'center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'align-bottom';
 
+function compareSemanticVersions(a: string, b: string) {
+  const normalize = (value: string) => (value || '').trim().replace(/^v/i, '');
+  const parse = (value: string) => {
+    const normalized = normalize(value);
+    const [core, prerelease = ''] = normalized.split('-', 2);
+    const coreParts = core.split('.').map((part) => {
+      const numeric = Number(part);
+      return Number.isFinite(numeric) ? numeric : 0;
+    });
+    const prereleaseParts = prerelease
+      ? prerelease.split('.').map((part) => {
+          const numeric = Number(part);
+          return Number.isFinite(numeric) ? numeric : part;
+        })
+      : [];
+    return { coreParts, prereleaseParts };
+  };
+  const compareIdentifiers = (leftValue: string | number, rightValue: string | number) => {
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+      return leftValue === rightValue ? 0 : leftValue > rightValue ? 1 : -1;
+    }
+    if (typeof leftValue === 'number') return -1;
+    if (typeof rightValue === 'number') return 1;
+    if (leftValue === rightValue) return 0;
+    return leftValue > rightValue ? 1 : -1;
+  };
+
+  const left = parse(a);
+  const right = parse(b);
+  const coreLength = Math.max(left.coreParts.length, right.coreParts.length);
+  for (let index = 0; index < coreLength; index += 1) {
+    const diff = compareIdentifiers(left.coreParts[index] ?? 0, right.coreParts[index] ?? 0);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+
+  const leftHasPrerelease = left.prereleaseParts.length > 0;
+  const rightHasPrerelease = right.prereleaseParts.length > 0;
+  if (!leftHasPrerelease && !rightHasPrerelease) return 0;
+  if (!leftHasPrerelease) return 1;
+  if (!rightHasPrerelease) return -1;
+
+  const prereleaseLength = Math.max(left.prereleaseParts.length, right.prereleaseParts.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftPart = left.prereleaseParts[index];
+    const rightPart = right.prereleaseParts[index];
+    if (typeof leftPart === 'undefined') return -1;
+    if (typeof rightPart === 'undefined') return 1;
+    const diff = compareIdentifiers(leftPart, rightPart);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+
+  return 0;
+}
+
 function App() {
   const getSpeakerNameSnapshot = (speakers: Record<string, any>) =>
     Object.fromEntries(Object.entries(speakers || {}).map(([key, speaker]) => [key, speaker?.name || '']));
@@ -1662,7 +1720,7 @@ const [previewScale, setPreviewScale] = useState(1);
         currentVersion: __APP_VERSION__,
         htmlUrl: release.html_url,
         publishedAt: release.published_at,
-        hasUpdate: latestVersion !== __APP_VERSION__,
+        hasUpdate: compareSemanticVersions(latestVersion, __APP_VERSION__) > 0,
       };
       setUpdateResult(result);
       showToast(result.hasUpdate ? `${t('about.updateAvailable')}: v${latestVersion}` : t('about.upToDate'));
@@ -6980,6 +7038,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 ...prev,
                 subtitleFormat: 'ass',
                 assPath: path,
+                content: [],
                 speakers: nextSpeakers
               };
             });

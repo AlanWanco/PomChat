@@ -51,6 +51,9 @@ type ImportedSpeakerMap = Record<string, {
   side: 'left' | 'right' | 'center';
   type?: 'annotation' | 'speaker';
   preset?: string;
+  assActorName?: string;
+  assStyleName?: string;
+  assStyleNames?: string[];
   style: Record<string, string | number>;
 }>;
 type ImportedPresetMap = Record<string, {
@@ -388,6 +391,9 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
           avatar: isAnnotation ? '' : `https://api.dicebear.com/7.x/adventurer/svg?seed=${displayName || speakerId}`,
           side: isAnnotation ? 'center' : (charCode % 2 === 0 ? 'left' : 'right'),
           type: isAnnotation ? 'annotation' : 'speaker',
+          assActorName: name || '',
+          assStyleName: styleName || '',
+          assStyleNames: styleName ? [styleName] : [],
           preset: hasSelectedStyle ? assPresetKey : undefined,
           style: {
             ...mergedStyle
@@ -423,6 +429,9 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         avatar: isAnnotation ? '' : `https://api.dicebear.com/7.x/adventurer/svg?seed=${styleName || speakerId}`,
         side: isAnnotation ? 'center' : (charCode % 2 === 0 ? 'left' : 'right'),
         type: isAnnotation ? 'annotation' : 'speaker',
+        assActorName: '',
+        assStyleName: styleName || '',
+        assStyleNames: styleName ? [styleName] : [],
         preset: assPresetKey,
         style: {
           ...mergedStyle
@@ -437,6 +446,9 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         name: "默认角色",
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=A`,
         side: "left",
+        assActorName: '',
+        assStyleName: '',
+        assStyleNames: [],
         style: {
           bgColor: "#2563eb", textColor: "#ffffff", nameColor: '#ffffff', borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, animationStyle: 'rise', animationDuration: 0.2, fontFamily: "system-ui", fontSize: 30, fontWeight: "normal"
         }

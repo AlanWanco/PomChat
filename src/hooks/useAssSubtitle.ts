@@ -44,7 +44,12 @@ const buildSpeakerStyleCandidates = (actorName: string, styleName: string) => {
   ];
 };
 
-type SpeakerConfig = Record<string, { name?: string }>;
+type SpeakerConfig = Record<string, {
+  name?: string;
+  assActorName?: string;
+  assStyleName?: string;
+  assStyleNames?: string[];
+}>;
 type ProjectTextItem = {
   type?: string;
   start?: number;
@@ -57,6 +62,45 @@ type ParsedDialogue = ParsedASS['events']['dialogue'][number];
 
 const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styleName: string) => {
   const keys = Object.keys(speakerConfig);
+  const actor = (actorName || '').trim();
+  const style = (styleName || '').trim();
+
+  for (const key of keys) {
+    const speaker = speakerConfig[key] || {};
+    if (speaker.assActorName && speaker.assStyleName) {
+      if (speaker.assActorName.trim() === actor && speaker.assStyleName.trim() === style) {
+        return key;
+      }
+    }
+  }
+
+  for (const key of keys) {
+    const speaker = speakerConfig[key] || {};
+    if (Array.isArray(speaker.assStyleNames) && style) {
+      if (speaker.assStyleNames.some((item) => (item || '').trim() === style)) {
+        if (!speaker.assActorName || speaker.assActorName.trim() === actor) {
+          return key;
+        }
+      }
+    }
+  }
+
+  for (const key of keys) {
+    const speaker = speakerConfig[key] || {};
+    if (speaker.assStyleName && speaker.assStyleName.trim() === style) {
+      if (!speaker.assActorName || speaker.assActorName.trim() === actor) {
+        return key;
+      }
+    }
+  }
+
+  for (const key of keys) {
+    const speaker = speakerConfig[key] || {};
+    if (speaker.assActorName && speaker.assActorName.trim() === actor) {
+      return key;
+    }
+  }
+
   const combinedCandidates = buildSpeakerStyleCandidates(actorName, styleName);
   for (const candidate of combinedCandidates) {
     for (const key of keys) {
@@ -113,7 +157,13 @@ export function useAssSubtitle(
 
     const shouldUseProjectContent = Array.isArray(projectContent)
       && projectContent.length > 0
-      && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || subtitleFormat === 'ass' || (!window.electron && !hasAssOverride) || !assPath);
+      && (
+        subtitleFormat === 'srt'
+        || subtitleFormat === 'lrc'
+        || (subtitleFormat === 'ass' && !hasAssOverride && !assPath)
+        || (!window.electron && !hasAssOverride && !assPath)
+        || !assPath
+      );
 
     if (hasAssOverride && !shouldUseProjectContent) {
       Promise.resolve().then(() => {
