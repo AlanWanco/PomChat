@@ -23,6 +23,7 @@ interface Window {
     openExportLogDir: () => Promise<boolean>;
     getDroppedFilePath: (file: File) => string;
     readFile: (filePath: string) => Promise<string>;
+    readBinaryFile: (payload: string | { filePath: string; projectFilePath?: string | null }) => Promise<number[] | null>;
     inspectProjectResources: (payload: { projectFilePath: string; resources: Array<{ id: string; value: string }> }) => Promise<Array<{ id: string; state: 'ok' | 'updated-relative' | 'missing'; resolvedValue: string; suggestedValue?: string }>>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
     writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => Promise<boolean>;

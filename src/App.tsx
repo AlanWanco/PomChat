@@ -28,6 +28,17 @@ const SECONDARY_THEME_DEFAULT = '#ed7e96';
 const THEME_COLOR_VALUES = ['#545454', '#ed7e96', '#e7d600', '#01b7ee', '#485ec6', '#ff5800', '#a764a1', '#d71c30', '#83c36e', '#9ca4b8', '#36b583', '#aaa898', '#f8c9c4'];
 const MESSAGE_FALLBACK_COUNT = 32;
 const HISTORY_LIMIT = 80;
+const guessAudioMimeType = (filePath: string) => {
+  const lower = (filePath || '').toLowerCase();
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.aac')) return 'audio/aac';
+  if (lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.flac')) return 'audio/flac';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  if (lower.endsWith('.opus')) return 'audio/opus';
+  return 'application/octet-stream';
+};
 
 type HistorySnapshot = {
   config: any;
@@ -1014,6 +1025,8 @@ function App() {
   const [annotationPresets, setAnnotationPresets] = useState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
   const [fontPresets, setFontPresets] = useState<FontPresetMap>(() => config.ui?.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets);
   const [webAudioObjectUrl, setWebAudioObjectUrl] = useState('');
+  const [desktopAudioBlob, setDesktopAudioBlob] = useState<Blob | null>(null);
+  const [desktopAudioObjectUrl, setDesktopAudioObjectUrl] = useState('');
   const [webAssContent, setWebAssContent] = useState<string | null>(null);
   const webPresetInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -2233,7 +2246,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     if (isPlaying) {
       audio.play().catch((err) => {
-        console.error("Audio playback failed:", err);
+        console.error('Audio playback failed:', err);
         setIsPlaying(false);
       });
     } else {
@@ -3738,6 +3751,83 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    const rawLocalAudioPath = (config.audioPath || '').trim();
+    const trimmed = rawLocalAudioPath;
+    if (!trimmed || /^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+      setDesktopAudioBlob(null);
+      setDesktopAudioObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return '';
+      });
+      return;
+    }
+
+    let cancelled = false;
+    let nextUrl = '';
+    const localFsPath = trimmed.startsWith('file://')
+      ? (() => {
+          try {
+            const fileUrl = new URL(trimmed);
+            const pathname = decodeURIComponent(fileUrl.pathname || '');
+            return /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+          } catch {
+            return trimmed.replace(/^file:\/\/?/, '/');
+          }
+        })()
+      : trimmed;
+
+    void window.electron.readBinaryFile({
+      filePath: localFsPath,
+      projectFilePath: projectPath || null,
+    }).then((bytes) => {
+      if (cancelled) {
+        return;
+      }
+      if (!bytes || bytes.length === 0) {
+        setDesktopAudioBlob(null);
+        setDesktopAudioObjectUrl((prev) => {
+          if (prev) {
+            URL.revokeObjectURL(prev);
+          }
+          return '';
+        });
+        return;
+      }
+      const blob = new Blob([new Uint8Array(bytes)], { type: guessAudioMimeType(localFsPath) });
+      setDesktopAudioBlob(blob);
+      nextUrl = URL.createObjectURL(blob);
+      setDesktopAudioObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return nextUrl;
+      });
+    }).catch((error) => {
+      console.error('Failed to read desktop audio file:', error);
+      setDesktopAudioBlob(null);
+      setDesktopAudioObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return '';
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      if (nextUrl) {
+        URL.revokeObjectURL(nextUrl);
+      }
+    };
+  }, [config.audioPath, projectPath]);
+
+  useEffect(() => {
+    if (!window.electron) {
+      return;
+    }
+
     const workingConfig = getCurrentConfigWithUi();
     const remoteResources = collectProjectResources(workingConfig).filter((resource) => resource.kind === 'url' && Boolean(resource.value?.trim()));
     if (!remoteResources.length) {
@@ -3795,7 +3885,23 @@ const [previewScale, setPreviewScale] = useState(1);
     };
   }, [cachedRemoteAssets, collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, projectAssetsCacheEnabled, projectPath, syncProjectResourceConfigState, updateConfigValueByPath]);
 
-  const resolvedAudioPath = webAudioObjectUrl || resolvePath(config.audioPath) || '';
+  const desktopLocalAudioSource = useMemo(() => {
+    if (!window.electron) {
+      return '';
+    }
+    const rawPath = (config.audioPath || '').trim();
+    if (!rawPath) {
+      return '';
+    }
+    if (/^(https?:)?\/\//i.test(rawPath) || rawPath.startsWith('data:') || rawPath.startsWith('blob:')) {
+      return '';
+    }
+    return rawPath;
+  }, [config.audioPath, projectPath]);
+
+  const resolvedAudioPath = webAudioObjectUrl
+    || desktopAudioObjectUrl
+    || (desktopLocalAudioSource ? '' : (resolvePath(config.audioPath) || ''));
   const previewFontFaceCss = useMemo(() => buildFontFaceCss(
     Object.fromEntries(
       Object.entries(fontPresets || {}).map(([key, preset]) => [
@@ -6592,6 +6698,7 @@ const [previewScale, setPreviewScale] = useState(1);
       <PlayerControls 
         key={resolvedAudioPath || 'no-audio'}
         audioPath={resolvedAudioPath}
+        audioBlob={desktopAudioBlob}
         audioRef={audioRef}
         duration={duration}
         isPlaying={isPlaying}

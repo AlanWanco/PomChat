@@ -8,6 +8,7 @@ import { createThemeTokens, rgba } from '../theme';
 
 interface PlayerControlsProps {
   audioPath: string;
+  audioBlob?: Blob | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   duration: number;
   isPlaying: boolean;
@@ -66,6 +67,7 @@ const formatTime = (seconds: number) => {
 
 export const PlayerControls = memo(function PlayerControls({ 
   audioPath,
+  audioBlob = null,
   audioRef,
   duration, 
   isPlaying, 
@@ -506,10 +508,26 @@ export const PlayerControls = memo(function PlayerControls({
 
     // Let WaveSurfer decode the source directly so containers like M4A
     // can still produce peaks even when playback is handled elsewhere.
-    void wavesurfer.current.load(audioPath).catch((error) => {
+    const loadWaveform = audioBlob
+      ? wavesurfer.current.loadBlob(audioBlob)
+      : wavesurfer.current.load(audioPath);
+
+    void loadWaveform.catch((error) => {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
+
+      const fallbackSrc = audioRef.current?.currentSrc || audioRef.current?.src || '';
+      if (fallbackSrc && fallbackSrc !== audioPath && wavesurfer.current) {
+        void wavesurfer.current.load(fallbackSrc).catch((fallbackError) => {
+          if (fallbackError instanceof DOMException && fallbackError.name === 'AbortError') {
+            return;
+          }
+          console.error('WaveSurfer load failed:', fallbackError);
+        });
+        return;
+      }
+
       console.error('WaveSurfer load failed:', error);
     });
 
@@ -527,7 +545,7 @@ export const PlayerControls = memo(function PlayerControls({
         waveformRef.current.innerHTML = '';
       }
     };
-  }, [audioPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor]);
+  }, [audioBlob, audioPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor]);
 
   useEffect(() => {
     const updateOverlayMetrics = () => {

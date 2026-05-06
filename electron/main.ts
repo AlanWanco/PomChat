@@ -1140,6 +1140,21 @@ ipcMain.handle('import-project-asset', async (_event, payload: { projectFilePath
   return importFileToProjectAssets(payload.projectFilePath, payload.sourcePath, payload.preferredName);
 });
 
+ipcMain.handle('read-binary-file', async (_event, payload: string | { filePath: string; projectFilePath?: string | null }) => {
+  const filePath = typeof payload === 'string' ? payload : payload?.filePath;
+  const projectFilePath = typeof payload === 'string' ? null : payload?.projectFilePath;
+  if (!filePath) {
+    return null;
+  }
+  const resolvedPath = projectFilePath
+    ? resolveProjectResourcePath(projectFilePath, filePath)
+    : resolveAppFilePath(filePath);
+  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+    return null;
+  }
+  return Array.from(fs.readFileSync(resolvedPath));
+});
+
 ipcMain.handle('save-clipboard-image-to-project-assets', async (_event, payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => {
   if (!payload?.projectFilePath || !Array.isArray(payload.bytes) || payload.bytes.length === 0) {
     return null;
