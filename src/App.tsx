@@ -72,10 +72,26 @@ type SpeakerImportConflict = {
   changedFields: string[];
 };
 
+type ImportProjectSettingsSelection = {
+  layout: {
+    dimensions: boolean;
+    fps: boolean;
+    chatLayout: boolean;
+  };
+  background: {
+    image: boolean;
+    fit: boolean;
+    blur: boolean;
+    brightness: boolean;
+    duration: boolean;
+  };
+};
+
 type ImportProjectSettingsDialogState = {
   sourcePath: string;
   importedConfig: any;
   conflicts: SpeakerImportConflict[];
+  selection: ImportProjectSettingsSelection;
 };
 
 type ProjectResourceEntry = {
@@ -450,17 +466,8 @@ const getProjectContentEnd = (projectConfig: any, audioDuration = 0) => {
         return Math.max(max, end);
       }, 0)
     : 0;
-  const slideEnd = Array.isArray(projectConfig?.background?.slides)
-    ? projectConfig.background.slides.reduce((max: number, slide: any) => {
-        const end = typeof slide?.end === 'number' && Number.isFinite(slide.end) ? slide.end : 0;
-        return Math.max(max, end);
-      }, 0)
-    : 0;
-  const backgroundDuration = typeof projectConfig?.background?.duration === 'number' && Number.isFinite(projectConfig.background.duration)
-    ? projectConfig.background.duration
-    : 0;
 
-  return Number(Math.max(audioDuration || 0, subtitleEnd, slideEnd, backgroundDuration, 0).toFixed(2));
+  return Number(Math.max(audioDuration || 0, subtitleEnd, 0).toFixed(2));
 };
 
 const sanitizeProjectOverrides = (value: unknown) => {
@@ -922,6 +929,14 @@ function compareSemanticVersions(a: string, b: string) {
   }
 
   return 0;
+}
+
+function areAllImportGroupOptionsEnabled(group: Record<string, boolean>) {
+  return Object.values(group).every(Boolean);
+}
+
+function areAnyImportGroupOptionsEnabled(group: Record<string, boolean>) {
+  return Object.values(group).some(Boolean);
 }
 
 function App() {
@@ -4175,6 +4190,9 @@ const [previewScale, setPreviewScale] = useState(1);
 
       payload.conflicts.forEach((conflict) => {
         handledSpeakerKeys.add(conflict.sourceKey);
+        if (conflict.action === 'skip') {
+          return;
+        }
         if (conflict.action === 'overwrite') {
           nextSpeakers[conflict.targetKey] = JSON.parse(JSON.stringify(conflict.sourceSpeaker));
           return;
@@ -4206,13 +4224,28 @@ const [previewScale, setPreviewScale] = useState(1);
 
       return {
         ...prev,
-        fps: payload.importedConfig?.fps ?? prev?.fps,
-        dimensions: payload.importedConfig?.dimensions ?? prev?.dimensions,
-        chatLayout: payload.importedConfig?.chatLayout ?? prev?.chatLayout,
-        background: payload.importedConfig?.background
+        fps: payload.selection.layout.fps ? (payload.importedConfig?.fps ?? prev?.fps) : prev?.fps,
+        dimensions: payload.selection.layout.dimensions ? (payload.importedConfig?.dimensions ?? prev?.dimensions) : prev?.dimensions,
+        chatLayout: payload.selection.layout.chatLayout ? (payload.importedConfig?.chatLayout ?? prev?.chatLayout) : prev?.chatLayout,
+        background: areAnyImportGroupOptionsEnabled(payload.selection.background) && payload.importedConfig?.background
           ? {
               ...(prev?.background || {}),
-              ...payload.importedConfig.background,
+              ...(payload.selection.background.fit ? {
+                fit: payload.importedConfig.background.fit,
+                position: payload.importedConfig.background.position,
+              } : {}),
+              ...(payload.selection.background.blur ? {
+                blur: payload.importedConfig.background.blur,
+              } : {}),
+              ...(payload.selection.background.brightness ? {
+                brightness: payload.importedConfig.background.brightness,
+              } : {}),
+              ...(payload.selection.background.image ? {
+                image: payload.importedConfig.background.image,
+              } : {}),
+              ...(payload.selection.background.duration ? {
+                duration: payload.importedConfig.background.duration,
+              } : {}),
               slides: prev?.background?.slides || [],
             }
           : prev?.background,
@@ -4224,8 +4257,37 @@ const [previewScale, setPreviewScale] = useState(1);
     showToast(t('app.projectSettingsImported'));
   }, [markProjectDirty, pushHistorySnapshot, showToast, t]);
 
-  const beginImportProjectSettings = useCallback((sourcePath: string, parsed: any) => {
+  const beginImportProjectSettings = useCallback(async (sourcePath: string, parsed: any) => {
     const validatedConfig = validateProjectConfig(parsed);
+    const resolveImportedSettingPath = async (value: string | undefined) => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) {
+        return trimmed;
+      }
+      if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) {
+        return trimmed;
+      }
+      if (/^www\./i.test(trimmed) || /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\') || (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/'))) {
+        return trimmed;
+      }
+      if (!window.electron || !projectPath || projectPath === 'web-demo') {
+        return resolveAssetPathAgainstProject(trimmed, sourcePath) || trimmed;
+      }
+      try {
+        const inspection = await window.electron.inspectProjectResources({
+          projectFilePath: projectPath,
+          resources: [{ id: 'import-check', value: trimmed }],
+        });
+        const result = inspection?.[0];
+        if (result?.state === 'ok' || result?.state === 'updated-relative') {
+          return trimmed;
+        }
+      } catch {
+        // Fall back to absolute source path resolution below.
+      }
+      return resolveAssetPathAgainstProject(trimmed, sourcePath) || trimmed;
+    };
+
     const importedConfig = {
       fps: validatedConfig.fps,
       dimensions: JSON.parse(JSON.stringify(validatedConfig.dimensions)),
@@ -4236,18 +4298,20 @@ const [previewScale, setPreviewScale] = useState(1);
             position: validatedConfig.background.position,
             blur: validatedConfig.background.blur,
             brightness: validatedConfig.background.brightness,
-            image: validatedConfig.background.image,
+            image: await resolveImportedSettingPath(validatedConfig.background.image),
             duration: validatedConfig.background.duration,
           }
         : undefined,
       speakers: Object.fromEntries(
-        Object.entries(validatedConfig.speakers || {}).map(([speakerKey, speaker]: [string, any]) => [
-          speakerKey,
-          {
-            ...JSON.parse(JSON.stringify(speaker)),
-            avatar: resolveAssetPathAgainstProject(speaker?.avatar, sourcePath) || speaker?.avatar || '',
-          },
-        ])
+        await Promise.all(
+          Object.entries(validatedConfig.speakers || {}).map(async ([speakerKey, speaker]: [string, any]) => [
+            speakerKey,
+            {
+              ...JSON.parse(JSON.stringify(speaker)),
+              avatar: await resolveImportedSettingPath(speaker?.avatar),
+            },
+          ])
+        )
       ),
     };
 
@@ -4296,12 +4360,25 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (conflicts.length === 0) {
-      applyImportedProjectSettings({ sourcePath, importedConfig, conflicts: [] });
-      return;
-    }
-
-    setImportProjectSettingsDialog({ sourcePath, importedConfig, conflicts });
+    setImportProjectSettingsDialog({
+      sourcePath,
+      importedConfig,
+      conflicts,
+      selection: {
+        layout: {
+          dimensions: true,
+          fps: true,
+          chatLayout: true,
+        },
+        background: {
+          image: true,
+          fit: true,
+          blur: true,
+          brightness: true,
+          duration: true,
+        },
+      },
+    });
   }, [applyImportedProjectSettings, config.background, config.chatLayout, config.dimensions, config.fps, config.speakers, showToast, t, validateProjectConfig]);
 
   const handleNewProject = async (initialOverrides?: any) => {
@@ -4842,7 +4919,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
       const sourcePath = result.filePaths[0];
       const content = await window.electron.readFile(sourcePath);
-      beginImportProjectSettings(sourcePath, JSON.parse(content));
+      await beginImportProjectSettings(sourcePath, JSON.parse(content));
     } catch (e: any) {
       alert(`${t('dialog.errorImportSettingsFailed')}: ${e.message}`);
     }
@@ -6973,11 +7050,126 @@ const [previewScale, setPreviewScale] = useState(1);
       {importProjectSettingsDialog && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-xl border shadow-2xl p-4 space-y-4 max-h-[80vh] overflow-y-auto" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
-            <div className="space-y-1">
-              <div className="text-sm font-semibold">{t('importSettings.title')}</div>
-              <p className="text-xs" style={{ color: uiTheme.textMuted }}>{t('importSettings.description')}</p>
+             <div className="space-y-1">
+               <div className="text-sm font-semibold">{t('importSettings.title')}</div>
+               <p className="text-xs" style={{ color: uiTheme.textMuted }}>{t('importSettings.description')}</p>
               <p className="text-xs" style={{ color: secondaryThemeColor }}>{t('importSettings.layoutSummary')}</p>
               <div className="text-[11px] font-mono break-all" style={{ color: uiTheme.textMuted }}>{importProjectSettingsDialog.sourcePath}</div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border p-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+              <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('importSettings.selectSections')}</div>
+              <div className="grid gap-3 md:grid-cols-2 text-xs">
+                <div className="rounded-xl border px-3 py-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={areAllImportGroupOptionsEnabled(importProjectSettingsDialog.selection.layout)}
+                      onChange={(event) => setImportProjectSettingsDialog((prev) => prev ? {
+                        ...prev,
+                        selection: {
+                          ...prev.selection,
+                          layout: {
+                            dimensions: event.target.checked,
+                            fps: event.target.checked,
+                            chatLayout: event.target.checked,
+                          },
+                        },
+                      } : prev)}
+                      className="mt-0.5 h-4 w-4 rounded border"
+                      style={{ accentColor: secondaryThemeColor }}
+                    />
+                    <div>
+                      <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('importSettings.sectionLayout')}</div>
+                      <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionLayoutDetail')}</div>
+                    </div>
+                  </label>
+                  <div className="space-y-2 pl-7">
+                    {([
+                      ['dimensions', t('importSettings.itemDimensions')],
+                      ['fps', t('importSettings.itemFps')],
+                      ['chatLayout', t('importSettings.itemChatLayout')],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={importProjectSettingsDialog.selection.layout[key]}
+                          onChange={(event) => setImportProjectSettingsDialog((prev) => prev ? {
+                            ...prev,
+                            selection: {
+                              ...prev.selection,
+                              layout: {
+                                ...prev.selection.layout,
+                                [key]: event.target.checked,
+                              },
+                            },
+                          } : prev)}
+                          className="h-4 w-4 rounded border"
+                          style={{ accentColor: secondaryThemeColor }}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border px-3 py-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={areAllImportGroupOptionsEnabled(importProjectSettingsDialog.selection.background)}
+                      onChange={(event) => setImportProjectSettingsDialog((prev) => prev ? {
+                        ...prev,
+                        selection: {
+                          ...prev.selection,
+                          background: {
+                            image: event.target.checked,
+                            fit: event.target.checked,
+                            blur: event.target.checked,
+                            brightness: event.target.checked,
+                            duration: event.target.checked,
+                          },
+                        },
+                      } : prev)}
+                      className="mt-0.5 h-4 w-4 rounded border"
+                      style={{ accentColor: secondaryThemeColor }}
+                    />
+                    <div>
+                      <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('importSettings.sectionBackground')}</div>
+                      <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionBackgroundDetail')}</div>
+                    </div>
+                  </label>
+                  <div className="space-y-2 pl-7">
+                    {([
+                      ['image', t('importSettings.itemBackgroundMedia')],
+                      ['fit', t('importSettings.itemBackgroundFit')],
+                      ['blur', t('importSettings.itemBackgroundBlur')],
+                      ['brightness', t('importSettings.itemBackgroundBrightness')],
+                      ['duration', t('importSettings.itemBackgroundDuration')],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={importProjectSettingsDialog.selection.background[key]}
+                          onChange={(event) => setImportProjectSettingsDialog((prev) => prev ? {
+                            ...prev,
+                            selection: {
+                              ...prev.selection,
+                              background: {
+                                ...prev.selection.background,
+                                [key]: event.target.checked,
+                              },
+                            },
+                          } : prev)}
+                          className="h-4 w-4 rounded border"
+                          style={{ accentColor: secondaryThemeColor }}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {importProjectSettingsDialog.conflicts.length > 0 ? (
@@ -7056,8 +7248,9 @@ const [previewScale, setPreviewScale] = useState(1);
               <button
                 type="button"
                 onClick={() => applyImportedProjectSettings(importProjectSettingsDialog)}
+                disabled={!areAnyImportGroupOptionsEnabled(importProjectSettingsDialog.selection.layout) && !areAnyImportGroupOptionsEnabled(importProjectSettingsDialog.selection.background)}
                 className="px-3 py-1.5 rounded text-sm text-white"
-                style={{ backgroundColor: secondaryThemeColor }}
+                style={{ backgroundColor: secondaryThemeColor, opacity: !areAnyImportGroupOptionsEnabled(importProjectSettingsDialog.selection.layout) && !areAnyImportGroupOptionsEnabled(importProjectSettingsDialog.selection.background) ? 0.5 : 1 }}
               >
                 {t('common.import')}
               </button>
