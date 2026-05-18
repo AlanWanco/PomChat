@@ -83,7 +83,6 @@ type ImportProjectSettingsSelection = {
     fit: boolean;
     blur: boolean;
     brightness: boolean;
-    duration: boolean;
   };
 };
 
@@ -4243,9 +4242,6 @@ const [previewScale, setPreviewScale] = useState(1);
               ...(payload.selection.background.image ? {
                 image: payload.importedConfig.background.image,
               } : {}),
-              ...(payload.selection.background.duration ? {
-                duration: payload.importedConfig.background.duration,
-              } : {}),
               slides: prev?.background?.slides || [],
             }
           : prev?.background,
@@ -4375,7 +4371,6 @@ const [previewScale, setPreviewScale] = useState(1);
           fit: true,
           blur: true,
           brightness: true,
-          duration: true,
         },
       },
     });
@@ -7127,7 +7122,6 @@ const [previewScale, setPreviewScale] = useState(1);
                             fit: event.target.checked,
                             blur: event.target.checked,
                             brightness: event.target.checked,
-                            duration: event.target.checked,
                           },
                         },
                       } : prev)}
@@ -7145,7 +7139,6 @@ const [previewScale, setPreviewScale] = useState(1);
                       ['fit', t('importSettings.itemBackgroundFit')],
                       ['blur', t('importSettings.itemBackgroundBlur')],
                       ['brightness', t('importSettings.itemBackgroundBrightness')],
-                      ['duration', t('importSettings.itemBackgroundDuration')],
                     ] as const).map(([key, label]) => (
                       <label key={key} className="flex items-center gap-2 cursor-pointer">
                         <input
