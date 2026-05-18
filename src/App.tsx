@@ -1137,6 +1137,9 @@ function App() {
     setFilenameTemplate(snapshot.filenameTemplate);
     setCustomFilename(snapshot.customFilename);
     setPersistedCustomFilename(snapshot.persistedCustomFilename);
+    insertImageDragRef.current = null;
+    setSlideEditBoxes({});
+    setIsInsertImageEditMode(false);
     setEditingSub(null);
     markProjectDirty();
     window.setTimeout(() => {
@@ -4038,6 +4041,12 @@ const [previewScale, setPreviewScale] = useState(1);
       };
     });
   }, [activeInsertImageBounds, activeInsertImageSlide, applyTrackedConfigUpdater, canvasHeight, canvasWidth]);
+  const beginInsertImageDrag = useCallback((drag: NonNullable<typeof insertImageDragRef.current>, cursor: string) => {
+    pushHistorySnapshot();
+    insertImageDragRef.current = drag;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = cursor;
+  }, [pushHistorySnapshot]);
   const updateSlideEditBox = useCallback((slideId: string, box: { centerX: number; centerY: number; width: number; height: number }) => {
     if (!Number.isFinite(box.width) || !Number.isFinite(box.height) || box.width <= 1 || box.height <= 1) {
       return;
@@ -4315,7 +4324,7 @@ const [previewScale, setPreviewScale] = useState(1);
     Object.entries(importedConfig.speakers || {}).forEach(([sourceKey, importedSpeaker]: [string, any]) => {
       const existingByKey = config.speakers?.[sourceKey];
       const sameNameKey = Object.keys(config.speakers || {}).find((key) => key !== sourceKey && String(config.speakers[key]?.name || '').trim() === String(importedSpeaker?.name || '').trim());
-      const conflictTargetKey = sameNameKey || (existingByKey ? sourceKey : null);
+      const conflictTargetKey = existingByKey ? sourceKey : (sameNameKey || null);
       if (!conflictTargetKey) {
         return;
       }
@@ -5269,7 +5278,7 @@ const [previewScale, setPreviewScale] = useState(1);
             return Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI;
           })()
         : 0;
-      applyTrackedConfigUpdater((prev: any) => ({
+      setConfig((prev: any) => ({
         ...prev,
         background: {
           ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
@@ -5282,6 +5291,7 @@ const [previewScale, setPreviewScale] = useState(1);
             : slide)
         }
       }));
+      markProjectDirty();
     };
 
     const handlePointerUp = () => {
@@ -5304,7 +5314,7 @@ const [previewScale, setPreviewScale] = useState(1);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeInsertImageBounds, applyTrackedConfigUpdater, previewScale]);
+  }, [activeInsertImageBounds, markProjectDirty, previewScale]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -6299,7 +6309,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        insertImageDragRef.current = {
+                        beginInsertImageDrag({
                           id: slide.id,
                           mode: 'move',
                           startX: event.clientX,
@@ -6308,9 +6318,7 @@ const [previewScale, setPreviewScale] = useState(1);
                           initialOffsetY: slide.offsetY ?? 0,
                           initialScale: slide.scale ?? 1,
                           initialRotation: slide.rotation ?? 0,
-                        };
-                        document.body.style.userSelect = 'none';
-                        document.body.style.cursor = 'grabbing';
+                        }, 'grabbing');
                       } : undefined}
                     />
                   );
@@ -6497,7 +6505,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        insertImageDragRef.current = {
+                        beginInsertImageDrag({
                           id: slide.id,
                           mode: 'move',
                           startX: event.clientX,
@@ -6506,10 +6514,8 @@ const [previewScale, setPreviewScale] = useState(1);
                           initialOffsetY: slide.offsetY ?? 0,
                           initialScale: slide.scale ?? 1,
                           initialRotation: slide.rotation ?? 0,
-                        };
-                        document.body.style.userSelect = 'none';
-                        document.body.style.cursor = 'grabbing';
-                      } : undefined}
+                        }, 'grabbing');
+                    } : undefined}
                       editOverlay={undefined}
                     />
                   ) : <PreviewBackgroundAsset
@@ -6546,7 +6552,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      insertImageDragRef.current = {
+                      beginInsertImageDrag({
                         id: slide.id,
                         mode: 'move',
                         startX: event.clientX,
@@ -6555,9 +6561,7 @@ const [previewScale, setPreviewScale] = useState(1);
                         initialOffsetY: slide.offsetY ?? 0,
                         initialScale: slide.scale ?? 1,
                         initialRotation: slide.rotation ?? 0,
-                      };
-                      document.body.style.userSelect = 'none';
-                      document.body.style.cursor = 'grabbing';
+                      }, 'grabbing');
                     } : undefined}
                     editOverlay={undefined}
                   />}
@@ -6629,7 +6633,7 @@ const [previewScale, setPreviewScale] = useState(1);
                         const centerX = (frameRect?.left ?? 0) + (activeInsertImageBounds.left + activeInsertImageBounds.width / 2) * (previewScale > 0 ? previewScale : 1);
                         const centerY = (frameRect?.top ?? 0) + (activeInsertImageBounds.top + activeInsertImageBounds.height / 2) * (previewScale > 0 ? previewScale : 1);
                         const initialAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI;
-                        insertImageDragRef.current = {
+                        beginInsertImageDrag({
                           id: activeInsertImageSlide.id,
                           mode: 'rotate',
                           startX: event.clientX,
@@ -6639,9 +6643,7 @@ const [previewScale, setPreviewScale] = useState(1);
                           initialScale: activeInsertImageSlide.scale ?? 1,
                           initialRotation: activeInsertImageSlide.rotation ?? 0,
                           initialAngle,
-                        };
-                        document.body.style.userSelect = 'none';
-                        document.body.style.cursor = 'grabbing';
+                        }, 'grabbing');
                       }}
                     />
                     {([
@@ -6664,7 +6666,7 @@ const [previewScale, setPreviewScale] = useState(1);
                           const localCenterX = frameRect ? frameRect.left + boundsCenterX * (previewScale > 0 ? previewScale : 1) : event.clientX;
                           const localCenterY = frameRect ? frameRect.top + boundsCenterY * (previewScale > 0 ? previewScale : 1) : event.clientY;
                           const initialDistance = Math.sqrt((event.clientX - localCenterX) ** 2 + (event.clientY - localCenterY) ** 2) / (previewScale > 0 ? previewScale : 1);
-                          insertImageDragRef.current = {
+                          beginInsertImageDrag({
                             id: activeInsertImageSlide.id,
                             mode: 'scale',
                             startX: event.clientX,
@@ -6674,9 +6676,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             initialScale: activeInsertImageSlide.scale ?? 1,
                             initialRotation: activeInsertImageSlide.rotation ?? 0,
                             initialDistance,
-                          };
-                          document.body.style.userSelect = 'none';
-                          document.body.style.cursor = handle.cursor;
+                          }, handle.cursor);
                         }}
                       />
                     ))}
