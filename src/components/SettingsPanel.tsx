@@ -2010,20 +2010,19 @@ export function SettingsPanel({
                   value={config.assPath || ''}
                   readOnly
                   className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
-                  style={inputSurfaceStyle}
+                  style={{ ...inputSurfaceStyle, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted, cursor: 'default' }}
                 />
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs opacity-70">{t('project.audioPath')}</span>
-                    <input
-                      type="text"
-                      value={config.audioPath || ''}
-                      onChange={(e) => updateConfig('audioPath', e.target.value)}
-                      onPaste={createImageAwarePathPasteHandler(['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus'], (path) => updateConfig('audioPath', path))}
-                      title={t('project.quickPasteFilePathTip')}
-                      className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
-                      style={inputSurfaceStyle}
+                <input
+                  type="text"
+                  value={config.audioPath || ''}
+                  readOnly
+                  className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
+                  style={{ ...inputSurfaceStyle, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted, cursor: 'default' }}
                 />
+                <div className="text-[11px]" style={{ color: uiTheme.textMuted }}>{t('project.resourcePathReadonlyHint')}</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">

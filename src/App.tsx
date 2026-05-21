@@ -40,6 +40,9 @@ const guessAudioMimeType = (filePath: string) => {
   return 'application/octet-stream';
 };
 
+const AUDIO_IMPORT_EXTENSIONS = ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus', 'mp4', 'webm', 'mov', 'mkv'] as const;
+const AUDIO_IMPORT_ACCEPT = 'audio/*,video/*,.mp3,.wav,.aac,.m4a,.flac,.ogg,.opus,.mp4,.webm,.mov,.mkv';
+
 type HistorySnapshot = {
   config: any;
   subtitles: any[];
@@ -4465,7 +4468,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const res = await window.electron.showOpenDialog({
         title: t('dialog.selectAudioTitle'),
-        filters: [{ name: t('dialog.filterAudio'), extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac'] }],
+        filters: [{ name: t('dialog.filterAudio'), extensions: [...AUDIO_IMPORT_EXTENSIONS] }],
         properties: ['openFile']
       });
       if (!res.canceled && res.filePaths.length > 0) {
@@ -4881,7 +4884,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const targetResource = projectResourceCheckDialog?.missing.find((item) => item.id === resourceId);
       const fileType = getProjectResourceFileType(resourceId, targetResource?.value || '');
       const filters = fileType === 'audio'
-        ? [{ name: t('dialog.filterAudio'), extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus'] }]
+        ? [{ name: t('dialog.filterAudio'), extensions: [...AUDIO_IMPORT_EXTENSIONS] }]
         : fileType === 'subtitle'
           ? [{ name: t('dialog.filterSubtitle'), extensions: ['ass', 'srt', 'lrc'] }]
           : fileType === 'font'
@@ -5061,7 +5064,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const isLrc = normalizedName.endsWith('.lrc');
     const isVideo = /\.(mp4|webm|mov|mkv)$/i.test(normalizedName);
     const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(normalizedName);
-    const isAudio = /\.(mp3|wav|aac|m4a|flac|ogg|opus)$/i.test(normalizedName);
+    const isAudio = /\.(mp3|wav|aac|m4a|flac|ogg|opus|mp4|webm|mov|mkv)$/i.test(normalizedName);
 
     if (isJson) {
       try {
@@ -5659,7 +5662,7 @@ const [previewScale, setPreviewScale] = useState(1);
             <input
               ref={webAudioInputRef}
               type="file"
-              accept="audio/*,.mp3,.wav,.aac,.m4a,.flac"
+              accept={AUDIO_IMPORT_ACCEPT}
               className="hidden"
               onChange={handleWebAudioSelected}
             />
@@ -5831,7 +5834,7 @@ const [previewScale, setPreviewScale] = useState(1);
           <input
             ref={webAudioInputRef}
             type="file"
-            accept="audio/*,.mp3,.wav,.aac,.m4a,.flac"
+                accept={AUDIO_IMPORT_ACCEPT}
             className="hidden"
             onChange={handleWebAudioSelected}
           />
