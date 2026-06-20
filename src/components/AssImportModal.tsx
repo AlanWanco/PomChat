@@ -585,7 +585,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
                                 return (
                                   <span
                                     key={`${a}:${styleName}`}
-                                    className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                                    className="text-[0.625rem] font-mono px-1.5 py-0.5 rounded"
                                     style={styleSelected
                                       ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}18` }
                                       : { color: uiTheme.textMuted, backgroundColor: uiTheme.panelBgSubtle }}

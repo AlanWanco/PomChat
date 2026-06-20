@@ -28,10 +28,12 @@ interface SettingsPanelProps {
   themeColor: string;
   secondaryThemeColor: string;
   autoSaveProject: boolean;
+  uiFontScale: number;
   proxy: string;
   onThemeColorChange: (color: string) => void;
   onSecondaryThemeColorChange: (color: string) => void;
   onAutoSaveProjectChange: (enabled: boolean) => void;
+  onUiFontScaleChange: (scale: number) => void;
   onProjectAssetsCacheEnabledChange: (enabled: boolean) => void;
   onProxyChange: (proxy: string) => void;
   onLanguageChange: (language: Language) => void;
@@ -111,7 +113,7 @@ function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement
 
 export function SettingsPanel({ 
   config, onConfigChange, 
-  isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onProxyChange, onLanguageChange, onThemeChange, 
+  isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, uiFontScale, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onUiFontScaleChange, onProxyChange, onLanguageChange, onThemeChange, 
   onProjectAssetsCacheEnabledChange,
   settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
@@ -271,7 +273,7 @@ export function SettingsPanel({
     <span className="flex items-center justify-between gap-3">
       <span>{label}</span>
       <span
-        className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+        className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full px-2 py-0.5 text-[0.6875rem] font-medium tabular-nums"
         style={{
           backgroundColor: count > 0 ? `${secondaryThemeColor}22` : uiTheme.panelBgSubtle,
           border: `1px solid ${count > 0 ? `${secondaryThemeColor}44` : uiTheme.border}`,
@@ -947,7 +949,7 @@ export function SettingsPanel({
           }
         }}
         placeholder="#RRGGBB / #RRGGBBAA"
-        className={`w-full rounded border px-2 py-1 text-[11px] font-mono focus:outline-none ${inputClass}`}
+        className={`w-full rounded border px-2 py-1 text-[0.6875rem] font-mono focus:outline-none ${inputClass}`}
       />
     </div>
   );
@@ -995,7 +997,7 @@ export function SettingsPanel({
         style={inputSurfaceStyle}
       />
       <div
-        className="text-[10px] opacity-55 leading-relaxed"
+        className="text-[0.625rem] opacity-55 leading-relaxed"
         title={t('speakers.fontHelpTitle')}
       >
         {t('speakers.fontHelp')}
@@ -1056,7 +1058,7 @@ export function SettingsPanel({
         <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-0.5">
           <button
             type="button"
-            className="h-3.5 w-4 rounded text-[9px] leading-none border"
+            className="h-3.5 w-4 rounded text-[0.5625rem] leading-none border"
             style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}
             onClick={() => applyDelta(step)}
           >
@@ -1064,7 +1066,7 @@ export function SettingsPanel({
           </button>
           <button
             type="button"
-            className="h-3.5 w-4 rounded text-[9px] leading-none border"
+            className="h-3.5 w-4 rounded text-[0.5625rem] leading-none border"
             style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}
             onClick={() => applyDelta(-step)}
           >
@@ -1269,6 +1271,24 @@ export function SettingsPanel({
             </div>
 
             <div className="space-y-2">
+              <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.uiFontScale')}</label>
+              <select
+                value={uiFontScale}
+                onChange={(e) => onUiFontScaleChange(Number(e.target.value))}
+                className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
+                style={inputSurfaceStyle}
+              >
+                {[0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4].map((scale) => (
+                  <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>
+                ))}
+              </select>
+              <div className="flex items-center justify-between text-xs opacity-70">
+                <span>{t('global.uiFontScaleHint')}</span>
+                <span className="font-mono">{Math.round(uiFontScale * 100)}%</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.secondaryThemeColor')}</label>
               <select
                 value={secondaryThemeColor}
@@ -1351,10 +1371,10 @@ export function SettingsPanel({
                       borderColor={`${secondaryThemeColor}33`}
                       textColor={uiTheme.text}
                     >
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px]" style={{ borderColor: uiTheme.border, color: uiTheme.textMuted }}>?</span>
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[0.625rem]" style={{ borderColor: uiTheme.border, color: uiTheme.textMuted }}>?</span>
                     </Tooltip>
                   </div>
-                  <p className="text-[11px] opacity-60 leading-relaxed">{t('global.projectAssetsCacheSubtle')}</p>
+                  <p className="text-[0.6875rem] opacity-60 leading-relaxed">{t('global.projectAssetsCacheSubtle')}</p>
                 </div>
               </div>
               <button
@@ -1439,7 +1459,7 @@ export function SettingsPanel({
                 </button>
               </div>
               {localResourceActionReport ? (
-                <div className="space-y-2 rounded-lg border px-3 py-2 text-[11px]" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                <div className="space-y-2 rounded-lg border px-3 py-2 text-[0.6875rem]" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                   <p className="opacity-75">{localResourceActionReport.title}</p>
                   {localResourceActionReport.items.length > 0 ? (
                     <div className="max-h-40 overflow-auto space-y-1">
@@ -1456,7 +1476,7 @@ export function SettingsPanel({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('fontPresets.title')}</label>
-                  <p className="mt-1 text-[11px] opacity-60 leading-relaxed">{t('fontPresets.help')}</p>
+                  <p className="mt-1 text-[0.6875rem] opacity-60 leading-relaxed">{t('fontPresets.help')}</p>
                 </div>
                 <button
                   type="button"
@@ -1485,7 +1505,7 @@ export function SettingsPanel({
                   {currentFontPreset ? (
                     <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.name')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('fontPresets.name')}</span>
                         <input
                           type="text"
                           value={fontPresetNameDraft}
@@ -1508,7 +1528,7 @@ export function SettingsPanel({
                       </div>
 
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.family')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('fontPresets.family')}</span>
                         <input
                           type="text"
                           value={formatFontFamilyValue(currentFontPreset.family)}
@@ -1519,7 +1539,7 @@ export function SettingsPanel({
                       </div>
 
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.file')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('fontPresets.file')}</span>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -1543,7 +1563,7 @@ export function SettingsPanel({
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
                           <select
                             value={currentFontPreset.weight || 'normal'}
                             onChange={(event) => handleFontPresetFieldChange(currentFontPreset.id, 'weight', event.target.value)}
@@ -1560,7 +1580,7 @@ export function SettingsPanel({
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('fontPresets.style')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('fontPresets.style')}</span>
                           <select
                             value={currentFontPreset.style || 'normal'}
                             onChange={(event) => handleFontPresetFieldChange(currentFontPreset.id, 'style', event.target.value)}
@@ -1630,7 +1650,7 @@ export function SettingsPanel({
                   <span className="text-xs opacity-70 inline-flex items-center gap-1">
                     {t('project.fps')}
                     <Tooltip content={t('project.fpsTip')} placement="bottom" width={224} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
-                      <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+                      <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                     </Tooltip>
                   </span>
                   {renderNumberInput(config.fps || 60, (value) => updateConfig('fps', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -1653,7 +1673,7 @@ export function SettingsPanel({
                   <div className="space-y-1.5 col-span-2">
                     <span className="text-xs opacity-70">{t('project.topLimit')}</span>
                     {renderNumberInput(config.chatLayout?.paddingTop ?? 48, (value) => updateChatLayout('paddingTop', value), { className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
-                    <p className="text-[11px] opacity-60 leading-relaxed">
+                    <p className="text-[0.6875rem] opacity-60 leading-relaxed">
                       {t('project.topLimit.help')}
                     </p>
                   </div>
@@ -1680,7 +1700,7 @@ export function SettingsPanel({
                       </div>
                     </div>
                     <div className="pt-1">
-                      <p className="text-[11px] opacity-60 leading-relaxed">
+                      <p className="text-[0.6875rem] opacity-60 leading-relaxed">
                         {t('project.topFade.help')}
                       </p>
                     </div>
@@ -1692,7 +1712,7 @@ export function SettingsPanel({
                   <div className="space-y-1.5">
                     <span className="text-xs opacity-70">{t('project.bubbleLineHeight')}</span>
                     {renderNumberInput(config.chatLayout?.bubbleLineHeight ?? 1.35, (value) => updateChatLayout('bubbleLineHeight', Math.min(2.5, Math.max(0.8, Number(value.toFixed(2))))), { min: 0.8, max: 2.5, step: 0.05, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
-                    <p className="text-[11px] opacity-60 leading-relaxed">
+                    <p className="text-[0.6875rem] opacity-60 leading-relaxed">
                       {t('project.bubbleLineHeight.title')}
                     </p>
                   </div>
@@ -1761,7 +1781,7 @@ export function SettingsPanel({
                     title={t('project.bubbleMaxWidth.title')}
                     disabled={config.chatLayout?.independentTracksEnabled ?? false}
                   />
-                  {(config.chatLayout?.independentTracksEnabled ?? false) ? <div className="text-[11px] opacity-60">{t('project.trackBubbleWidthHint')}</div> : null}
+                  {(config.chatLayout?.independentTracksEnabled ?? false) ? <div className="text-[0.6875rem] opacity-60">{t('project.trackBubbleWidthHint')}</div> : null}
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
@@ -1879,7 +1899,7 @@ export function SettingsPanel({
                         <span className="text-xs opacity-70">{t('project.trackCount')}</span>
                         {renderNumberInput(config.chatLayout?.trackCount ?? 1, (value) => updateChatLayout('trackCount', Math.max(1, Math.round(value))), { min: 1, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
-                      <div className="col-span-2 text-[11px] opacity-60 leading-relaxed">
+                      <div className="col-span-2 text-[0.6875rem] opacity-60 leading-relaxed">
                         {t('project.trackModeHelp')}
                       </div>
                     </>
@@ -1919,7 +1939,7 @@ export function SettingsPanel({
                     <span className="text-xs font-semibold opacity-80 inline-flex items-center gap-1">
                       {t('project.animationStyle')}
                       <Tooltip content={t('project.animationStyleTip')} placement="bottom" width={224} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
-                        <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+                        <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                       </Tooltip>
                     </span>
                     <select
@@ -1967,7 +1987,7 @@ export function SettingsPanel({
                     >
                       <span>{(config.chatLayout?.interruptionEnabled ?? true) ? t('common.enabled') : t('common.disabled')}</span>
                     </button>
-                    <p className="text-[11px] opacity-60 leading-relaxed">{t('project.interruptionEffectHelp')}</p>
+                    <p className="text-[0.6875rem] opacity-60 leading-relaxed">{t('project.interruptionEffectHelp')}</p>
                   </div>
                 </div>
              </div>
@@ -2022,7 +2042,7 @@ export function SettingsPanel({
                   className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
                   style={{ ...inputSurfaceStyle, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted, cursor: 'default' }}
                 />
-                <div className="text-[11px]" style={{ color: uiTheme.textMuted }}>{t('project.resourcePathReadonlyHint')}</div>
+                <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>{t('project.resourcePathReadonlyHint')}</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -2064,7 +2084,7 @@ export function SettingsPanel({
                     <span className="text-xs opacity-70 inline-flex items-center gap-1">
                       {t('project.blur')}
                       <Tooltip content={t('project.blurTip')} placement="right-top" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
-                        <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+                        <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                       </Tooltip>
                     </span>
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{config.background?.blur || 0}px</span>
@@ -2154,7 +2174,7 @@ export function SettingsPanel({
                             className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors border inline-flex items-center gap-1.5"
                             style={isActive ? { backgroundColor: themeColor, borderColor: themeColor, color: '#ffffff' } : { backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}
                           >
-                            <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.18)' : (slide.type === 'text' ? `${secondaryThemeColor}18` : `${themeColor}18`), color: isActive ? '#ffffff' : (slide.type === 'text' ? secondaryThemeColor : themeColor) }}>
+                            <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[0.625rem] font-bold" style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.18)' : (slide.type === 'text' ? `${secondaryThemeColor}18` : `${themeColor}18`), color: isActive ? '#ffffff' : (slide.type === 'text' ? secondaryThemeColor : themeColor) }}>
                               {slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')}
                             </span>
                             {label}
@@ -2168,13 +2188,13 @@ export function SettingsPanel({
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="shrink-0 w-10 h-10 rounded-md border flex items-center justify-center overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
                             {currentBackgroundSlide.type === 'text' ? (
-                              <div className="px-1 text-[10px] leading-tight font-semibold text-center" style={{ color: currentBackgroundSlide.textColor || uiTheme.text }}>
+                              <div className="px-1 text-[0.625rem] leading-tight font-semibold text-center" style={{ color: currentBackgroundSlide.textColor || uiTheme.text }}>
                                 {(currentBackgroundSlide.text || 'T').slice(0, 2)}
                               </div>
                             ) : currentBackgroundSlide.image ? (
                               <img src={resolveAssetSrc ? resolveAssetSrc(currentBackgroundSlide.image) : currentBackgroundSlide.image} alt="preview" className="w-full h-full object-cover" />
                             ) : (
-                              <div className="text-[10px] opacity-50">IMG</div>
+                              <div className="text-[0.625rem] opacity-50">IMG</div>
                             )}
                           </div>
                           <input
@@ -2254,7 +2274,7 @@ export function SettingsPanel({
                           <button type="button" onClick={() => {
                             onSeek?.(currentBackgroundSlide.start ?? 0);
                             onEditInsertImage?.(currentBackgroundSlide.id);
-                          }} className="w-full h-8 rounded-md border px-2.5 text-[11px] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
+                          }} className="w-full h-8 rounded-md border px-2.5 text-[0.6875rem] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
                             <Pencil size={14} style={{ color: secondaryThemeColor }} />
                             {currentBackgroundSlide.type === 'text' ? t('project.editTextAsset') : t('project.editImageAsset')}
                           </button>
@@ -2322,7 +2342,7 @@ export function SettingsPanel({
                                 key={mode}
                                 type="button"
                                 onClick={() => onAlignInsertAsset?.(mode)}
-                                className="rounded-md border px-2 py-2 text-[11px] transition-colors"
+                                className="rounded-md border px-2 py-2 text-[0.6875rem] transition-colors"
                                 style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg, color: uiTheme.text }}
                               >
                                 {label}
@@ -2580,7 +2600,7 @@ export function SettingsPanel({
                           }}
                         />
                         <div className="flex-1 space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70 block">{t('speakers.avatar')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70 block">{t('speakers.avatar')}</span>
                           <div className="flex gap-2">
                             <input 
                               type="text" 
@@ -2589,13 +2609,13 @@ export function SettingsPanel({
                                 updateSpeaker(key, (currentSpeaker) => ({
                                   ...currentSpeaker,
                                   avatar: e.target.value
-                                }));
+                                }), { preservePreset: true });
                               }}
                               onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => {
                                 updateSpeaker(key, (currentSpeaker) => ({
                                   ...currentSpeaker,
                                   avatar: path
-                                }));
+                                }), { preservePreset: true });
                               })}
                               title={t('project.quickPasteFilePathTip')}
                               className={`flex-1 w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
@@ -2609,7 +2629,7 @@ export function SettingsPanel({
                                     updateSpeaker(key, (currentSpeaker) => ({
                                       ...currentSpeaker,
                                       avatar: path
-                                    }));
+                                    }), { preservePreset: true });
                                   }
                                 }}
                                 className="px-2 border rounded flex items-center justify-center transition-colors"
@@ -2781,15 +2801,15 @@ export function SettingsPanel({
                       {(config.chatLayout?.independentTracksEnabled ?? false) ? (
                         <div className="grid grid-cols-3 gap-3 pt-2">
                           <div className="space-y-1">
-                            <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.trackIndex')}</span>
+                            <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.trackIndex')}</span>
                             {renderNumberInput(speaker.style?.trackIndex ?? 1, (value) => updateSpeakerStyle(key, 'trackIndex', Math.max(1, Math.round(value))), { min: 1, max: Math.max(1, config.chatLayout?.trackCount ?? 1), step: 1, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
                           <div className="space-y-1">
-                            <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.trackPaddingLeft')}</span>
+                            <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.trackPaddingLeft')}</span>
                             {renderNumberInput(speaker.style?.trackPaddingLeft ?? 5, (value) => updateSpeakerStyle(key, 'trackPaddingLeft', Math.max(0, value)), { min: 0, step: 1, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
                           <div className="space-y-1">
-                            <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.trackPaddingRight')}</span>
+                            <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.trackPaddingRight')}</span>
                             {renderNumberInput(speaker.style?.trackPaddingRight ?? 5, (value) => updateSpeakerStyle(key, 'trackPaddingRight', Math.max(0, value)), { min: 0, step: 1, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
                         </div>
@@ -2803,15 +2823,15 @@ export function SettingsPanel({
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('speakers.typography')}</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1 col-span-2">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                           {renderFontFamilyFields(speaker.style?.fontFamily, (value) => updateSpeakerStyle(key, 'fontFamily', value))}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                           {renderNumberInput(speaker.style?.fontSize ?? 30, (value) => updateSpeakerStyle(key, 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
                           <select 
                             value={speaker.style?.fontWeight || 'normal'}
                             onChange={(e) => updateSpeakerStyle(key, 'fontWeight', e.target.value)}
@@ -2830,7 +2850,7 @@ export function SettingsPanel({
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.side')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.side')}</span>
                           <select 
                             value={speaker.side}
                             onChange={(e) => {
@@ -2854,11 +2874,11 @@ export function SettingsPanel({
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><div className="w-3 h-3 rounded-full flex items-center justify-center border shadow-sm" style={{ backgroundColor: themeColor }}></div> {t('speakers.colors')}</span>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
                           {renderColorInput(speaker.style?.bgColor || '#3B82F6', (value) => updateSpeakerStyle(key, 'bgColor', value))}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
                           {renderColorInput(speaker.style?.textColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'textColor', value))}
                         </div>
                       </div>
@@ -2886,7 +2906,7 @@ export function SettingsPanel({
                       </div>
 
                       <div className="space-y-1 pt-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
                         <div className="flex items-center gap-2">
                           <input
                             type="range" min="0" max="1" step="0.05"
@@ -2894,22 +2914,22 @@ export function SettingsPanel({
                             onChange={(e) => updateSpeakerStyle(key, 'opacity', parseFloat(e.target.value))}
                             className="w-full" style={themedRangeStyle}
                           />
-                          <span className="text-[10px] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
+                          <span className="text-[0.625rem] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
                         </div>
                       </div>
 
                       <div className="space-y-1 pt-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
                         {renderFontFamilyFields(speaker.style?.nameFontFamily, (value) => updateSpeakerStyle(key, 'nameFontFamily', value))}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.nameColor')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameColor')}</span>
                           {renderColorInput(speaker.style?.nameColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'nameColor', value))}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameFontWeight')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFontWeight')}</span>
                           <select
                             value={speaker.style?.nameFontWeight || '700'}
                             onChange={(e) => updateSpeakerStyle(key, 'nameFontWeight', e.target.value)}
@@ -2931,11 +2951,11 @@ export function SettingsPanel({
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.nameStrokeColor')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameStrokeColor')}</span>
                           {renderColorInput(speaker.style?.nameStrokeColor || '#000000', (value) => updateSpeakerStyle(key, 'nameStrokeColor', value))}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.nameStrokeWidth')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameStrokeWidth')}</span>
                           {renderNumberInput(speaker.style?.nameStrokeWidth ?? 0, (value) => updateSpeakerStyle(key, 'nameStrokeWidth', value), { min: 0, max: 12, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                       </div>
@@ -2949,26 +2969,26 @@ export function SettingsPanel({
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Box size={12} /> {t('speakers.border')}</span>
 
                       <div className="space-y-1 mb-2">
-                        <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.avatarBorderColor')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.avatarBorderColor')}</span>
                         {renderColorInput(speaker.style?.avatarBorderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'avatarBorderColor', value))}
                       </div>
                        
                       <div className="space-y-1 mb-2">
-                        <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.borderColor')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.borderColor')}</span>
                         {renderColorInput(speaker.style?.borderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'borderColor', value))}
                       </div>
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderWidth')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderWidth')}</span>
                           {renderNumberInput(speaker.style?.borderWidth ?? 0, (value) => updateSpeakerStyle(key, 'borderWidth', value), { min: 0, max: 10, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderRadius')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderRadius')}</span>
                           {renderNumberInput(speaker.style?.borderRadius ?? 28, (value) => updateSpeakerStyle(key, 'borderRadius', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1 col-span-2">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.borderOpacity')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderOpacity')}</span>
                           <div className="flex items-center gap-2">
                             <input 
                               type="range" min="0" max="1" step="0.05"
@@ -2976,7 +2996,7 @@ export function SettingsPanel({
                               onChange={(e) => updateSpeakerStyle(key, 'borderOpacity', parseFloat(e.target.value))}
                               className="w-full" style={themedRangeStyle}
                             />
-                            <span className="text-[10px] w-6 text-right font-mono">{speaker.style?.borderOpacity ?? 1.0}</span>
+                            <span className="text-[0.625rem] w-6 text-right font-mono">{speaker.style?.borderOpacity ?? 1.0}</span>
                           </div>
                         </div>
                       </div>
@@ -2990,15 +3010,15 @@ export function SettingsPanel({
                        
                        <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
                           {renderNumberInput(speaker.style?.paddingX ?? 20, (value) => updateSpeakerStyle(key, 'paddingX', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
                           {renderNumberInput(speaker.style?.paddingY ?? 12, (value) => updateSpeakerStyle(key, 'paddingY', value), { className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                           {renderNumberInput(speaker.style?.shadowSize ?? 1, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                       </div>
@@ -3178,7 +3198,7 @@ export function SettingsPanel({
                       )}
                       <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.position')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.position')}</span>
                         <select
                           value={annotation.style?.annotationPosition || 'bottom'}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'annotationPosition', e.target.value)}
@@ -3190,7 +3210,7 @@ export function SettingsPanel({
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.align')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.align')}</span>
                         <select
                           value={annotation.style?.annotationAlign || 'center'}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'annotationAlign', e.target.value)}
@@ -3203,11 +3223,11 @@ export function SettingsPanel({
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                         {renderNumberInput(annotation.style?.fontSize ?? 24, (value) => updateSpeakerStyle('ANNOTATION', 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontWeight')}</span>
                         <select
                           value={annotation.style?.fontWeight || 'normal'}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'fontWeight', e.target.value)}
@@ -3228,11 +3248,11 @@ export function SettingsPanel({
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1 col-span-2">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
                         {renderFontFamilyFields(annotation.style?.fontFamily, (value) => updateSpeakerStyle('ANNOTATION', 'fontFamily', value))}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('project.animationStyle')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('project.animationStyle')}</span>
                         <select
                           value={annotation.style?.animationStyle || 'rise'}
                           onChange={(e) => updateSpeakerStyle('ANNOTATION', 'animationStyle', e.target.value)}
@@ -3248,51 +3268,51 @@ export function SettingsPanel({
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                         {renderNumberInput(annotation.style?.shadowSize ?? 1, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
+                      <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
                       {renderNumberInput(annotation.style?.maxWidth ?? 720, (value) => updateSpeakerStyle('ANNOTATION', 'maxWidth', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
                         {renderColorInput(annotation.style?.bgColor || '#111827', (value) => updateSpeakerStyle('ANNOTATION', 'bgColor', value))}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
                         {renderColorInput(annotation.style?.textColor || '#FFFFFF', (value) => updateSpeakerStyle('ANNOTATION', 'textColor', value))}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
                         {renderNumberInput(annotation.style?.paddingX ?? 24, (value) => updateSpeakerStyle('ANNOTATION', 'paddingX', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.paddingY')}</span>
                         {renderNumberInput(annotation.style?.paddingY ?? 12, (value) => updateSpeakerStyle('ANNOTATION', 'paddingY', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.marginX')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.marginX')}</span>
                         {renderNumberInput(annotation.style?.annotationMarginX ?? 0, (value) => updateSpeakerStyle('ANNOTATION', 'annotationMarginX', Math.max(0, value)), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.margin')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.margin')}</span>
                         {renderNumberInput(annotation.style?.margin ?? 12, (value) => updateSpeakerStyle('ANNOTATION', 'margin', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('annotation.roundness')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.roundness')}</span>
                         {renderNumberInput(annotation.style?.annotationBorderRadius ?? 28, (value) => updateSpeakerStyle('ANNOTATION', 'annotationBorderRadius', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
                         {renderNumberInput(annotation.style?.opacity ?? 0.9, (value) => updateSpeakerStyle('ANNOTATION', 'opacity', value), { min: 0, max: 1, step: 0.05, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>

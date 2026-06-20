@@ -197,6 +197,9 @@ const DEFAULT_UI_CONFIG = {
   projectAssetsCacheEnabled: false,
   proxy: '',
   settingsPosition: 'right' as 'left' | 'right',
+  uiFontScale: 1,
+  audioVolume: 0.8,
+  exportFilenameEditorMode: 'simple' as 'simple' | 'advanced',
   subtitlePanelCompactMode: false,
   recentProject: null as string | null,
   recentProjects: [] as string[],
@@ -398,6 +401,13 @@ const sanitizeProjectConfig = (parsed: any) => {
       projectAssetsCacheEnabled: parsed?.ui?.projectAssetsCacheEnabled === true,
       proxy: typeof parsed?.ui?.proxy === 'string' ? parsed.ui.proxy : '',
       settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
+      uiFontScale: typeof parsed?.ui?.uiFontScale === 'number' && Number.isFinite(parsed.ui.uiFontScale) ? Math.max(0.8, Math.min(1.4, parsed.ui.uiFontScale)) : DEFAULT_UI_CONFIG.uiFontScale,
+      audioVolume: typeof parsed?.ui?.audioVolume === 'number' && Number.isFinite(parsed.ui.audioVolume) ? Math.max(0, Math.min(1, parsed.ui.audioVolume)) : DEFAULT_UI_CONFIG.audioVolume,
+      exportFilenameEditorMode: parsed?.ui?.exportFilenameEditorMode === 'advanced'
+        ? 'advanced'
+        : (parsed?.filenameTemplate === 'custom' && typeof parsed?.customFilename === 'string' && /\{\$[A-Za-z0-9-]+\}/.test(parsed.customFilename)
+          ? 'advanced'
+          : 'simple'),
       subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
@@ -983,6 +993,10 @@ function App() {
   const [autoSaveProject, setAutoSaveProject] = useState(() => config.ui?.autoSaveProject ?? DEFAULT_UI_CONFIG.autoSaveProject);
   const [projectAssetsCacheEnabled, setProjectAssetsCacheEnabled] = useState(() => config.ui?.projectAssetsCacheEnabled ?? DEFAULT_UI_CONFIG.projectAssetsCacheEnabled);
   const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
+  const persistedAudioVolume = Number(config.ui?.audioVolume ?? DEFAULT_UI_CONFIG.audioVolume);
+  const [uiFontScale, setUiFontScale] = useState(() => Number(config.ui?.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale));
+  const [exportFilenameEditorMode, setExportFilenameEditorMode] = useState<'simple' | 'advanced'>(() => config.ui?.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple');
+  const [audioVolume, setAudioVolume] = useState(() => persistedAudioVolume);
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
   const [subtitlePanelCompactMode, setSubtitlePanelCompactMode] = useState(() => Boolean(config.ui?.subtitlePanelCompactMode));
@@ -1067,6 +1081,10 @@ function App() {
   const exportProgressActiveRef = useRef(false);
   const hasHydratedElectronConfigRef = useRef(!isDesktopMode);
   const lastUiSyncSnapshotRef = useRef('');
+  const audioVolumePersistTimeoutRef = useRef<number | null>(null);
+  const customFilenamePersistTimeoutRef = useRef<number | null>(null);
+  const simpleModeCustomFilenameRef = useRef('');
+  const advancedModeCustomFilenameRef = useRef('');
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const webAudioInputRef = useRef<HTMLInputElement>(null);
@@ -1436,6 +1454,27 @@ const [previewScale, setPreviewScale] = useState(1);
       showToast(t('app.subtitleDeleted'));
     } catch (e) {
       console.error('Failed to delete subtitle:', e);
+    }
+  };
+
+  const handleDuplicateSubtitle = async (id: string) => {
+    try {
+      const sourceSubtitle = subtitles.find((sub: any) => sub.id === id);
+      if (!sourceSubtitle) {
+        return;
+      }
+
+      pushHistorySnapshot();
+      const duplicatedSubtitle = {
+        ...sourceSubtitle,
+        id: `sub-copy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      };
+      const nextSubtitles = [...subtitles, duplicatedSubtitle].sort((a: any, b: any) => a.start - b.start || a.end - b.end);
+      setSubtitles(nextSubtitles);
+      markProjectDirty();
+      showToast(t('app.subtitleDuplicated'));
+    } catch (error) {
+      console.error('Failed to duplicate subtitle:', error);
     }
   };
 
@@ -1918,6 +1957,8 @@ const [previewScale, setPreviewScale] = useState(1);
       projectAssetsCacheEnabled: Boolean(ui.projectAssetsCacheEnabled),
       proxy: ui.proxy || '',
       settingsPosition: ui.settingsPosition,
+      uiFontScale: Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale),
+      exportFilenameEditorMode: ui.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple',
       subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
       recentProject: ui.recentProject,
       bubbleSnapshotBackgroundMode: ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode,
@@ -1940,6 +1981,11 @@ const [previewScale, setPreviewScale] = useState(1);
     setProjectAssetsCacheEnabled((prev: boolean) => (prev === Boolean(ui.projectAssetsCacheEnabled) ? prev : Boolean(ui.projectAssetsCacheEnabled)));
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
+    setUiFontScale((prev: number) => (prev === Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale) ? prev : Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale)));
+    setExportFilenameEditorMode((prev: 'simple' | 'advanced') => {
+      const next = ui.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple';
+      return prev === next ? prev : next;
+    });
     setSubtitlePanelCompactMode((prev: boolean) => (prev === Boolean(ui.subtitlePanelCompactMode) ? prev : Boolean(ui.subtitlePanelCompactMode)));
     setBubbleSnapshotBackgroundMode((prev: 'project' | 'transparent' | 'solid' | 'custom-image') => (prev === (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) ? prev : (ui.bubbleSnapshotBackgroundMode || DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode)));
     setBubbleSnapshotBackgroundColor((prev: string) => (prev === String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor) ? prev : String(ui.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor)));
@@ -1990,6 +2036,8 @@ const [previewScale, setPreviewScale] = useState(1);
       projectAssetsCacheEnabled,
       proxy: proxyState.trim(),
       settingsPosition,
+      uiFontScale,
+      exportFilenameEditorMode,
       subtitlePanelCompactMode,
       recentProject,
       bubbleSnapshotBackgroundMode,
@@ -2027,6 +2075,8 @@ const [previewScale, setPreviewScale] = useState(1);
         Boolean(prevUi.projectAssetsCacheEnabled) === projectAssetsCacheEnabled &&
         prevUi.proxy === proxyState.trim() &&
         prevUi.settingsPosition === settingsPosition &&
+        Number(prevUi.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale) === uiFontScale &&
+        String(prevUi.exportFilenameEditorMode ?? DEFAULT_UI_CONFIG.exportFilenameEditorMode) === exportFilenameEditorMode &&
         Boolean(prevUi.subtitlePanelCompactMode) === subtitlePanelCompactMode &&
         prevUi.recentProject === recentProject &&
         String(prevUi.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode) === bubbleSnapshotBackgroundMode &&
@@ -2059,6 +2109,8 @@ const [previewScale, setPreviewScale] = useState(1);
           projectAssetsCacheEnabled,
           proxy: proxyState.trim(),
           settingsPosition,
+          uiFontScale,
+          exportFilenameEditorMode,
           subtitlePanelCompactMode,
           recentProject,
           bubbleSnapshotBackgroundMode,
@@ -2077,7 +2129,63 @@ const [previewScale, setPreviewScale] = useState(1);
         },
       };
     });
-  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, subtitlePanelCompactMode, recentProject, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
+  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, uiFontScale, exportFilenameEditorMode, subtitlePanelCompactMode, recentProject, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
+
+  useEffect(() => {
+    if (audioVolumePersistTimeoutRef.current !== null) {
+      return;
+    }
+
+    setAudioVolume((prev) => (prev === persistedAudioVolume ? prev : persistedAudioVolume));
+  }, [persistedAudioVolume]);
+
+  useEffect(() => {
+    if (audioVolume === persistedAudioVolume) {
+      if (audioVolumePersistTimeoutRef.current !== null) {
+        window.clearTimeout(audioVolumePersistTimeoutRef.current);
+        audioVolumePersistTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (audioVolumePersistTimeoutRef.current !== null) {
+      window.clearTimeout(audioVolumePersistTimeoutRef.current);
+    }
+
+    audioVolumePersistTimeoutRef.current = window.setTimeout(() => {
+      audioVolumePersistTimeoutRef.current = null;
+      setConfig((prev: any) => {
+        const prevUi = prev.ui || DEFAULT_UI_CONFIG;
+        if (Number(prevUi.audioVolume ?? DEFAULT_UI_CONFIG.audioVolume) === audioVolume) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          ui: {
+            ...prevUi,
+            audioVolume,
+          },
+        };
+      });
+    }, 1000);
+
+    return () => {
+      if (audioVolumePersistTimeoutRef.current !== null) {
+        window.clearTimeout(audioVolumePersistTimeoutRef.current);
+        audioVolumePersistTimeoutRef.current = null;
+      }
+    };
+  }, [audioVolume, persistedAudioVolume]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousFontSize = root.style.fontSize;
+    root.style.fontSize = `${uiFontScale * 100}%`;
+    return () => {
+      root.style.fontSize = previousFontSize;
+    };
+  }, [uiFontScale]);
 
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
@@ -2428,25 +2536,61 @@ const [previewScale, setPreviewScale] = useState(1);
 
   // Keep preview chat anchored by virtualized render window.
 
-  const generateFilename = (template: 'default' | 'timestamp' | 'unix' | 'custom', customName: string, format: 'mp4' | 'mov-alpha' | 'webm-alpha'): string => {
-    const extension = format === 'mov-alpha' ? 'mov' : format === 'webm-alpha' ? 'webm' : 'mp4';
-    if (template === 'custom' && customName.trim()) {
-      const name = customName.trim();
-      return /\.[A-Za-z0-9]+$/.test(name) ? name : `${name}.${extension}`;
+  const sanitizeExportFileStem = (value: string) => {
+    const trimmed = value.trim();
+    const base = trimmed || 'pomchat-export';
+    return base.replace(/[<>:"/\\|?*]+/g, '-').replace(/\s+/g, '-');
+  };
+
+  const normalizeFilenameWithExtension = (value: string, extension: string) => {
+    const trimmed = value.trim();
+    const normalized = trimmed || 'pomchat-export';
+    const extensionMatch = normalized.match(/\.([A-Za-z0-9]+)$/);
+    const stem = extensionMatch ? normalized.slice(0, -extensionMatch[0].length) : normalized;
+    const safeStem = sanitizeExportFileStem(stem);
+    const resolvedExtension = extensionMatch ? extensionMatch[1].toLowerCase() : extension;
+    return `${safeStem}.${resolvedExtension}`;
+  };
+
+  const getProjectFileStem = useCallback(() => {
+    if (!projectPath || projectPath === 'web-demo') {
+      return sanitizeExportFileStem(config.projectTitle || t('app.untitled') || 'pomchat');
     }
 
+    const normalizedPath = projectPath.replace(/\\/g, '/');
+    const filename = normalizedPath.split('/').pop() || '';
+    const stem = filename.replace(/\.[^.]+$/, '');
+    return sanitizeExportFileStem(stem || config.projectTitle || t('app.untitled') || 'pomchat');
+  }, [config.projectTitle, projectPath, t]);
+
+  const generateFilename = (template: 'default' | 'timestamp' | 'unix' | 'custom', customName: string, format: 'mp4' | 'mov-alpha' | 'webm-alpha', editorMode: 'simple' | 'advanced'): string => {
+    const extension = format === 'mov-alpha' ? 'mov' : format === 'webm-alpha' ? 'webm' : 'mp4';
+    const projectName = getProjectFileStem();
     const now = new Date();
     const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     const timeStr = String(now.getHours()).padStart(2, '0') + '-' + String(now.getMinutes()).padStart(2, '0') + '-' + String(now.getSeconds()).padStart(2, '0');
     const unixTime = Math.floor(now.getTime() / 1000);
 
+    if (template === 'custom' && customName.trim()) {
+      if (editorMode === 'simple') {
+        return normalizeFilenameWithExtension(customName, extension);
+      }
+
+      const resolvedName = customName
+        .replace(/\{\$ProjectName\}/g, projectName)
+        .replace(/\{\$Unix\}/g, String(unixTime))
+        .replace(/\{\$yyyy-mm-dd\}/g, dateStr)
+        .replace(/\{\$HH-mm-ss\}/g, timeStr);
+      return normalizeFilenameWithExtension(resolvedName, extension);
+    }
+
     if (template === 'timestamp') {
-      return `pomchat_${dateStr}_${timeStr}.${extension}`;
+      return `${projectName}_${dateStr}_${timeStr}.${extension}`;
     }
     if (template === 'unix') {
-      return `pomchat_${unixTime}.${extension}`;
+      return `${projectName}_${unixTime}.${extension}`;
     }
-    return `pomchat.${extension}`;
+    return `${projectName}.${extension}`;
   };
 
   const normalizeExportDirectory = (rawPath: string) => {
@@ -2696,6 +2840,32 @@ const [previewScale, setPreviewScale] = useState(1);
     markProjectDirty();
   }, [filenameTemplate, markProjectDirty, pushHistorySnapshot]);
 
+  const handleFilenameEditorModeChange = useCallback((nextMode: 'simple' | 'advanced') => {
+    if (exportFilenameEditorMode === 'simple' && filenameTemplate === 'custom') {
+      simpleModeCustomFilenameRef.current = customFilename;
+    }
+    if (exportFilenameEditorMode === 'advanced' && filenameTemplate === 'custom') {
+      advancedModeCustomFilenameRef.current = customFilename;
+    }
+
+    setExportFilenameEditorMode((prev) => (prev === nextMode ? prev : nextMode));
+    if (nextMode === 'advanced') {
+      setFilenameTemplate((prev) => (prev === 'custom' ? prev : 'custom'));
+      setCustomFilename((prev) => (prev === advancedModeCustomFilenameRef.current ? prev : advancedModeCustomFilenameRef.current));
+      return;
+    }
+
+    if (simpleModeCustomFilenameRef.current.trim()) {
+      setFilenameTemplate('custom');
+      setCustomFilename((prev) => (prev === simpleModeCustomFilenameRef.current ? prev : simpleModeCustomFilenameRef.current));
+      return;
+    }
+
+    if (filenameTemplate === 'custom') {
+      setFilenameTemplate('default');
+    }
+  }, [customFilename, exportFilenameEditorMode, filenameTemplate]);
+
   const handleExportFormatChange = useCallback((nextFormat: 'mp4' | 'mov-alpha' | 'webm-alpha') => {
     if (exportFormat === nextFormat) {
       return;
@@ -2727,10 +2897,13 @@ const [previewScale, setPreviewScale] = useState(1);
     if (customFilename === nextFilename) {
       return;
     }
-    pushHistorySnapshot();
+    if (exportFilenameEditorMode === 'advanced') {
+      advancedModeCustomFilenameRef.current = nextFilename;
+    } else {
+      simpleModeCustomFilenameRef.current = nextFilename;
+    }
     setCustomFilename(nextFilename);
-    markProjectDirty();
-  }, [customFilename, markProjectDirty, pushHistorySnapshot]);
+  }, [customFilename, exportFilenameEditorMode]);
 
   const loadExportPaths = useCallback(async () => {
     if (!window.electron) {
@@ -2739,13 +2912,13 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const paths = await window.electron.getExportPaths({
       projectPath,
-      projectTitle: config.projectTitle || t('app.untitled')
+      projectTitle: getProjectFileStem()
     });
 
     setQuickSavePath(paths.quickSavePath);
     setExportOutputPath((prev) => prev || paths.suggestedPath || paths.quickSavePath);
     return paths;
-  }, [config.projectTitle, projectPath, t]);
+  }, [getProjectFileStem, projectPath]);
 
   useEffect(() => {
     exportRangeTouchedRef.current = false;
@@ -2779,6 +2952,16 @@ const [previewScale, setPreviewScale] = useState(1);
     setFilenameTemplate((prev) => (prev === nextTemplate ? prev : nextTemplate));
 
     const nextCustomFilename = typeof config.customFilename === 'string' ? config.customFilename : '';
+    const nextEditorMode = config.ui?.exportFilenameEditorMode === 'advanced'
+      ? 'advanced'
+      : (nextTemplate === 'custom' && /\{\$[A-Za-z0-9-]+\}/.test(nextCustomFilename) ? 'advanced' : 'simple');
+    if (nextTemplate === 'custom') {
+      if (nextEditorMode === 'advanced') {
+        advancedModeCustomFilenameRef.current = nextCustomFilename;
+      } else {
+        simpleModeCustomFilenameRef.current = nextCustomFilename;
+      }
+    }
     setCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
     setPersistedCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
     const nextHardware = config.exportHardware === 'gpu' || config.exportHardware === 'cpu' ? config.exportHardware : 'auto';
@@ -2790,12 +2973,32 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [config.exportQuality, config.filenameTemplate, config.customFilename, config.exportHardware, config.exportParallelSegments, config.exportFormat, config.exportLogEnabled]);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setPersistedCustomFilename((prev) => (prev === customFilename ? prev : customFilename));
-    }, 180);
+    if (customFilename === persistedCustomFilename) {
+      if (customFilenamePersistTimeoutRef.current !== null) {
+        window.clearTimeout(customFilenamePersistTimeoutRef.current);
+        customFilenamePersistTimeoutRef.current = null;
+      }
+      return;
+    }
 
-    return () => window.clearTimeout(timeoutId);
-  }, [customFilename]);
+    if (customFilenamePersistTimeoutRef.current !== null) {
+      window.clearTimeout(customFilenamePersistTimeoutRef.current);
+    }
+
+    customFilenamePersistTimeoutRef.current = window.setTimeout(() => {
+      customFilenamePersistTimeoutRef.current = null;
+      pushHistorySnapshot();
+      setPersistedCustomFilename((prev) => (prev === customFilename ? prev : customFilename));
+      markProjectDirty();
+    }, 1000);
+
+    return () => {
+      if (customFilenamePersistTimeoutRef.current !== null) {
+        window.clearTimeout(customFilenamePersistTimeoutRef.current);
+        customFilenamePersistTimeoutRef.current = null;
+      }
+    };
+  }, [customFilename, persistedCustomFilename, markProjectDirty, pushHistorySnapshot]);
 
   useEffect(() => {
     if (!hasHydratedElectronConfigRef.current) {
@@ -2980,7 +3183,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    const filename = generateFilename(filenameTemplate, customFilename, exportFormat);
+    const filename = generateFilename(filenameTemplate, customFilename, exportFormat, exportFilenameEditorMode);
     trimmedPath = applyFilenameTemplateToPath(trimmedPath, filename);
 
     if (exportRange.end <= exportRange.start) {
@@ -3232,6 +3435,8 @@ const [previewScale, setPreviewScale] = useState(1);
       projectAssetsCacheEnabled,
       proxy: proxyState.trim(),
       settingsPosition,
+      uiFontScale,
+      exportFilenameEditorMode,
       subtitlePanelCompactMode,
       recentProject,
       bubbleSnapshotBackgroundMode,
@@ -3248,7 +3453,7 @@ const [previewScale, setPreviewScale] = useState(1);
       annotationPresets,
       fontPresets,
     }
-  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState]);
+  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, exportFilenameEditorMode, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState, uiFontScale]);
 
   const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
@@ -5579,7 +5784,7 @@ const [previewScale, setPreviewScale] = useState(1);
         <div className="space-y-1">
           <div className="text-sm font-semibold">{t('projectResourceCheck.title')}</div>
           <p className="text-xs" style={{ color: uiTheme.textMuted }}>{t('projectResourceCheck.description')}</p>
-          <div className="text-[11px] font-mono break-all" style={{ color: uiTheme.textMuted }}>{projectResourceCheckDialog.filePath}</div>
+          <div className="text-[0.6875rem] font-mono break-all" style={{ color: uiTheme.textMuted }}>{projectResourceCheckDialog.filePath}</div>
         </div>
 
         {projectResourceCheckDialog.updated.length > 0 && (
@@ -5601,7 +5806,7 @@ const [previewScale, setPreviewScale] = useState(1);
           <div className="space-y-2">
             <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('projectResourceCheck.missingResources')}</div>
             <div className="rounded-lg border overflow-hidden" style={{ borderColor: uiTheme.border }}>
-              <div className="grid grid-cols-[180px_1fr_1fr_72px] gap-3 px-3 py-2 text-[11px] font-medium" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+              <div className="grid grid-cols-[180px_1fr_1fr_72px] gap-3 px-3 py-2 text-[0.6875rem] font-medium" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
                 <div>{t('projectResourceCheck.columnResource')}</div>
                 <div>{t('projectResourceCheck.columnCurrent')}</div>
                 <div>{t('projectResourceCheck.columnReplacement')}</div>
@@ -5726,6 +5931,12 @@ const [previewScale, setPreviewScale] = useState(1);
                 onAutoSaveProjectChange={(enabled: boolean) => {
                   pushHistorySnapshot();
                   setAutoSaveProject(enabled);
+                  markProjectDirty();
+                }}
+                uiFontScale={uiFontScale}
+                onUiFontScaleChange={(value: number) => {
+                  pushHistorySnapshot();
+                  setUiFontScale(value);
                   markProjectDirty();
                 }}
                 onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
@@ -5882,6 +6093,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 speakers={config.speakers}
                 onSeek={handleSeek} 
                 onUpdateSubtitle={handleUpdateSubtitle}
+                onDuplicateSubtitle={handleDuplicateSubtitle}
                 onDeleteSubtitle={handleDeleteSubtitle}
                 onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                 onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
@@ -5923,8 +6135,14 @@ const [previewScale, setPreviewScale] = useState(1);
                   pushHistorySnapshot();
                    setAutoSaveProject(enabled);
                    markProjectDirty();
-                 }}
-                   onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
+                  }}
+                    uiFontScale={uiFontScale}
+                    onUiFontScaleChange={(value: number) => {
+                      pushHistorySnapshot();
+                      setUiFontScale(value);
+                      markProjectDirty();
+                    }}
+                    onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                    onProxyChange={handleProxyChangeTracked}
                 onLanguageChange={handleLanguageChangeTracked}
                 onThemeChange={handleThemeModeChangeTracked}
@@ -6075,6 +6293,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   speakers={config.speakers}
                   onSeek={handleSeek}
                   onUpdateSubtitle={handleUpdateSubtitle}
+                  onDuplicateSubtitle={handleDuplicateSubtitle}
                   onDeleteSubtitle={handleDeleteSubtitle}
                   onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                   onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
@@ -6115,12 +6334,18 @@ const [previewScale, setPreviewScale] = useState(1);
                    proxy={proxyState}
                    onThemeColorChange={handleThemeColorChangeTracked}
                    onSecondaryThemeColorChange={handleSecondaryThemeColorChangeTracked}
-                   onAutoSaveProjectChange={(enabled: boolean) => {
-                     pushHistorySnapshot();
-                     setAutoSaveProject(enabled);
-                     markProjectDirty();
-                   }}
-                    onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
+                    onAutoSaveProjectChange={(enabled: boolean) => {
+                      pushHistorySnapshot();
+                      setAutoSaveProject(enabled);
+                      markProjectDirty();
+                    }}
+                    uiFontScale={uiFontScale}
+                    onUiFontScaleChange={(value: number) => {
+                      pushHistorySnapshot();
+                      setUiFontScale(value);
+                      markProjectDirty();
+                    }}
+                     onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                     onProxyChange={handleProxyChangeTracked}
                    onLanguageChange={handleLanguageChangeTracked}
                    onThemeChange={handleThemeModeChangeTracked}
@@ -6686,7 +6911,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     <button
                       type="button"
                       className="absolute rounded-full border pointer-events-auto inline-flex items-center justify-center font-bold"
-                      style={{ top: '-28px', right: '-92px', width: '56px', height: '56px', fontSize: '38px', lineHeight: 1, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 4px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ top: '-28px', right: '-92px', width: '56px', height: '56px', fontSize: '2.375rem', lineHeight: 1, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 4px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                       onClick={() => setIsInsertImageEditMode(false)}
                       title={t('project.exitEdit')}
                     >
@@ -6724,6 +6949,12 @@ const [previewScale, setPreviewScale] = useState(1);
                 onAutoSaveProjectChange={(enabled: boolean) => {
                   pushHistorySnapshot();
                   setAutoSaveProject(enabled);
+                  markProjectDirty();
+                }}
+                uiFontScale={uiFontScale}
+                onUiFontScaleChange={(value: number) => {
+                  pushHistorySnapshot();
+                  setUiFontScale(value);
                   markProjectDirty();
                 }}
                 onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
@@ -6791,6 +7022,10 @@ const [previewScale, setPreviewScale] = useState(1);
         language={language}
         themeColor={themeColor}
         secondaryThemeColor={secondaryThemeColor}
+        audioVolume={audioVolume}
+        onAudioVolumeChange={(value) => {
+          setAudioVolume(Math.max(0, Math.min(1, Number(value.toFixed(2)))));
+        }}
         exportRangeStart={exportRange.start}
         exportRangeEnd={exportRange.end}
         defaultExportStart={defaultExportRange.start}
@@ -6849,7 +7084,7 @@ const [previewScale, setPreviewScale] = useState(1);
               <div className="h-1.5 w-14 rounded-full transition-colors" style={{ backgroundColor: isMobileBottomResizeActive ? secondaryThemeColor : `${secondaryThemeColor}66` }} />
               <button
                 type="button"
-                className="absolute right-2 h-6 w-14 text-[10px] rounded border"
+                className="absolute right-2 h-6 w-14 text-[0.625rem] rounded border"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsMobileBottomPanelExpanded((prev) => !prev);
@@ -6875,6 +7110,12 @@ const [previewScale, setPreviewScale] = useState(1);
             onAutoSaveProjectChange={(enabled: boolean) => {
               pushHistorySnapshot();
               setAutoSaveProject(enabled);
+              markProjectDirty();
+            }}
+            uiFontScale={uiFontScale}
+            onUiFontScaleChange={(value: number) => {
+              pushHistorySnapshot();
+              setUiFontScale(value);
               markProjectDirty();
             }}
             onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
@@ -6926,6 +7167,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     speakers={config.speakers}
                     onSeek={handleSeek}
                     onUpdateSubtitle={handleUpdateSubtitle}
+                    onDuplicateSubtitle={handleDuplicateSubtitle}
                     onDeleteSubtitle={handleDeleteSubtitle}
                     onBulkDeleteSubtitles={handleBulkDeleteSubtitles}
                     onBulkUpdateSpeaker={handleBulkUpdateSubtitleSpeaker}
@@ -7004,7 +7246,9 @@ const [previewScale, setPreviewScale] = useState(1);
          exportParallelSegments={exportParallelSegments}
          exportFormat={exportFormat}
          exportLogEnabled={exportLogEnabled}
+         projectTitle={getProjectFileStem()}
          filenameTemplate={filenameTemplate}
+         filenameEditorMode={exportFilenameEditorMode}
          customFilename={customFilename}
           onClose={() => {
            if (!isExporting) {
@@ -7022,6 +7266,7 @@ const [previewScale, setPreviewScale] = useState(1);
          onExportLogEnabledChange={handleExportLogEnabledChange}
          onOpenExportLogDirectory={handleOpenExportLogDirectory}
          onFilenameTemplateChange={handleFilenameTemplateChange}
+         onFilenameEditorModeChange={handleFilenameEditorModeChange}
          onCustomFilenameChange={handleCustomFilenameChange}
          onStartExport={handleStartExport}
          onRevealOutput={handleRevealExport}
@@ -7052,7 +7297,7 @@ const [previewScale, setPreviewScale] = useState(1);
                <div className="text-sm font-semibold">{t('importSettings.title')}</div>
                <p className="text-xs" style={{ color: uiTheme.textMuted }}>{t('importSettings.description')}</p>
               <p className="text-xs" style={{ color: secondaryThemeColor }}>{t('importSettings.layoutSummary')}</p>
-              <div className="text-[11px] font-mono break-all" style={{ color: uiTheme.textMuted }}>{importProjectSettingsDialog.sourcePath}</div>
+              <div className="text-[0.6875rem] font-mono break-all" style={{ color: uiTheme.textMuted }}>{importProjectSettingsDialog.sourcePath}</div>
             </div>
 
             <div className="space-y-2 rounded-lg border p-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
@@ -7079,7 +7324,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     />
                     <div>
                       <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('importSettings.sectionLayout')}</div>
-                      <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionLayoutDetail')}</div>
+                      <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionLayoutDetail')}</div>
                     </div>
                   </label>
                   <div className="space-y-2 pl-7">
@@ -7133,7 +7378,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     />
                     <div>
                       <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('importSettings.sectionBackground')}</div>
-                      <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionBackgroundDetail')}</div>
+                      <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('importSettings.sectionBackgroundDetail')}</div>
                     </div>
                   </label>
                   <div className="space-y-2 pl-7">
@@ -7176,12 +7421,12 @@ const [previewScale, setPreviewScale] = useState(1);
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-medium">{conflict.sourceSpeaker?.name || conflict.sourceKey}</div>
-                        <div className="text-[11px]" style={{ color: uiTheme.textMuted }}>
+                        <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>
                           {(conflict.existingSpeaker?.name || conflict.targetKey)} {'<-'} {(conflict.sourceSpeaker?.name || conflict.sourceKey)}
                         </div>
                       </div>
                     </div>
-                    <div className="text-[11px]" style={{ color: uiTheme.textMuted }}>
+                    <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>
                       {t('importSettings.changedFields', { fields: conflict.changedFields.join(' / ') || t('importSettings.field.style') })}
                     </div>
                     <div className="flex gap-2 flex-wrap">

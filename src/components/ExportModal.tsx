@@ -57,9 +57,11 @@ interface ExportModalProps {
   exportParallelSegments?: boolean;
   exportFormat?: 'mp4' | 'mov-alpha' | 'webm-alpha';
   exportLogEnabled?: boolean;
-   filenameTemplate?: 'default' | 'timestamp' | 'unix' | 'custom';
-   customFilename?: string;
-   onClose: () => void;
+  projectTitle?: string;
+  filenameTemplate?: 'default' | 'timestamp' | 'unix' | 'custom';
+  filenameEditorMode?: 'simple' | 'advanced';
+  customFilename?: string;
+  onClose: () => void;
   onOutputPathChange: (value: string) => void;
   onChoosePath: () => void | Promise<void>;
   onQuickSave: () => void;
@@ -73,6 +75,7 @@ interface ExportModalProps {
   onExportFormatChange?: (format: 'mp4' | 'mov-alpha' | 'webm-alpha') => void;
   onExportLogEnabledChange?: (enabled: boolean) => void;
   onOpenExportLogDirectory?: () => void;
+  onFilenameEditorModeChange?: (mode: 'simple' | 'advanced') => void;
   onFilenameTemplateChange?: (template: 'default' | 'timestamp' | 'unix' | 'custom') => void;
   onCustomFilenameChange?: (filename: string) => void;
 }
@@ -141,6 +144,56 @@ const formatBytes = (bytes: number) => {
   return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 };
 
+const sanitizeExportFileStem = (value: string) => {
+  const trimmed = value.trim();
+  const base = trimmed || 'pomchat-export';
+  return base.replace(/[<>:"/\\|?*]+/g, '-').replace(/\s+/g, '-');
+};
+
+const normalizeFilenameWithExtension = (value: string, extension: string) => {
+  const trimmed = value.trim();
+  const normalized = trimmed || 'pomchat-export';
+  const extensionMatch = normalized.match(/\.([A-Za-z0-9]+)$/);
+  const stem = extensionMatch ? normalized.slice(0, -extensionMatch[0].length) : normalized;
+  const safeStem = sanitizeExportFileStem(stem);
+  const resolvedExtension = extensionMatch ? extensionMatch[1].toLowerCase() : extension;
+  return `${safeStem}.${resolvedExtension}`;
+};
+
+const buildFilenamePreview = (
+  projectTitle: string,
+  exportFormat: 'mp4' | 'mov-alpha' | 'webm-alpha',
+  filenameTemplate: 'default' | 'timestamp' | 'unix' | 'custom',
+  filenameEditorMode: 'simple' | 'advanced',
+  customFilename: string,
+) => {
+  const extension = exportFormat === 'mov-alpha' ? 'mov' : exportFormat === 'webm-alpha' ? 'webm' : 'mp4';
+  const projectName = sanitizeExportFileStem(projectTitle || 'pomchat');
+  const dateStr = '2026-03-28';
+  const timeStr = '12-07-03';
+  const unixTime = '1743192423';
+
+  if (filenameTemplate === 'custom' && customFilename.trim()) {
+    if (filenameEditorMode === 'simple') {
+      return normalizeFilenameWithExtension(customFilename, extension);
+    }
+    const resolvedName = customFilename
+      .replace(/\{\$ProjectName\}/g, projectName)
+      .replace(/\{\$Unix\}/g, unixTime)
+      .replace(/\{\$yyyy-mm-dd\}/g, dateStr)
+      .replace(/\{\$HH-mm-ss\}/g, timeStr);
+    return normalizeFilenameWithExtension(resolvedName, extension);
+  }
+
+  if (filenameTemplate === 'timestamp') {
+    return `${projectName}_${dateStr}_${timeStr}.${extension}`;
+  }
+  if (filenameTemplate === 'unix') {
+    return `${projectName}_${unixTime}.${extension}`;
+  }
+  return `${projectName}.${extension}`;
+};
+
 export function ExportModal({
   isOpen,
   isDarkMode,
@@ -163,7 +216,9 @@ export function ExportModal({
   exportParallelSegments = false,
   exportFormat = 'mp4',
   exportLogEnabled = false,
+  projectTitle = 'PomChat Project',
   filenameTemplate = 'default',
+  filenameEditorMode = 'simple',
   customFilename = '',
   onClose,
   onOutputPathChange,
@@ -179,6 +234,7 @@ export function ExportModal({
   onExportFormatChange,
   onExportLogEnabledChange,
   onOpenExportLogDirectory,
+  onFilenameEditorModeChange,
   onFilenameTemplateChange,
   onCustomFilenameChange
 }: ExportModalProps) {
@@ -222,6 +278,11 @@ export function ExportModal({
   const progressPercent = Math.max(0, Math.min(100, Math.round((progress?.progress || 0) * 100)));
   const exportSpan = useMemo(() => Math.max(0, rangeEnd - rangeStart), [rangeEnd, rangeStart]);
   const isErrorStatus = Boolean(statusMessage && /error|failed|超时|失败|异常/i.test(statusMessage));
+  const filenamePreview = useMemo(
+    () => buildFilenamePreview(projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename),
+    [projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename],
+  );
+  const simpleTemplates = ['default', 'timestamp', 'unix'] as const;
 
   const commitRangeInput = (field: 'start' | 'end', value: string) => {
     const next = parseFlexibleTime(value);
@@ -238,7 +299,7 @@ export function ExportModal({
   return (
     <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 backdrop-blur-sm px-4 py-4 overflow-y-auto">
       <div
-        className="w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
+        className="w-full max-w-[53.75rem] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
         style={{
           background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`,
           borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26),
@@ -267,7 +328,7 @@ export function ExportModal({
           </button>
         </div>
 
-        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.2fr_0.8fr] overflow-y-auto">
+        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.05fr_0.95fr] overflow-y-auto">
           <div className="space-y-5">
               <section className="rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -331,7 +392,7 @@ export function ExportModal({
                           type="button"
                           onClick={() => onRangeChange({ start: defaultRangeStart })}
                           disabled={isExporting}
-                          className="rounded-full px-2.5 py-1 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: rgba(themeColor, 0.12), color: themeColor }}
                           title={t('export.useEarliest')}
                         >
@@ -361,7 +422,7 @@ export function ExportModal({
                           type="button"
                           onClick={() => onRangeChange({ end: defaultRangeEnd })}
                           disabled={isExporting}
-                          className="rounded-full px-2.5 py-1 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: rgba(secondaryThemeColor, 0.12), color: secondaryThemeColor }}
                           title={t('export.useLatest')}
                         >
@@ -435,7 +496,7 @@ export function ExportModal({
                        </button>
                      ))}
                     </div>
-                    <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.hardwareHint')}</div>
+                    <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.hardwareHint')}</div>
                   </div>
 
                   <div className="mt-3 rounded-2xl border px-3 py-3" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.06 : 0.03) }}>
@@ -450,7 +511,7 @@ export function ExportModal({
                       />
                       <div>
                         <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('export.parallelSegments')}</div>
-                        <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.parallelSegmentsHint')}</div>
+                        <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.parallelSegmentsHint')}</div>
                       </div>
                     </label>
                   </div>
@@ -492,7 +553,7 @@ export function ExportModal({
                         );
                       })}
                     </div>
-                    <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.formatHint')}</div>
+                    <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.formatHint')}</div>
                   </div>
 
                   <div className="mt-3 rounded-2xl border px-3 py-3" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.06 : 0.03) }}>
@@ -507,12 +568,12 @@ export function ExportModal({
                       />
                       <div>
                         <div className="text-xs font-medium" style={{ color: uiTheme.text }}>{t('export.logEnabled')}</div>
-                        <div className="text-[11px] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.logEnabledHint')}</div>
+                        <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>{t('export.logEnabledHint')}</div>
                         <button
                           type="button"
                           onClick={() => void onOpenExportLogDirectory?.()}
                           disabled={isExporting || !window.electron}
-                          className="text-[11px] mt-1 font-mono break-all underline-offset-2 disabled:opacity-50"
+                          className="text-[0.6875rem] mt-1 font-mono break-all underline-offset-2 disabled:opacity-50"
                           style={{ color: secondaryThemeColor, textDecoration: 'underline' }}
                         >
                           {t('export.logPath')}: `~/.config/pomchat/export-logs/`
@@ -564,73 +625,118 @@ export function ExportModal({
 
            <section className="rounded-[24px] border p-4 flex flex-col" style={{ borderColor: uiTheme.border, background: `linear-gradient(180deg, ${rgba(secondaryThemeColor, isDarkMode ? 0.14 : 0.08)} 0%, ${uiTheme.panelBgSubtle} 100%)` }}>
              {/* Filename Template Section - at the top */}
-             <div className="mb-5 rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.05) }}>
-               <div className="mb-4 flex items-center justify-between gap-3">
-                 <div>
-                   <div className="text-sm font-medium">{t('export.filenameTemplate')}</div>
-                   <div className="text-xs mt-1" style={{ color: uiTheme.textMuted }}>{t('export.filenameTemplateHint')}</div>
-                 </div>
-                 <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.18 : 0.09), color: themeColor }}>
-                   {filenameTemplate}
-                 </div>
+             <div className="mb-5 flex items-start justify-between gap-3">
+               <div className="min-w-0 flex-1">
+                 <div className="text-sm font-medium">{t('export.filenameTemplate')}</div>
+                 <div className="text-xs mt-1" style={{ color: uiTheme.textMuted }}>{t('export.filenameTemplateHint')}</div>
                </div>
-
-                <div className="grid gap-2 md:grid-cols-2">
-                  {(['default', 'timestamp', 'unix', 'custom'] as const).map((template) => {
-                    const filenameExamples: Record<string, string> = {
-                      default: exportFormat === 'mov-alpha' ? 'pomchat.mov' : exportFormat === 'webm-alpha' ? 'pomchat.webm' : 'pomchat.mp4',
-                      timestamp: exportFormat === 'mov-alpha' ? 'pomchat_2026-03-28_12-07-03.mov' : exportFormat === 'webm-alpha' ? 'pomchat_2026-03-28_12-07-03.webm' : 'pomchat_2026-03-28_12-07-03.mp4',
-                      unix: exportFormat === 'mov-alpha' ? 'pomchat_1743192423.mov' : exportFormat === 'webm-alpha' ? 'pomchat_1743192423.webm' : 'pomchat_1743192423.mp4',
-                      custom: ''
-                    };
-                    const templateButton = (
-                      <button
-                        type="button"
-                        onClick={() => onFilenameTemplateChange?.(template)}
-                        disabled={isExporting}
-                        className="relative w-full rounded-xl px-3 py-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{
-                          backgroundColor: filenameTemplate === template ? rgba(themeColor, 0.18) : rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04),
-                          color: filenameTemplate === template ? themeColor : uiTheme.text,
-                          border: `1px solid ${filenameTemplate === template ? rgba(themeColor, 0.24) : uiTheme.border}`
-                        }}
-                      >
-                        {t(`export.filenameTemplate${template.charAt(0).toUpperCase()}${template.slice(1)}`)}
-                      </button>
-                    );
-
-                    if (template === 'custom') {
-                      return (
-                        <div key={template}>
-                          {templateButton}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <Tooltip key={template} content={filenameExamples[template]} placement="top" width={220} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={rgba(secondaryThemeColor, 0.24)} textColor={uiTheme.text} className="block">
-                        {templateButton}
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-
-               {filenameTemplate === 'custom' && (
-                 <div className="mt-3">
-                   <input
-                     value={localCustomFilename}
-                     onChange={(event) => {
-                       setLocalCustomFilename(event.target.value);
-                       onCustomFilenameChange?.(event.target.value);
-                     }}
-                     disabled={isExporting}
-                     className="w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                     style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }}
-                     placeholder={t('export.customFilenamePlaceholder')}
-                   />
-                 </div>
-               )}
+               <button
+                 type="button"
+                 onClick={() => onFilenameEditorModeChange?.(filenameEditorMode === 'advanced' ? 'simple' : 'advanced')}
+                 disabled={isExporting}
+                 className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                 style={{
+                   backgroundColor: rgba(themeColor, isDarkMode ? 0.18 : 0.09),
+                   color: themeColor,
+                   border: `1px solid ${rgba(themeColor, isDarkMode ? 0.24 : 0.18)}`,
+                 }}
+               >
+                 {filenameEditorMode === 'advanced' ? t('export.filenameModeAdvanced') : t('export.filenameModeSimple')}
+               </button>
              </div>
+
+             <div className="mb-5 rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.05) }}>
+                {filenameEditorMode === 'simple' ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {simpleTemplates.map((template) => {
+                        const example = buildFilenamePreview(projectTitle, exportFormat, template, 'simple', '');
+                        const templateButton = (
+                          <button
+                            type="button"
+                            onClick={() => onFilenameTemplateChange?.(template)}
+                            disabled={isExporting}
+                            className="relative w-full rounded-xl px-3 py-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{
+                              backgroundColor: filenameTemplate === template ? rgba(themeColor, 0.18) : rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04),
+                              color: filenameTemplate === template ? themeColor : uiTheme.text,
+                              border: `1px solid ${filenameTemplate === template ? rgba(themeColor, 0.24) : uiTheme.border}`
+                            }}
+                          >
+                            {t(`export.filenameTemplate${template.charAt(0).toUpperCase()}${template.slice(1)}`)}
+                          </button>
+                        );
+
+                        return (
+                          <Tooltip key={template} content={example} placement="top" width={220} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={rgba(secondaryThemeColor, 0.24)} textColor={uiTheme.text} className="block">
+                            {templateButton}
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+
+                    <div>
+                      <div className="mb-2 text-[0.6875rem] font-medium" style={{ color: uiTheme.textMuted }}>{t('export.customFilenameDirect')}</div>
+                      <input
+                        value={localCustomFilename}
+                        onChange={(event) => {
+                          setLocalCustomFilename(event.target.value);
+                          onFilenameTemplateChange?.('custom');
+                          onCustomFilenameChange?.(event.target.value);
+                        }}
+                        disabled={isExporting}
+                        className="w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                        style={{
+                          backgroundColor: uiTheme.inputBg,
+                          borderColor: filenameTemplate === 'custom' ? rgba(themeColor, 0.24) : uiTheme.border,
+                          color: uiTheme.text,
+                        }}
+                        placeholder={t('export.customFilenameSimplePlaceholder')}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      value={localCustomFilename}
+                      onChange={(event) => {
+                        setLocalCustomFilename(event.target.value);
+                        onCustomFilenameChange?.(event.target.value);
+                      }}
+                      disabled={isExporting}
+                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }}
+                      placeholder={t('export.customFilenamePlaceholder')}
+                    />
+                    <div className="rounded-xl border p-3" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04) }}>
+                      <div className="mb-2 text-[0.6875rem] font-medium" style={{ color: uiTheme.textMuted }}>{t('export.filenameVariables')}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {['{$ProjectName}', '{$yyyy-mm-dd}', '{$HH-mm-ss}', '{$Unix}'].map((token) => (
+                          <button
+                            key={token}
+                            type="button"
+                            onClick={() => {
+                              const nextValue = `${localCustomFilename}${token}`;
+                              setLocalCustomFilename(nextValue);
+                              onCustomFilenameChange?.(nextValue);
+                            }}
+                            disabled={isExporting}
+                            className="rounded-full px-2.5 py-1 text-[0.6875rem] font-mono transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: themeColor, border: `1px solid ${rgba(themeColor, 0.2)}` }}
+                          >
+                            {token}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: rgba(secondaryThemeColor, 0.2), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
+                  <div className="text-[0.6875rem] font-medium" style={{ color: uiTheme.textMuted }}>{t('export.filenamePreview')}</div>
+                  <div className="mt-1 font-mono text-sm break-all">{filenamePreview}</div>
+                </div>
+              </div>
 
              {/* Progress Section */}
              <div className="flex-1 flex flex-col">

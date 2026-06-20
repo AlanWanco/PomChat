@@ -23,6 +23,8 @@ interface PlayerControlsProps {
   language: Language;
   themeColor: string;
   secondaryThemeColor: string;
+  audioVolume: number;
+  onAudioVolumeChange: (volume: number) => void;
   exportRangeStart: number;
   exportRangeEnd: number;
   defaultExportStart: number;
@@ -82,6 +84,8 @@ export const PlayerControls = memo(function PlayerControls({
   language,
   themeColor,
   secondaryThemeColor,
+  audioVolume,
+  onAudioVolumeChange,
   exportRangeStart,
   exportRangeEnd,
   defaultExportStart,
@@ -122,7 +126,6 @@ export const PlayerControls = memo(function PlayerControls({
   const hasUserAdjustedZoomRef = useRef(false);
   const exportRangeDragRef = useRef<{ mode: 'start' | 'end' | 'move'; initialStart: number; initialEnd: number; anchorTime: number } | null>(null);
   
-  const [volume, setVolume] = useState(0.8);
   const [zoomLevel, setZoomLevel] = useState(50);
   const [minZoom, setMinZoom] = useState(10);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
@@ -694,9 +697,9 @@ export const PlayerControls = memo(function PlayerControls({
   // Volume Sync
   useEffect(() => {
     if (audioRef?.current) {
-      audioRef.current.volume = volume;
+      audioRef.current.volume = audioVolume;
     }
-  }, [volume, audioRef]);
+  }, [audioVolume, audioRef]);
 
   // Handle Editing Subtitle Regions
   useEffect(() => {
@@ -962,7 +965,7 @@ export const PlayerControls = memo(function PlayerControls({
       >
       {showWaveformContainer && editingSub && regionTooltip && (
             <div
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 px-2 py-1 rounded-md text-[10px] font-mono z-[70] pointer-events-none whitespace-nowrap"
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 px-2 py-1 rounded-md text-[0.625rem] font-mono z-[70] pointer-events-none whitespace-nowrap"
               style={{
                 backgroundColor: isDarkMode ? `${themeColor}F2` : uiTheme.panelBgElevated,
                 color: isDarkMode ? '#ffffff' : uiTheme.text,
@@ -975,7 +978,7 @@ export const PlayerControls = memo(function PlayerControls({
           )}
           {showWaveformContainer && waveformHoverPreview && waveformDuration > 0 && (
             <div
-              className="absolute bottom-full mb-2 px-2 py-1 rounded-md text-[10px] font-mono z-[65] pointer-events-none whitespace-nowrap -translate-x-1/2"
+              className="absolute bottom-full mb-2 px-2 py-1 rounded-md text-[0.625rem] font-mono z-[65] pointer-events-none whitespace-nowrap -translate-x-1/2"
               style={{
                 left: `${waveformHoverPreview.x}px`,
                 backgroundColor: isDarkMode ? `${themeColor}F2` : uiTheme.panelBgElevated,
@@ -989,7 +992,7 @@ export const PlayerControls = memo(function PlayerControls({
           )}
           {showWaveformContainer && insertImageHoverLabel && (
             <div
-                className="fixed px-2 py-1 rounded-md text-[10px] z-[9999] pointer-events-none whitespace-nowrap"
+                className="fixed px-2 py-1 rounded-md text-[0.625rem] z-[9999] pointer-events-none whitespace-nowrap"
                 style={{
                   left: `${insertImageHoverLabel.x}px`,
                   top: `${insertImageHoverLabel.y}px`,
@@ -1008,7 +1011,7 @@ export const PlayerControls = memo(function PlayerControls({
                   <img src={insertImageHoverLabel.image} alt={insertImageHoverLabel.label} className="block w-20 h-12 object-cover rounded mb-1" />
                 ) : null}
                 {insertImageHoverLabel.type === 'text' && insertImageHoverLabel.text ? (
-                  <div className="max-w-32 text-[10px] leading-4 whitespace-pre-wrap line-clamp-2 mb-1">{insertImageHoverLabel.text}</div>
+                  <div className="max-w-32 text-[0.625rem] leading-4 whitespace-pre-wrap line-clamp-2 mb-1">{insertImageHoverLabel.text}</div>
                 ) : null}
                 {insertImageHoverLabel.label}
             </div>
@@ -1370,7 +1373,7 @@ export const PlayerControls = memo(function PlayerControls({
             )}
           </div>
           {!audioPath && showWaveformContainer && (
-            <div className="mt-1 text-[11px]" style={{ color: uiTheme.textMuted }}>
+            <div className="mt-1 text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>
               {t('player.noAudioWaveform')}
             </div>
           )}
@@ -1445,7 +1448,7 @@ export const PlayerControls = memo(function PlayerControls({
               title={t('export.useEarliest')}
             >
               <SkipBack size={14} />
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                 {t('export.useEarliest')}
               </div>
             </button>
@@ -1480,7 +1483,7 @@ export const PlayerControls = memo(function PlayerControls({
             >
               <ArrowLeft size={14} />
               {hasStartRangeSubtitle && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                   {t('export.useSubtitleStart')}
                 </div>
               )}
@@ -1503,7 +1506,7 @@ export const PlayerControls = memo(function PlayerControls({
                 title={t('export.setCurrent')}
               >
                 <Clock3 size={14} />
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                   {t('export.setCurrent')}
                 </div>
               </button>
@@ -1517,7 +1520,7 @@ export const PlayerControls = memo(function PlayerControls({
                   if (e.key === 'Enter') commitExportRangeInput('start');
                   if (e.key === 'Escape') setExportStartInputMode(false);
                 }}
-                className={`w-[82px] bg-transparent text-[11px] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+                className={`w-[82px] bg-transparent text-[0.6875rem] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                 autoFocus
               />
             ) : (
@@ -1540,7 +1543,7 @@ export const PlayerControls = memo(function PlayerControls({
                   title={t('player.seekExportStart')}
                 >
                   <ArrowDown size={14} />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                     {t('player.seekExportStart')}
                   </div>
                 </button>
@@ -1550,7 +1553,7 @@ export const PlayerControls = memo(function PlayerControls({
                      setExportStartInputValue(formattedExportRangeStart);
                      setExportStartInputMode(true);
                    }}
-                   className="inline-flex w-[82px] justify-center px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
+                   className="inline-flex w-[82px] justify-center px-1 text-[0.6875rem] font-mono tabular-nums transition-opacity hover:opacity-80"
                    style={{ color: secondaryThemeColor }}
                    title={t('export.start')}
                  >
@@ -1622,7 +1625,7 @@ export const PlayerControls = memo(function PlayerControls({
                   if (e.key === 'Enter') commitExportRangeInput('end');
                   if (e.key === 'Escape') setExportEndInputMode(false);
                 }}
-                className={`w-[82px] bg-transparent text-[11px] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
+                className={`w-[82px] bg-transparent text-[0.6875rem] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                 autoFocus
               />
             ) : (
@@ -1633,7 +1636,7 @@ export const PlayerControls = memo(function PlayerControls({
                      setExportEndInputValue(formattedExportRangeEnd);
                      setExportEndInputMode(true);
                    }}
-                   className="inline-flex w-[82px] justify-center px-1 text-[11px] font-mono tabular-nums transition-opacity hover:opacity-80"
+                   className="inline-flex w-[82px] justify-center px-1 text-[0.6875rem] font-mono tabular-nums transition-opacity hover:opacity-80"
                    style={{ color: secondaryThemeColor }}
                    title={t('export.end')}
                  >
@@ -1657,7 +1660,7 @@ export const PlayerControls = memo(function PlayerControls({
                   title={t('player.seekExportEnd')}
                 >
                   <ArrowDown size={14} />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                     {t('player.seekExportEnd')}
                   </div>
                 </button>
@@ -1681,7 +1684,7 @@ export const PlayerControls = memo(function PlayerControls({
               title={t('export.setCurrent')}
             >
               <Clock3 size={14} />
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                 {t('export.setCurrent')}
               </div>
             </button>
@@ -1716,7 +1719,7 @@ export const PlayerControls = memo(function PlayerControls({
             >
               <ArrowRight size={14} />
               {hasEndRangeSubtitle && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                   {t('export.useSubtitleEnd')}
                 </div>
               )}
@@ -1739,7 +1742,7 @@ export const PlayerControls = memo(function PlayerControls({
               title={t('export.useLatest')}
             >
               <SkipForward size={14} />
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 px-2 py-1 text-[0.6875rem] font-medium rounded-md whitespace-nowrap" style={rangeTooltipStyle}>
                 {t('export.useLatest')}
               </div>
             </button>
@@ -1785,8 +1788,8 @@ export const PlayerControls = memo(function PlayerControls({
               </button>
             </div>
             <div className="flex items-center gap-1 min-w-0">
-              <span className="text-[10px] font-mono" style={{ color: uiTheme.text }}>{formatTime(liveCurrentTime)}</span>
-              <span className="text-[8px] font-mono" style={{ color: uiTheme.textMuted }}>/ {formatTime(duration)}</span>
+              <span className="text-[0.625rem] font-mono" style={{ color: uiTheme.text }}>{formatTime(liveCurrentTime)}</span>
+              <span className="text-[0.5rem] font-mono" style={{ color: uiTheme.textMuted }}>/ {formatTime(duration)}</span>
             </div>
           </div>
         )}
@@ -1807,7 +1810,7 @@ export const PlayerControls = memo(function PlayerControls({
               <select
                 value={playbackRate}
                 onChange={(e) => onRateChange(Number(e.target.value))}
-                className="text-[10px] bg-transparent outline-none"
+                className="text-[0.625rem] bg-transparent outline-none"
                 style={{ color: uiTheme.text }}
               >
                 {rates.map((rate) => (
@@ -1819,7 +1822,7 @@ export const PlayerControls = memo(function PlayerControls({
             <div className="relative flex items-center" ref={speedMenuRef}>
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                className={`flex items-center gap-1 p-1 text-[11px] font-mono font-bold rounded transition-colors ${isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100'} ${showSpeedMenu ? (isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-900') : ''}`}
+                className={`flex items-center gap-1 p-1 text-[0.6875rem] font-mono font-bold rounded transition-colors ${isDarkMode ? 'hover:text-white hover:bg-gray-800' : 'hover:text-gray-900 hover:bg-gray-100'} ${showSpeedMenu ? (isDarkMode ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-900') : ''}`}
               >
                 <Settings2 size={12} />
                 {playbackRate.toFixed(1)}x
@@ -1889,7 +1892,7 @@ export const PlayerControls = memo(function PlayerControls({
                 }
                 setZoomLevel(z);
               }} />
-              <div className="text-[9px] font-mono leading-none min-w-[28px] text-center" style={{ color: uiTheme.textMuted }}>
+              <div className="text-[0.5625rem] font-mono leading-none min-w-[28px] text-center" style={{ color: uiTheme.textMuted }}>
                 {Math.round((zoomLevel / 50) * 10) / 10}x
               </div>
               <ZoomIn size={11} className="opacity-60 cursor-pointer hover:opacity-100 shrink-0" onClick={() => {
@@ -1909,19 +1912,19 @@ export const PlayerControls = memo(function PlayerControls({
               <>
                 <button
                   type="button"
-                  className="text-[9px] leading-none shrink-0"
-                  onClick={() => setVolume((prev) => Math.max(0, Number((prev - 0.1).toFixed(2))))}
+                  className="text-[0.5625rem] leading-none shrink-0"
+                  onClick={() => onAudioVolumeChange(Math.max(0, Number((audioVolume - 0.1).toFixed(2))))}
                   style={{ color: secondaryThemeColor }}
                 >
                   -
                 </button>
-                <div className="text-[9px] font-mono leading-none min-w-[26px] text-center" style={{ color: uiTheme.textMuted }}>
-                  {Math.round(volume * 100)}%
+                <div className="text-[0.5625rem] font-mono leading-none min-w-[26px] text-center" style={{ color: uiTheme.textMuted }}>
+                  {Math.round(audioVolume * 100)}%
                 </div>
                 <button
                   type="button"
-                  className="text-[9px] leading-none shrink-0"
-                  onClick={() => setVolume((prev) => Math.min(1, Number((prev + 0.1).toFixed(2))))}
+                  className="text-[0.5625rem] leading-none shrink-0"
+                  onClick={() => onAudioVolumeChange(Math.min(1, Number((audioVolume + 0.1).toFixed(2))))}
                   style={{ color: secondaryThemeColor }}
                 >
                   +
@@ -1931,8 +1934,8 @@ export const PlayerControls = memo(function PlayerControls({
               <input
                 type="range"
                 min="0" max="1" step="0.01"
-                value={volume}
-                onChange={e => setVolume(parseFloat(e.target.value))}
+                value={audioVolume}
+                onChange={e => onAudioVolumeChange(parseFloat(e.target.value))}
                 className="w-16 h-1"
                 style={{ accentColor: secondaryThemeColor }}
               />

@@ -15,6 +15,7 @@ interface SubtitlePanelProps {
   secondaryThemeColor: string;
   onSeek: (time: number) => void;
   onUpdateSubtitle: (id: string, updates: Partial<SubtitleItem>) => void;
+  onDuplicateSubtitle: (id: string) => void | Promise<void>;
   onDeleteSubtitle: (id: string) => void | Promise<void>;
   onBulkDeleteSubtitles: (ids: string[]) => void | Promise<void>;
   onBulkUpdateSpeaker: (ids: string[], speakerId: string) => void | Promise<void>;
@@ -29,7 +30,7 @@ interface SubtitlePanelProps {
   showToast?: (message: string) => void;
 }
 
-export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, onCreateBubbleSnapshot, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false, showToast }: SubtitlePanelProps) {
+export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDuplicateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, onCreateBubbleSnapshot, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false, showToast }: SubtitlePanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
@@ -60,6 +61,11 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const [showSelectionSpeakerPicker, setShowSelectionSpeakerPicker] = useState(false);
   const [showBulkSpeakerPicker, setShowBulkSpeakerPicker] = useState(false);
   const [pendingBulkAction, setPendingBulkAction] = useState<null | { type: 'delete' } | { type: 'speaker'; speakerId: string } | { type: 'visibility'; visible: boolean }>(null);
+  const [contextMenu, setContextMenu] = useState<{ subtitle: SubtitleItem; x: number; y: number } | null>(null);
+  const [editModalSubtitleId, setEditModalSubtitleId] = useState<string | null>(null);
+  const [speakerModalSubtitleId, setSpeakerModalSubtitleId] = useState<string | null>(null);
+  const [modalEditForm, setModalEditForm] = useState<{ start: string; end: string; text: string; visible: boolean }>({ start: '', end: '', text: '', visible: true });
+  const [modalSpeakerId, setModalSpeakerId] = useState('');
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const validSelectedSubtitleIds = useMemo(() => {
     const validIdSet = new Set(subtitles.map((sub) => sub.id));
@@ -77,6 +83,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const pendingSpeakerName = pendingBulkAction?.type === 'speaker'
     ? (speakers[pendingBulkAction.speakerId]?.name || pendingBulkAction.speakerId)
     : '';
+  const editModalSubtitle = useMemo(() => subtitles.find((sub) => sub.id === editModalSubtitleId) ?? null, [editModalSubtitleId, subtitles]);
+  const speakerModalSubtitle = useMemo(() => subtitles.find((sub) => sub.id === speakerModalSubtitleId) ?? null, [speakerModalSubtitleId, subtitles]);
   const handleSelectAll = useCallback(() => {
     setSelectedSubtitleIds(subtitles.map((sub) => sub.id));
     setLastSelectedSubtitleId(subtitles[subtitles.length - 1]?.id ?? null);
@@ -111,6 +119,24 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     window.addEventListener('keydown', handleMultiSelectShortcut);
     return () => window.removeEventListener('keydown', handleMultiSelectShortcut);
   }, [handleSelectAll, multiSelectMode]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener('click', handleClose);
+    window.addEventListener('contextmenu', handleClose);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('contextmenu', handleClose);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [contextMenu]);
 
   const scrollToSubtitle = (subtitleId: string) => {
     const subtitleIndex = subtitles.findIndex((sub) => sub.id === subtitleId);
@@ -294,6 +320,88 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     onUpdateSubtitle(sub.id, { visible: sub.visible === false });
   };
 
+  const openSubtitleContextMenu = (sub: SubtitleItem, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ subtitle: sub, x: event.clientX, y: event.clientY });
+  };
+
+  const openEditModal = (sub: SubtitleItem) => {
+    setContextMenu(null);
+    setEditModalSubtitleId(sub.id);
+    setModalEditForm({
+      start: sub.start.toFixed(2),
+      end: sub.end.toFixed(2),
+      text: sub.text,
+      visible: sub.visible !== false,
+    });
+  };
+
+  const openSpeakerModal = (sub: SubtitleItem) => {
+    setContextMenu(null);
+    setSpeakerModalSubtitleId(sub.id);
+    setModalSpeakerId(sub.speakerId);
+  };
+
+  const handleCopySubtitleText = async (sub: SubtitleItem) => {
+    setContextMenu(null);
+    try {
+      const text = sub.text || '';
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        if (!ok) {
+          throw new Error('execCommand copy failed');
+        }
+      }
+      showToast?.(t('subtitle.contextCopyTextSuccess'));
+    } catch (error) {
+      console.error('Failed to copy subtitle text:', error);
+      showToast?.(t('subtitle.contextCopyTextFailed'));
+    }
+  };
+
+  const handleDuplicateSubtitle = (sub: SubtitleItem) => {
+    setContextMenu(null);
+    void onDuplicateSubtitle(sub.id);
+  };
+
+  const handleDeleteOne = (sub: SubtitleItem) => {
+    setContextMenu(null);
+    void onDeleteSubtitle(sub.id);
+  };
+
+  const saveModalEdit = () => {
+    if (!editModalSubtitle) return;
+    const newStart = parseFloat(modalEditForm.start);
+    const newEnd = parseFloat(modalEditForm.end);
+    if (!Number.isFinite(newStart) || !Number.isFinite(newEnd) || newEnd < newStart) {
+      return;
+    }
+    onUpdateSubtitle(editModalSubtitle.id, {
+      start: newStart,
+      end: newEnd,
+      duration: Number((newEnd - newStart).toFixed(2)),
+      text: modalEditForm.text,
+      visible: modalEditForm.visible,
+    });
+    setEditModalSubtitleId(null);
+  };
+
+  const saveSpeakerModal = () => {
+    if (!speakerModalSubtitle || !modalSpeakerId) return;
+    onUpdateSubtitle(speakerModalSubtitle.id, { speakerId: modalSpeakerId });
+    setSpeakerModalSubtitleId(null);
+  };
+
   const toggleRegionEdit = (sub: SubtitleItem, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -444,7 +552,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           <span className="inline-flex items-center gap-1">
             {t('subtitle.title')}
             <Tooltip content={t('subtitle.titleTip')} placement="bottom" width={288} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
-              <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[10px] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+              <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
             </Tooltip>
           </span>
           <button type="button" onClick={() => setSearchOpen((v) => !v)} title={t('subtitle.search')}>
@@ -512,7 +620,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
         >
           <ChevronDown size={14} />
         </button>
-        <div className="text-[10px] font-mono min-w-[3rem] text-right" style={{ color: secondaryThemeColor }}>
+        <div className="text-[0.625rem] font-mono min-w-[3rem] text-right" style={{ color: secondaryThemeColor }}>
           {searchMatches.length > 0 ? t('subtitle.searchCount', { current: searchIndex + 1, total: searchMatches.length }) : '0/0'}
         </div>
         </div>}
@@ -520,7 +628,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           <button
             type="button"
             onClick={handleSelectAll}
-            className="px-2 py-1 rounded border text-[10px]"
+            className="px-2 py-1 rounded border text-[0.625rem]"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('common.selectAll')}
@@ -528,19 +636,19 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           <button
             type="button"
             onClick={handleClearSelection}
-            className="px-2 py-1 rounded border text-[10px]"
+            className="px-2 py-1 rounded border text-[0.625rem]"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('common.selectNone')}
           </button>
-          <div className="text-[10px] font-mono min-w-[3.5rem]" style={{ color: secondaryThemeColor }}>
+          <div className="text-[0.625rem] font-mono min-w-[3.5rem]" style={{ color: secondaryThemeColor }}>
             {t('subtitle.multiSelectCount', { count: validSelectedSubtitleIds.length })}
           </div>
           <button
             type="button"
             disabled={validSelectedSubtitleIds.length === 0}
             onClick={handleBulkDelete}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkDelete')}
@@ -549,7 +657,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             type="button"
             disabled={validSelectedSubtitleIds.length === 0}
             onClick={() => handleBulkVisibility(true)}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkShow')}
@@ -558,7 +666,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             type="button"
             disabled={validSelectedSubtitleIds.length === 0}
             onClick={() => handleBulkVisibility(false)}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkHide')}
@@ -570,7 +678,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               setShowSelectionSpeakerPicker((prev) => !prev);
               setShowBulkSpeakerPicker(false);
             }}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.selectSpeaker')}
@@ -582,7 +690,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               setShowBulkSpeakerPicker((prev) => !prev);
               setShowSelectionSpeakerPicker(false);
             }}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkChangeSpeaker')}
@@ -591,7 +699,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             type="button"
             disabled={validSelectedSubtitleIds.length === 0}
             onClick={handleCreateBubbleSnapshot}
-            className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bubbleSnapshot')}
@@ -601,7 +709,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               <select
                 value={effectiveSelectionSpeakerId}
                 onChange={(e) => setSelectionSpeakerId(e.target.value)}
-                className="px-2 py-1 rounded border text-[10px] focus:outline-none"
+                className="px-2 py-1 rounded border text-[0.625rem] focus:outline-none"
                 style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
               >
                 {subtitleSpeakerOptions.map(([speakerId, speaker]) => (
@@ -612,7 +720,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 type="button"
                 disabled={!effectiveSelectionSpeakerId}
                 onClick={handleSelectSpeaker}
-                className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+                className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
                 style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
               >
                 {t('common.confirm')}
@@ -624,7 +732,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               <select
                 value={effectiveBulkSpeakerId}
                 onChange={(e) => setBulkSpeakerId(e.target.value)}
-                className="px-2 py-1 rounded border text-[10px] focus:outline-none"
+                className="px-2 py-1 rounded border text-[0.625rem] focus:outline-none"
                 style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
               >
                 {bulkSpeakerOptions.map(([speakerId, speaker]) => (
@@ -635,7 +743,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 type="button"
                 disabled={validSelectedSubtitleIds.length === 0 || !effectiveBulkSpeakerId}
                 onClick={handleApplyBulkSpeaker}
-                className="px-2 py-1 rounded border text-[10px] disabled:opacity-40"
+                className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
                 style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
               >
                 {t('common.confirm')}
@@ -668,6 +776,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         role="button"
                         tabIndex={0}
                         onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : onSeek(sub.start)}
+                        onContextMenu={(event) => openSubtitleContextMenu(sub, event)}
                         onKeyDown={(event) => {
                           if (event.key !== 'Enter' && event.key !== ' ') {
                             return;
@@ -702,7 +811,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         >
                           {sub.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
-                        <span className="shrink-0 font-mono text-[10px] opacity-65">
+                        <span className="shrink-0 font-mono text-[0.625rem] opacity-65">
                           {subtitleIndex}
                         </span>
                         {multiSelectMode ? (
@@ -735,6 +844,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               <div 
                 key={sub.id}
                 id={`sub-${sub.id}`}
+                onContextMenu={(e) => openSubtitleContextMenu(sub, e)}
                 onClick={(e) => {
                   if (isInlineEditing) return;
                   if (multiSelectMode) {
@@ -772,11 +882,11 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                             {selectedSubtitleIdSet.has(sub.id) ? <CheckSquare size={14} /> : <Square size={14} />}
                           </button>
                         ) : null}
-                        <div className="flex items-center gap-1 font-mono text-[10px] shrink-0">
+                        <div className="flex items-center gap-1 font-mono text-[0.625rem] shrink-0">
                         <Clock size={10} />
                         <span>{formatTime(sub.start)} - {formatTime(sub.end)}</span>
                         </div>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor }}>
+                        <span className="px-1.5 py-0.5 rounded text-[0.625rem] shrink-0" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor }}>
                           {sub.duration}s
                         </span>
                       </div>
@@ -786,7 +896,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         <button 
                           onClick={(e) => toggleRegionEdit(sub, e)}
                           onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                          className={`z-20 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 transition-all cursor-pointer border
+                          className={`z-20 px-1.5 py-0.5 rounded text-[0.5625rem] flex items-center gap-1 transition-all cursor-pointer border
                             ${isRegionEditing 
                               ? `opacity-100 text-white shadow-md`
                               : `opacity-0 group-hover:opacity-100 shadow-sm`
@@ -808,7 +918,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                               if (setEditingSub) setEditingSub(null);
                             }}
                             onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                          className="z-20 px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 transition-all cursor-pointer opacity-100 border"
+                          className="z-20 px-1.5 py-0.5 rounded text-[0.5625rem] flex items-center gap-1 transition-all cursor-pointer opacity-100 border"
                             style={{ backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor, borderColor: `${secondaryThemeColor}33` }}
                             title={t('subtitle.cancel')}
                           >
@@ -823,7 +933,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                               onDeleteSubtitle(sub.id);
                             }}
                             onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            className="z-20 p-1 rounded text-[9px] flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover:opacity-100 border"
+                            className="z-20 p-1 rounded text-[0.5625rem] flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover:opacity-100 border"
                             style={{ backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.14)' : 'rgba(239, 68, 68, 0.10)', color: '#ef4444', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.35)' : 'rgba(239, 68, 68, 0.25)' }}
                             title={t('subtitle.deleteOne')}
                           >
@@ -844,13 +954,13 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         {sub.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
                       </button>
                       <span
-                        className="self-start shrink-0 font-mono text-[10px] leading-5 opacity-65"
+                        className="self-start shrink-0 font-mono text-[0.625rem] leading-5 opacity-65"
                         title={t('subtitle.count', { count: subtitleIndex })}
                       >
                         {subtitleIndex}
                       </span>
                       <span
-                        className="px-1.5 py-0.5 rounded text-[10px] self-start shrink-0 font-bold"
+                        className="px-1.5 py-0.5 rounded text-[0.625rem] self-start shrink-0 font-bold"
                         style={speakers[sub.speakerId]?.type === 'annotation' ? { backgroundColor: `${isDarkMode ? '#9ca3af' : '#6b7280'}22`, color: isDarkMode ? '#d1d5db' : '#4b5563', border: `1px solid ${isDarkMode ? '#6b7280' : '#9ca3af'}55` } : { backgroundColor: `${secondaryThemeColor}${isDarkMode ? '22' : '18'}`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}33` }}
                       >
                         {speakers[sub.speakerId]?.name || sub.actor || sub.style}
@@ -861,9 +971,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 )}
                 
                 {isInlineEditing && (
-                  <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 font-mono text-[10px]">
+                      <div className="flex items-center gap-1 font-mono text-[0.625rem]">
                         <Clock size={10} />
                         <input
                           type="number"
@@ -900,6 +1010,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                       value={editForm.text}
                       onChange={(e) => setEditForm({...editForm, text: e.target.value})}
                       onPaste={(e) => { void handleInlineEditorPaste(e); }}
+                      onContextMenu={(e) => e.stopPropagation()}
                       className="w-full p-2 rounded border text-xs min-h-[60px] resize-y focus:outline-none"
                       style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                       autoFocus
@@ -911,7 +1022,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         }
                       }}
                     />
-                    <div className="mt-1 text-[10px] leading-4" style={{ color: uiTheme.textMuted }}>
+                    <div className="mt-1 text-[0.625rem] leading-4" style={{ color: uiTheme.textMuted }}>
                       {t('subtitle.markdownHint')}
                     </div>
                     
@@ -922,14 +1033,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           e.stopPropagation();
                           setInlineEditingId(null);
                         }}
-                        className="px-3 py-1 rounded text-[10px] transition-colors"
+                        className="px-3 py-1 rounded text-[0.625rem] transition-colors"
                         style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: uiTheme.textMuted, border: `1px solid ${rgba(themeColor, isDarkMode ? 0.28 : 0.18)}` }}
                       >
                         {t('subtitle.cancel')}
                       </button>
                       <button
                         onClick={(e) => saveInlineEdit(sub.id, e)}
-                        className="px-3 py-1 rounded text-[10px] text-white transition-colors"
+                        className="px-3 py-1 rounded text-[0.625rem] text-white transition-colors"
                         style={{ backgroundColor: secondaryThemeColor }}
                       >
                         {t('subtitle.save')}
@@ -1003,6 +1114,94 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </div>
         </div>
       )}
+      {contextMenu ? (
+        <div
+          className="fixed z-[1200] min-w-[12rem] overflow-hidden rounded-2xl border shadow-2xl"
+          style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260), backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {[
+            { key: 'duplicate', label: t('subtitle.contextDuplicate'), action: () => handleDuplicateSubtitle(contextMenu.subtitle) },
+            { key: 'delete', label: t('subtitle.contextDelete'), action: () => handleDeleteOne(contextMenu.subtitle) },
+            { key: 'edit', label: t('subtitle.contextEdit'), action: () => openEditModal(contextMenu.subtitle) },
+            { key: 'copy-text', label: t('subtitle.contextCopyText'), action: () => { void handleCopySubtitleText(contextMenu.subtitle); } },
+            { key: 'speaker', label: t('subtitle.contextChangeSpeaker'), action: () => openSpeakerModal(contextMenu.subtitle) },
+          ].map((item, index) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={item.action}
+              className="flex w-full items-center px-3 py-2 text-left text-[0.6875rem] transition-colors"
+              style={{ borderTop: index === 0 ? 'none' : `1px solid ${uiTheme.border}`, backgroundColor: 'transparent' }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.backgroundColor = rgba(themeColor, isDarkMode ? 0.14 : 0.08);
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {editModalSubtitle ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
+            <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
+              <div>
+                <h3 className="text-xl font-semibold">{t('subtitle.contextEdit')}</h3>
+                <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{t('subtitle.contextEditHint')}</p>
+              </div>
+              <button type="button" onClick={() => setEditModalSubtitleId(null)} className="rounded-full p-2" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08) }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-6">
+              <div className="grid gap-3 md:grid-cols-2">
+                <input value={modalEditForm.start} onChange={(e) => setModalEditForm((prev) => ({ ...prev, start: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+                <input value={modalEditForm.end} onChange={(e) => setModalEditForm((prev) => ({ ...prev, end: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+              </div>
+              <textarea value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+              <label className="flex items-center gap-2 text-sm" style={{ color: uiTheme.textMuted }}>
+                <input type="checkbox" checked={modalEditForm.visible} onChange={(e) => setModalEditForm((prev) => ({ ...prev, visible: e.target.checked }))} style={{ accentColor: secondaryThemeColor }} />
+                {t('subtitle.visibleOne')}
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
+              <button type="button" onClick={() => setEditModalSubtitleId(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
+              <button type="button" onClick={saveModalEdit} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('subtitle.save')}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {speakerModalSubtitle ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
+            <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
+              <div>
+                <h3 className="text-xl font-semibold">{t('subtitle.contextChangeSpeaker')}</h3>
+                <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{t('subtitle.contextChangeSpeakerHint')}</p>
+              </div>
+              <button type="button" onClick={() => setSpeakerModalSubtitleId(null)} className="rounded-full p-2" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08) }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-6">
+              <div className="rounded-2xl border p-3 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>{speakerModalSubtitle.text}</div>
+              <select value={modalSpeakerId} onChange={(e) => setModalSpeakerId(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }}>
+                {Object.entries(speakers).map(([speakerId, speaker]) => (
+                  <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
+              <button type="button" onClick={() => setSpeakerModalSubtitleId(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
+              <button type="button" onClick={saveSpeakerModal} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('common.confirm')}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
