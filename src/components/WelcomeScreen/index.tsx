@@ -163,6 +163,13 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
             </div>
           </div>
         )}
+
+        <div
+          className="rounded-2xl border px-5 py-4 text-sm leading-relaxed"
+          style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: uiTheme.panelBgElevated, color: uiTheme.textMuted }}
+        >
+          {t('welcome.dropHint')}
+        </div>
       </div>
       
       {!window.electron && (

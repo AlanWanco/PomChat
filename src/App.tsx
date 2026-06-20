@@ -2355,14 +2355,18 @@ const [previewScale, setPreviewScale] = useState(1);
 
   // Update window title with project path
   useEffect(() => {
+    const suffix = autoSaveProject
+      ? ' [已自动保存]'
+      : (isProjectDirty ? ' *' : '');
+
     if (projectPath) {
       document.title = projectPath === 'web-demo' 
-        ? t('app.webDemo')
-        : `PomChat Studio - ${projectPath}`;
+        ? `${t('app.webDemo')}${suffix}`
+        : `PomChat Studio - ${projectPath}${suffix}`;
     } else {
-      document.title = 'PomChat Studio';
+      document.title = `PomChat Studio${suffix}`;
     }
-  }, [projectPath, t]);
+  }, [autoSaveProject, isProjectDirty, projectPath, t]);
 
   // Audio Sync
   useEffect(() => {
@@ -4788,8 +4792,8 @@ const [previewScale, setPreviewScale] = useState(1);
       
       if (result.canceled || !result.filePath) return;
 
-      if (isAudio) overrides.audioPath = filePath;
-      if (isImage || isVideo) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
+      if (isAudio || isVideo) overrides.audioPath = filePath;
+      if (isImage) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
       if (isAss) overrides.assPath = filePath;
       
       const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...overrides };
@@ -4830,7 +4834,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }
 
-      if (isImage || isVideo) {
+      if (isImage) {
         setConfig((prev: any) => ({
             ...prev,
             background: {
@@ -4845,23 +4849,11 @@ const [previewScale, setPreviewScale] = useState(1);
         }));
         showToast(t('app.imageImported'));
 
-        if (isVideo) {
-          const mediaInfo = await detectVideoMediaInfo(toFsServePath(filePath));
-          if (mediaInfo.duration) {
-            setConfig((prev: any) => ({
-              ...prev,
-              background: {
-                ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
-                duration: mediaInfo.duration !== null ? Number(mediaInfo.duration.toFixed(2)) : mediaInfo.duration
-              }
-            }));
-          }
-          const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
-          if (shouldUseVideoAudio) {
-            setConfig((prev: any) => ({ ...prev, audioPath: filePath }));
-            showToast(t('app.audioImported'));
-          }
-        }
+      }
+
+      if (isVideo) {
+        setConfig((prev: any) => ({ ...prev, audioPath: filePath }));
+        showToast(t('app.startupVideoImportedAsAudio'));
       }
       return;
     }
@@ -5350,7 +5342,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (isImage || isVideo) {
+    if (isImage) {
       const mediaObjectUrl = URL.createObjectURL(file);
       if (!currentProjectPath) {
         setProjectPath('web-demo');
@@ -5366,23 +5358,17 @@ const [previewScale, setPreviewScale] = useState(1);
       }));
       showToast(t('app.imageImported'));
 
-      if (isVideo) {
-        const mediaInfo = await detectVideoMediaInfo(mediaObjectUrl);
-        applyTrackedConfigUpdater((prev: any) => ({
-          ...prev,
-          background: {
-            ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
-            image: mediaObjectUrl,
-            duration: mediaInfo.duration !== null && mediaInfo.duration !== undefined ? Number(mediaInfo.duration.toFixed(2)) : prev?.background?.duration
-          }
-        }));
+      return;
+    }
 
-        const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
-        if (shouldUseVideoAudio) {
-          applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: mediaObjectUrl }));
-          showToast(t('app.audioImported'));
-        }
+    if (isVideo) {
+      const mediaObjectUrl = URL.createObjectURL(file);
+      if (!currentProjectPath) {
+        setProjectPath('web-demo');
+        setShowSettings(true);
       }
+      applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: mediaObjectUrl }));
+      showToast(t('app.startupVideoImportedAsAudio'));
       return;
     }
 
