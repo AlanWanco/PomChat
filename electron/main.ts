@@ -1152,7 +1152,8 @@ ipcMain.handle('read-binary-file', async (_event, payload: string | { filePath: 
   if (!resolvedPath || !fs.existsSync(resolvedPath)) {
     return null;
   }
-  return Array.from(fs.readFileSync(resolvedPath));
+  const buffer = fs.readFileSync(resolvedPath);
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 });
 
 ipcMain.handle('save-clipboard-image-to-project-assets', async (_event, payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => {
