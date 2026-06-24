@@ -439,6 +439,8 @@ export function SettingsPanel({
     const nextIndex = backgroundSlides.length + 1;
     const defaultStart = Math.max(0, Number(currentTime.toFixed(2)));
     const defaultEnd = Number((defaultStart + 30).toFixed(2));
+    const maxBackgroundOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer === 'background').map((item: any) => item.backgroundOrder ?? 0));
+    const maxOverlayOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer !== 'background').map((item: any) => item.overlayOrder ?? 0));
     const slide = {
       id: `slide-${Date.now()}`,
       type,
@@ -451,8 +453,8 @@ export function SettingsPanel({
       offsetX: 0,
       offsetY: 0,
       rotation: 0,
-      backgroundOrder: backgroundSlides.filter((item: any) => item.layer === 'background').length,
-      overlayOrder: backgroundSlides.filter((item: any) => item.layer !== 'background').length,
+      backgroundOrder: maxBackgroundOrder + 1,
+      overlayOrder: maxOverlayOrder + 1,
       layer: 'overlay',
       inheritBackgroundFilters: true,
       animationStyle: 'blur',
@@ -505,10 +507,15 @@ export function SettingsPanel({
       return Number.isFinite(nextValue) ? Math.max(currentMax, nextValue) : currentMax;
     }, sameTypeCount);
 
+    const isOverlayLayer = (sourceSlide.layer || 'background') !== 'background';
+    const maxBackgroundOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer === 'background').map((item: any) => item.backgroundOrder ?? 0));
+    const maxOverlayOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer !== 'background').map((item: any) => item.overlayOrder ?? 0));
     const duplicatedSlide = {
       ...sourceSlide,
       id: `slide-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: `${typeLabel}${maxIndex + 1}`,
+      backgroundOrder: isOverlayLayer ? sourceSlide.backgroundOrder : maxBackgroundOrder + 1,
+      overlayOrder: isOverlayLayer ? maxOverlayOrder + 1 : sourceSlide.overlayOrder,
     };
 
     updateBackgroundSlides([...backgroundSlides, duplicatedSlide]);

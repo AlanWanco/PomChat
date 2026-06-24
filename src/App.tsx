@@ -1246,6 +1246,7 @@ function App() {
   const aspectRatio = `${canvasWidth} / ${canvasHeight}`;
   const aspectLabel = `${canvasWidth}:${canvasHeight}`;
 const [previewScale, setPreviewScale] = useState(1);
+  const [previewFrameOverlayOffset, setPreviewFrameOverlayOffset] = useState({ left: 0, top: 0 });
 
   useLayoutEffect(() => {
     const areaEl = previewAreaRef.current;
@@ -1286,6 +1287,37 @@ const [previewScale, setPreviewScale] = useState(1);
       window.removeEventListener('resize', updateScale);
     };
   }, [canvasWidth, canvasHeight, showSubtitlePanel, showSettings, subtitleWidth, settingsWidth, shouldHideSidePanels, isMobileWebLayout, isMobileBottomPanelExpanded, mobileBottomPanelHeight, isMobileBottomPanelCollapsed]);
+
+  useLayoutEffect(() => {
+    const areaEl = previewAreaRef.current;
+    const frameEl = previewFrameRef.current;
+    if (!areaEl || !frameEl) {
+      return;
+    }
+
+    const updateOverlayOffset = () => {
+      const areaRect = areaEl.getBoundingClientRect();
+      const frameRect = frameEl.getBoundingClientRect();
+      setPreviewFrameOverlayOffset((prev) => (
+        prev.left === frameRect.left - areaRect.left && prev.top === frameRect.top - areaRect.top
+          ? prev
+          : { left: frameRect.left - areaRect.left, top: frameRect.top - areaRect.top }
+      ));
+    };
+
+    updateOverlayOffset();
+    const rafId = window.requestAnimationFrame(updateOverlayOffset);
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateOverlayOffset) : null;
+    resizeObserver?.observe(areaEl);
+    resizeObserver?.observe(frameEl);
+    window.addEventListener('resize', updateOverlayOffset);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateOverlayOffset);
+    };
+  }, [previewScale, canvasWidth, canvasHeight, showSubtitlePanel, showSettings, subtitleWidth, settingsWidth, shouldHideSidePanels, isMobileWebLayout, isMobileBottomPanelExpanded, mobileBottomPanelHeight, isMobileBottomPanelCollapsed]);
 
   useLayoutEffect(() => {
     const forceScale = () => {
@@ -6372,12 +6404,12 @@ const [previewScale, setPreviewScale] = useState(1);
             </div>
           )}
           <div ref={previewAreaRef} className={`flex-1 min-w-0 min-h-0 relative z-10 ${isMobileWebLayout ? 'p-1' : 'p-8'} overflow-hidden ${canvasBg}`}>
-            <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+            <div className="relative flex h-full w-full items-center justify-center">
               <div 
                 ref={previewFrameRef}
                 onContextMenuCapture={handleCopyPreviewToClipboard}
                 onContextMenu={handleCopyPreviewToClipboard}
-                className="relative pointer-events-auto bg-transparent rounded-lg overflow-hidden flex flex-col border shrink-0"
+                className="relative pointer-events-auto bg-transparent rounded-lg flex flex-col border shrink-0"
                 style={{
                   width: `${canvasWidth}px`,
                   height: `${canvasHeight}px`,
@@ -6389,6 +6421,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   transformOrigin: 'center center',
                 }}
               >
+              <div className="absolute inset-0 overflow-hidden rounded-lg">
               {previewFontFaceCss ? <style>{previewFontFaceCss}</style> : null}
               
               {/* Fallback color layer if no background image */}
@@ -6495,49 +6528,6 @@ const [previewScale, setPreviewScale] = useState(1);
                   />}
                 </div>
               ))}
-
-              <div className="absolute inset-0 z-[24] pointer-events-none">
-                {backgroundSlidesBelowChat.map((slide: BackgroundSlideItem) => {
-                  const box = slideEditBoxes[slide.id];
-                  if (!box) return null;
-                  return (
-                    <div
-                      key={`below-hit-${slide.id}`}
-                      className="absolute pointer-events-auto"
-                      style={{
-                        left: `${box.centerX - box.width / 2}px`,
-                        top: `${box.centerY - box.height / 2}px`,
-                        width: `${box.width}px`,
-                        height: `${box.height}px`,
-                        transform: `rotate(${slide.rotation ?? 0}deg)`,
-                        transformOrigin: '50% 50%',
-                        cursor: activeInsertImageId === slide.id && isInsertImageEditMode ? 'grab' : 'pointer',
-                        touchAction: 'none',
-                        backgroundColor: 'transparent',
-                      }}
-                      onDoubleClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        enterInsertImageEditMode(slide.id);
-                      }}
-                      onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        beginInsertImageDrag({
-                          id: slide.id,
-                          mode: 'move',
-                          startX: event.clientX,
-                          startY: event.clientY,
-                          initialOffsetX: slide.offsetX ?? 0,
-                          initialOffsetY: slide.offsetY ?? 0,
-                          initialScale: slide.scale ?? 1,
-                          initialRotation: slide.rotation ?? 0,
-                        }, 'grabbing');
-                      } : undefined}
-                    />
-                  );
-                })}
-              </div>
 
               {/* Chat Stream */}
               <div
@@ -6716,20 +6706,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       setActiveTab('project');
                       focusInsertImageSettings();
                     }}
-                    onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        beginInsertImageDrag({
-                          id: slide.id,
-                          mode: 'move',
-                          startX: event.clientX,
-                          startY: event.clientY,
-                          initialOffsetX: slide.offsetX ?? 0,
-                          initialOffsetY: slide.offsetY ?? 0,
-                          initialScale: slide.scale ?? 1,
-                          initialRotation: slide.rotation ?? 0,
-                        }, 'grabbing');
-                    } : undefined}
+                    onPointerDown={undefined}
                       editOverlay={undefined}
                     />
                   ) : <PreviewBackgroundAsset
@@ -6754,7 +6731,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     currentTime={previewRenderTime}
                     start={slide.start}
                     end={slide.end}
-                    draggable={activeInsertImageId === slide.id && isInsertImageEditMode}
+                    draggable={false}
                     onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
                     onNaturalSizeChange={(size) => updateSlideIntrinsicSize(slide.id, size.width, size.height)}
                     onDoubleClick={() => {
@@ -6763,20 +6740,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       setActiveTab('project');
                       focusInsertImageSettings();
                     }}
-                    onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      beginInsertImageDrag({
-                        id: slide.id,
-                        mode: 'move',
-                        startX: event.clientX,
-                        startY: event.clientY,
-                        initialOffsetX: slide.offsetX ?? 0,
-                        initialOffsetY: slide.offsetY ?? 0,
-                        initialScale: slide.scale ?? 1,
-                        initialRotation: slide.rotation ?? 0,
-                      }, 'grabbing');
-                    } : undefined}
+                    onPointerDown={undefined}
                     editOverlay={undefined}
                   />}
                 </div>
@@ -6820,93 +6784,134 @@ const [previewScale, setPreviewScale] = useState(1);
                   </div>
                 </div>
               )}
-              {activeInsertImageSlide && activeInsertImageBounds && isInsertImageEditMode && (
-                <div className="absolute inset-0 z-40 pointer-events-none">
+              </div>
+              </div>
+            </div>
+            <div className="absolute inset-0 z-40 pointer-events-none">
+              {[...backgroundSlidesBelowChat, ...backgroundSlidesAboveChat].map((slide: BackgroundSlideItem) => {
+                const box = slideEditBoxes[slide.id];
+                if (!box) return null;
+                return (
                   <div
-                    className="absolute"
+                    key={`global-hit-${slide.id}`}
+                    className="absolute pointer-events-auto"
                     style={{
-                      left: `${activeInsertImageBounds.left}px`,
-                      top: `${activeInsertImageBounds.top}px`,
-                      width: `${activeInsertImageBounds.width}px`,
-                      height: `${activeInsertImageBounds.height}px`,
-                      transform: `rotate(${activeInsertImageSlide.rotation ?? 0}deg)`,
+                      left: `${previewFrameOverlayOffset.left + (box.centerX - box.width / 2) * previewScale}px`,
+                      top: `${previewFrameOverlayOffset.top + (box.centerY - box.height / 2) * previewScale}px`,
+                      width: `${box.width * previewScale}px`,
+                      height: `${box.height * previewScale}px`,
+                      transform: `rotate(${slide.rotation ?? 0}deg)`,
                       transformOrigin: '50% 50%',
+                      cursor: activeInsertImageId === slide.id && isInsertImageEditMode ? 'grab' : 'pointer',
+                      touchAction: 'none',
+                      backgroundColor: 'transparent',
                     }}
-                  >
-                    <div className="absolute inset-0 border-2 border-dashed rounded pointer-events-none" style={{ borderColor: `${secondaryThemeColor}99`, boxShadow: `0 0 0 1px ${themeColor}44 inset` }} />
-                    <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ top: '-56px', width: '2px', height: '56px', backgroundColor: `${secondaryThemeColor}88` }} />
+                    onDoubleClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      enterInsertImageEditMode(slide.id);
+                    }}
+                    onPointerDown={activeInsertImageId === slide.id && isInsertImageEditMode ? (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      beginInsertImageDrag({
+                        id: slide.id,
+                        mode: 'move',
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        initialOffsetX: slide.offsetX ?? 0,
+                        initialOffsetY: slide.offsetY ?? 0,
+                        initialScale: slide.scale ?? 1,
+                        initialRotation: slide.rotation ?? 0,
+                      }, 'grabbing');
+                    } : undefined}
+                  />
+                );
+              })}
+              {activeInsertImageSlide && activeInsertImageBounds && isInsertImageEditMode && (
+                <div
+                  className="absolute"
+                  style={{
+                    left: `${previewFrameOverlayOffset.left + activeInsertImageBounds.left * previewScale}px`,
+                    top: `${previewFrameOverlayOffset.top + activeInsertImageBounds.top * previewScale}px`,
+                    width: `${activeInsertImageBounds.width * previewScale}px`,
+                    height: `${activeInsertImageBounds.height * previewScale}px`,
+                    transform: `rotate(${activeInsertImageSlide.rotation ?? 0}deg)`,
+                    transformOrigin: '50% 50%',
+                  }}
+                >
+                  <div className="absolute inset-0 border-dashed rounded pointer-events-none" style={{ borderWidth: `${Math.max(1, 2 * previewScale)}px`, borderColor: `${secondaryThemeColor}99`, boxShadow: `0 0 0 ${Math.max(1, previewScale)}px ${themeColor}44 inset` }} />
+                  <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ top: `${-56 * previewScale}px`, width: `${Math.max(1, 2 * previewScale)}px`, height: `${56 * previewScale}px`, backgroundColor: `${secondaryThemeColor}88` }} />
+                  <button
+                    type="button"
+                    className="absolute left-1/2 rounded-full border pointer-events-auto"
+                    style={{ top: `${-56 * previewScale}px`, width: `${40 * previewScale}px`, height: `${40 * previewScale}px`, transform: 'translate(-50%, -50%)', backgroundColor: isDarkMode ? '#111827' : '#ffffff', borderColor: secondaryThemeColor, boxShadow: `0 0 0 ${Math.max(1, 4 * previewScale)}px ${secondaryThemeColor}33`, cursor: 'grab', touchAction: 'none' }}
+                    title={t('project.rotate')}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const frameRect = previewFrameRef.current?.getBoundingClientRect();
+                      const centerX = (frameRect?.left ?? 0) + (activeInsertImageBounds.left + activeInsertImageBounds.width / 2) * (previewScale > 0 ? previewScale : 1);
+                      const centerY = (frameRect?.top ?? 0) + (activeInsertImageBounds.top + activeInsertImageBounds.height / 2) * (previewScale > 0 ? previewScale : 1);
+                      const initialAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI;
+                      beginInsertImageDrag({
+                        id: activeInsertImageSlide.id,
+                        mode: 'rotate',
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        initialOffsetX: activeInsertImageSlide.offsetX ?? 0,
+                        initialOffsetY: activeInsertImageSlide.offsetY ?? 0,
+                        initialScale: activeInsertImageSlide.scale ?? 1,
+                        initialRotation: activeInsertImageSlide.rotation ?? 0,
+                        initialAngle,
+                      }, 'grabbing');
+                    }}
+                  />
+                  {([
+                    { left: '0%', top: '0%', cursor: 'nwse-resize' },
+                    { left: '100%', top: '0%', cursor: 'nesw-resize' },
+                    { left: '0%', top: '100%', cursor: 'nesw-resize' },
+                    { left: '100%', top: '100%', cursor: 'nwse-resize' },
+                  ]).map((handle, index) => (
                     <button
+                      key={index}
                       type="button"
-                      className="absolute left-1/2 rounded-full border pointer-events-auto"
-                      style={{ top: '-56px', width: '40px', height: '40px', transform: 'translate(-50%, -50%)', backgroundColor: isDarkMode ? '#111827' : '#ffffff', borderColor: secondaryThemeColor, boxShadow: `0 0 0 4px ${secondaryThemeColor}33`, cursor: 'grab', touchAction: 'none' }}
-                      title={t('project.rotate')}
+                      className="absolute rounded-sm border pointer-events-auto"
+                      style={{ left: handle.left, top: handle.top, width: `${32 * previewScale}px`, height: `${32 * previewScale}px`, backgroundColor: isDarkMode ? '#111827' : '#ffffff', borderColor: secondaryThemeColor, boxShadow: `0 0 0 ${Math.max(1, 4 * previewScale)}px ${secondaryThemeColor}33`, transform: 'translate(-50%, -50%)', cursor: handle.cursor, touchAction: 'none' }}
                       onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         const frameRect = previewFrameRef.current?.getBoundingClientRect();
-                        const centerX = (frameRect?.left ?? 0) + (activeInsertImageBounds.left + activeInsertImageBounds.width / 2) * (previewScale > 0 ? previewScale : 1);
-                        const centerY = (frameRect?.top ?? 0) + (activeInsertImageBounds.top + activeInsertImageBounds.height / 2) * (previewScale > 0 ? previewScale : 1);
-                        const initialAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI;
+                        const boundsCenterX = activeInsertImageBounds.left + activeInsertImageBounds.width / 2;
+                        const boundsCenterY = activeInsertImageBounds.top + activeInsertImageBounds.height / 2;
+                        const localCenterX = frameRect ? frameRect.left + boundsCenterX * (previewScale > 0 ? previewScale : 1) : event.clientX;
+                        const localCenterY = frameRect ? frameRect.top + boundsCenterY * (previewScale > 0 ? previewScale : 1) : event.clientY;
+                        const initialDistance = Math.sqrt((event.clientX - localCenterX) ** 2 + (event.clientY - localCenterY) ** 2) / (previewScale > 0 ? previewScale : 1);
                         beginInsertImageDrag({
                           id: activeInsertImageSlide.id,
-                          mode: 'rotate',
+                          mode: 'scale',
                           startX: event.clientX,
                           startY: event.clientY,
                           initialOffsetX: activeInsertImageSlide.offsetX ?? 0,
                           initialOffsetY: activeInsertImageSlide.offsetY ?? 0,
                           initialScale: activeInsertImageSlide.scale ?? 1,
                           initialRotation: activeInsertImageSlide.rotation ?? 0,
-                          initialAngle,
-                        }, 'grabbing');
+                          initialDistance,
+                        }, handle.cursor);
                       }}
                     />
-                    {([
-                      { left: '0%', top: '0%', cursor: 'nwse-resize' },
-                      { left: '100%', top: '0%', cursor: 'nesw-resize' },
-                      { left: '0%', top: '100%', cursor: 'nesw-resize' },
-                      { left: '100%', top: '100%', cursor: 'nwse-resize' },
-                    ]).map((handle, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="absolute rounded-sm border pointer-events-auto"
-                        style={{ left: handle.left, top: handle.top, width: '32px', height: '32px', backgroundColor: isDarkMode ? '#111827' : '#ffffff', borderColor: secondaryThemeColor, boxShadow: `0 0 0 4px ${secondaryThemeColor}33`, transform: 'translate(-50%, -50%)', cursor: handle.cursor, touchAction: 'none' }}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const frameRect = previewFrameRef.current?.getBoundingClientRect();
-                          const boundsCenterX = activeInsertImageBounds.left + activeInsertImageBounds.width / 2;
-                          const boundsCenterY = activeInsertImageBounds.top + activeInsertImageBounds.height / 2;
-                          const localCenterX = frameRect ? frameRect.left + boundsCenterX * (previewScale > 0 ? previewScale : 1) : event.clientX;
-                          const localCenterY = frameRect ? frameRect.top + boundsCenterY * (previewScale > 0 ? previewScale : 1) : event.clientY;
-                          const initialDistance = Math.sqrt((event.clientX - localCenterX) ** 2 + (event.clientY - localCenterY) ** 2) / (previewScale > 0 ? previewScale : 1);
-                          beginInsertImageDrag({
-                            id: activeInsertImageSlide.id,
-                            mode: 'scale',
-                            startX: event.clientX,
-                            startY: event.clientY,
-                            initialOffsetX: activeInsertImageSlide.offsetX ?? 0,
-                            initialOffsetY: activeInsertImageSlide.offsetY ?? 0,
-                            initialScale: activeInsertImageSlide.scale ?? 1,
-                            initialRotation: activeInsertImageSlide.rotation ?? 0,
-                            initialDistance,
-                          }, handle.cursor);
-                        }}
-                      />
-                    ))}
-                    <button
-                      type="button"
-                      className="absolute rounded-full border pointer-events-auto inline-flex items-center justify-center font-bold"
-                      style={{ top: '-28px', right: '-92px', width: '56px', height: '56px', fontSize: '2.375rem', lineHeight: 1, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 4px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                      onClick={() => setIsInsertImageEditMode(false)}
-                      title={t('project.exitEdit')}
-                    >
-                      <X size={28} strokeWidth={2.6} />
-                    </button>
-                  </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="absolute rounded-full border pointer-events-auto inline-flex items-center justify-center font-bold"
+                    style={{ top: `${-28 * previewScale}px`, right: `${-92 * previewScale}px`, width: `${56 * previewScale}px`, height: `${56 * previewScale}px`, fontSize: `${2.375 * previewScale}rem`, lineHeight: 1, backgroundColor: isDarkMode ? 'rgba(17,24,39,0.92)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}66`, boxShadow: `0 0 0 ${Math.max(1, 4 * previewScale)}px ${secondaryThemeColor}2e`, color: uiTheme.text, cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => setIsInsertImageEditMode(false)}
+                    title={t('project.exitEdit')}
+                  >
+                    <X size={28 * previewScale} strokeWidth={2.6} />
+                  </button>
                 </div>
               )}
-              </div>
             </div>
           </div>
         </div>
