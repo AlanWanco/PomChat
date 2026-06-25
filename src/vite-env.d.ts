@@ -39,6 +39,9 @@ interface Window {
     setProxy: (proxy: string) => Promise<boolean>;
     openExternal: (url: string) => Promise<boolean>;
     checkForUpdates: () => Promise<{ ok: boolean; latestVersion?: string; currentVersion?: string; htmlUrl?: string; publishedAt?: string; hasUpdate?: boolean; error?: string }>;
+    confirmAppClose: () => Promise<boolean>;
+    cancelAppClose: () => Promise<boolean>;
+    onAppCloseRequested: (callback: () => void) => () => void;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
   };
 }

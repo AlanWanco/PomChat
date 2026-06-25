@@ -119,6 +119,11 @@ type ProjectResourceCheckDialogState = {
   updated: UpdatedProjectResource[];
 };
 
+type UnsavedProjectDialogState = {
+  title: string;
+  description: string;
+};
+
 type ProjectResourceFileType = 'audio' | 'subtitle' | 'image' | 'video' | 'font' | 'media';
 
 type RenderCacheInfo = {
@@ -199,6 +204,7 @@ const DEFAULT_UI_CONFIG = {
   settingsPosition: 'right' as 'left' | 'right',
   uiFontScale: 1,
   audioVolume: 0.8,
+  waveformZoomLevel: 50,
   exportFilenameEditorMode: 'simple' as 'simple' | 'advanced',
   subtitlePanelCompactMode: false,
   recentProject: null as string | null,
@@ -403,6 +409,7 @@ const sanitizeProjectConfig = (parsed: any) => {
       settingsPosition: parsed?.ui?.settingsPosition === 'left' ? 'left' : 'right',
       uiFontScale: typeof parsed?.ui?.uiFontScale === 'number' && Number.isFinite(parsed.ui.uiFontScale) ? Math.max(0.8, Math.min(1.4, parsed.ui.uiFontScale)) : DEFAULT_UI_CONFIG.uiFontScale,
       audioVolume: typeof parsed?.ui?.audioVolume === 'number' && Number.isFinite(parsed.ui.audioVolume) ? Math.max(0, Math.min(1, parsed.ui.audioVolume)) : DEFAULT_UI_CONFIG.audioVolume,
+      waveformZoomLevel: typeof parsed?.ui?.waveformZoomLevel === 'number' && Number.isFinite(parsed.ui.waveformZoomLevel) ? Math.max(10, Math.min(1000, parsed.ui.waveformZoomLevel)) : 50,
       exportFilenameEditorMode: parsed?.ui?.exportFilenameEditorMode === 'advanced'
         ? 'advanced'
         : (parsed?.filenameTemplate === 'custom' && typeof parsed?.customFilename === 'string' && /\{\$[A-Za-z0-9-]+\}/.test(parsed.customFilename)
@@ -994,9 +1001,11 @@ function App() {
   const [projectAssetsCacheEnabled, setProjectAssetsCacheEnabled] = useState(() => config.ui?.projectAssetsCacheEnabled ?? DEFAULT_UI_CONFIG.projectAssetsCacheEnabled);
   const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
   const persistedAudioVolume = Number(config.ui?.audioVolume ?? DEFAULT_UI_CONFIG.audioVolume);
+  const persistedWaveformZoomLevel = Number(config.ui?.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel);
   const [uiFontScale, setUiFontScale] = useState(() => Number(config.ui?.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale));
   const [exportFilenameEditorMode, setExportFilenameEditorMode] = useState<'simple' | 'advanced'>(() => config.ui?.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple');
   const [audioVolume, setAudioVolume] = useState(() => persistedAudioVolume);
+  const [waveformZoomLevel, setWaveformZoomLevel] = useState(() => Number(config.ui?.waveformZoomLevel ?? 50));
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
   const [subtitlePanelCompactMode, setSubtitlePanelCompactMode] = useState(() => Boolean(config.ui?.subtitlePanelCompactMode));
@@ -1078,13 +1087,20 @@ function App() {
   const [speakerReplaceDialog, setSpeakerReplaceDialog] = useState<SpeakerReplaceDialogState | null>(null);
   const [importProjectSettingsDialog, setImportProjectSettingsDialog] = useState<ImportProjectSettingsDialogState | null>(null);
   const [projectResourceCheckDialog, setProjectResourceCheckDialog] = useState<ProjectResourceCheckDialogState | null>(null);
+  const [unsavedProjectDialog, setUnsavedProjectDialog] = useState<UnsavedProjectDialogState | null>(null);
   const exportProgressActiveRef = useRef(false);
   const hasHydratedElectronConfigRef = useRef(!isDesktopMode);
   const lastUiSyncSnapshotRef = useRef('');
   const audioVolumePersistTimeoutRef = useRef<number | null>(null);
   const customFilenamePersistTimeoutRef = useRef<number | null>(null);
+  const pendingUnsavedProjectActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const simpleModeCustomFilenameRef = useRef('');
+  const isProjectDirtyRef = useRef(false);
+  const pendingElectronAppCloseRef = useRef(false);
   const advancedModeCustomFilenameRef = useRef('');
+  const debouncedConfigCommitTimerRef = useRef<number | null>(null);
+  const debouncedConfigSnapshotRef = useRef<HistorySnapshot | null>(null);
+  const waveformZoomPersistTimeoutRef = useRef<number | null>(null);
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const webAudioInputRef = useRef<HTMLInputElement>(null);
@@ -1127,6 +1143,27 @@ function App() {
   const clearProjectDirty = useCallback(() => {
     setIsProjectDirty(false);
   }, []);
+  useEffect(() => {
+    isProjectDirtyRef.current = isProjectDirty;
+  }, [isProjectDirty]);
+  const flushPendingDebouncedConfigCommit = useCallback(() => {
+    if (debouncedConfigCommitTimerRef.current !== null) {
+      window.clearTimeout(debouncedConfigCommitTimerRef.current);
+      debouncedConfigCommitTimerRef.current = null;
+    }
+    const snapshot = debouncedConfigSnapshotRef.current;
+    if (!snapshot) {
+      return;
+    }
+    debouncedConfigSnapshotRef.current = null;
+    historyPastRef.current.push(snapshot);
+    if (historyPastRef.current.length > HISTORY_LIMIT) {
+      historyPastRef.current.shift();
+    }
+    historyFutureRef.current = [];
+    syncHistoryAvailability();
+    markProjectDirty();
+  }, [markProjectDirty, syncHistoryAvailability]);
   const clearHistory = useCallback(() => {
     historyPastRef.current = [];
     historyFutureRef.current = [];
@@ -1137,13 +1174,15 @@ function App() {
       return;
     }
 
+    flushPendingDebouncedConfigCommit();
+
     historyPastRef.current.push(createHistorySnapshot());
     if (historyPastRef.current.length > HISTORY_LIMIT) {
       historyPastRef.current.shift();
     }
     historyFutureRef.current = [];
     syncHistoryAvailability();
-  }, [createHistorySnapshot, syncHistoryAvailability]);
+  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, syncHistoryAvailability]);
   const restoreHistorySnapshot = useCallback((snapshot: HistorySnapshot) => {
     isRestoringHistoryRef.current = true;
     setConfig(sanitizeProjectConfig(snapshot.config));
@@ -1177,6 +1216,25 @@ function App() {
     setConfig((prev: any) => updater(prev));
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
+  const applyDebouncedConfigChange = useCallback((nextConfig: any) => {
+    if (isRestoringHistoryRef.current) {
+      setConfig(nextConfig);
+      return;
+    }
+
+    if (!debouncedConfigSnapshotRef.current) {
+      debouncedConfigSnapshotRef.current = createHistorySnapshot();
+    }
+
+    setConfig(nextConfig);
+    if (debouncedConfigCommitTimerRef.current !== null) {
+      window.clearTimeout(debouncedConfigCommitTimerRef.current);
+    }
+    debouncedConfigCommitTimerRef.current = window.setTimeout(() => {
+      debouncedConfigCommitTimerRef.current = null;
+      flushPendingDebouncedConfigCommit();
+    }, 1000);
+  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit]);
   const undoProjectChange = useCallback(() => {
     const previousSnapshot = historyPastRef.current.pop();
     if (!previousSnapshot) {
@@ -1990,6 +2048,7 @@ const [previewScale, setPreviewScale] = useState(1);
       proxy: ui.proxy || '',
       settingsPosition: ui.settingsPosition,
       uiFontScale: Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale),
+      waveformZoomLevel: Number(ui.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel),
       exportFilenameEditorMode: ui.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple',
       subtitlePanelCompactMode: Boolean(ui.subtitlePanelCompactMode),
       recentProject: ui.recentProject,
@@ -2014,6 +2073,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setProxyState((prev: string) => (prev === (ui.proxy || '') ? prev : (ui.proxy || '')));
     setSettingsPosition((prev: 'left' | 'right') => (prev === ui.settingsPosition ? prev : ui.settingsPosition));
     setUiFontScale((prev: number) => (prev === Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale) ? prev : Number(ui.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale)));
+    setWaveformZoomLevel((prev: number) => (prev === Number(ui.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel) ? prev : Number(ui.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel)));
     setExportFilenameEditorMode((prev: 'simple' | 'advanced') => {
       const next = ui.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple';
       return prev === next ? prev : next;
@@ -2069,6 +2129,7 @@ const [previewScale, setPreviewScale] = useState(1);
       proxy: proxyState.trim(),
       settingsPosition,
       uiFontScale,
+      waveformZoomLevel,
       exportFilenameEditorMode,
       subtitlePanelCompactMode,
       recentProject,
@@ -2209,6 +2270,53 @@ const [previewScale, setPreviewScale] = useState(1);
       }
     };
   }, [audioVolume, persistedAudioVolume]);
+
+  useEffect(() => {
+    if (waveformZoomPersistTimeoutRef.current !== null) {
+      return;
+    }
+
+    setWaveformZoomLevel((prev) => (prev === persistedWaveformZoomLevel ? prev : persistedWaveformZoomLevel));
+  }, [persistedWaveformZoomLevel]);
+
+  useEffect(() => {
+    if (waveformZoomLevel === persistedWaveformZoomLevel) {
+      if (waveformZoomPersistTimeoutRef.current !== null) {
+        window.clearTimeout(waveformZoomPersistTimeoutRef.current);
+        waveformZoomPersistTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (waveformZoomPersistTimeoutRef.current !== null) {
+      window.clearTimeout(waveformZoomPersistTimeoutRef.current);
+    }
+
+    waveformZoomPersistTimeoutRef.current = window.setTimeout(() => {
+      waveformZoomPersistTimeoutRef.current = null;
+      setConfig((prev: any) => {
+        const prevUi = prev.ui || DEFAULT_UI_CONFIG;
+        if (Number(prevUi.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel) === waveformZoomLevel) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          ui: {
+            ...prevUi,
+            waveformZoomLevel,
+          },
+        };
+      });
+    }, 1000);
+
+    return () => {
+      if (waveformZoomPersistTimeoutRef.current !== null) {
+        window.clearTimeout(waveformZoomPersistTimeoutRef.current);
+        waveformZoomPersistTimeoutRef.current = null;
+      }
+    };
+  }, [waveformZoomLevel, persistedWaveformZoomLevel]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -3489,7 +3597,7 @@ const [previewScale, setPreviewScale] = useState(1);
       annotationPresets,
       fontPresets,
     }
-  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, exportFilenameEditorMode, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState, uiFontScale]);
+  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, exportFilenameEditorMode, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState, uiFontScale, waveformZoomLevel]);
 
   const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
@@ -4629,7 +4737,7 @@ const [previewScale, setPreviewScale] = useState(1);
     });
   }, [applyImportedProjectSettings, config.background, config.chatLayout, config.dimensions, config.fps, config.speakers, showToast, t, validateProjectConfig]);
 
-  const handleNewProject = async (initialOverrides?: any) => {
+  const handleNewProjectNow = async (initialOverrides?: any) => {
     const safeOverrides = sanitizeProjectOverrides(initialOverrides);
     if (!window.electron) {
       setWebAssContent(null);
@@ -4685,7 +4793,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
-  const handleCloseProject = () => {
+  const handleCloseProjectNow = () => {
     clearHistory();
     clearProjectDirty();
     setProjectResourceCheckDialog(null);
@@ -4700,6 +4808,68 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     document.title = 'PomChat Studio';
   };
+
+  async function saveProjectInternal(options?: { silent?: boolean }) {
+    flushPendingDebouncedConfigCommit();
+
+    if (!window.electron || !projectPath || projectPath === 'web-demo') {
+      const finalConfig = getProjectConfig();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
+      rememberRecentProject(finalConfig.projectTitle || 'web-demo');
+      clearProjectDirty();
+      if (!options?.silent) {
+        showToast(t('app.projectSaved'));
+      }
+      return true;
+    }
+
+    try {
+      await backupAssIfSpeakerNamesChanged();
+      const finalConfig = getProjectConfig();
+      await window.electron.writeFile(projectPath, JSON.stringify(finalConfig, null, 2));
+      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(config.speakers);
+      clearProjectDirty();
+      if (!options?.silent) {
+        showToast(t('app.projectSaved'));
+      }
+      return true;
+    } catch (e: any) {
+      alert(`${t('dialog.errorSaveFailed')}: ${e.message}`);
+      return false;
+    }
+  }
+
+  const runWithUnsavedProjectGuard = useCallback(async (action: () => void | Promise<void>) => {
+    flushPendingDebouncedConfigCommit();
+
+    if (!isProjectDirtyRef.current) {
+      await action();
+      return;
+    }
+
+    if (autoSaveProject) {
+      const saved = await saveProjectInternal({ silent: true });
+      if (!saved || isProjectDirtyRef.current) {
+        return;
+      }
+      await action();
+      return;
+    }
+
+    pendingUnsavedProjectActionRef.current = action;
+    setUnsavedProjectDialog({
+      title: t('app.unsavedProjectTitle'),
+      description: t('app.unsavedProjectDescription'),
+    });
+  }, [autoSaveProject, flushPendingDebouncedConfigCommit, t]);
+
+  const handleNewProject = useCallback((initialOverrides?: any) => {
+    runWithUnsavedProjectGuard(() => handleNewProjectNow(initialOverrides));
+  }, [runWithUnsavedProjectGuard]);
+
+  const handleCloseProject = useCallback(() => {
+    runWithUnsavedProjectGuard(() => handleCloseProjectNow());
+  }, [runWithUnsavedProjectGuard]);
 
   const handleSetAudio = async () => {
     if (!window.electron) {
@@ -5041,7 +5211,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
-  const handleOpenProject = async () => {
+  const handleOpenProjectNow = async () => {
     if (!window.electron) {
       webProjectInputRef.current?.click();
       return;
@@ -5061,6 +5231,22 @@ const [previewScale, setPreviewScale] = useState(1);
       alert(`${t('dialog.errorSelectFileFailed')}: ${e.message}`);
     }
   };
+
+  const handleOpenProject = useCallback(() => {
+    runWithUnsavedProjectGuard(() => handleOpenProjectNow());
+  }, [runWithUnsavedProjectGuard]);
+
+  const handleOpenRecentProject = useCallback((path: string) => {
+    runWithUnsavedProjectGuard(() => {
+      if (window.electron) {
+        if (path) {
+          return loadProjectFromPath(path);
+        }
+        return;
+      }
+      loadWebSavedProject();
+    });
+  }, [loadProjectFromPath, loadWebSavedProject, runWithUnsavedProjectGuard]);
 
   const handleProjectResourceReplacementChange = useCallback((resourceId: string, replacement: string) => {
     setProjectResourceCheckDialog((prev) => prev ? {
@@ -5297,33 +5483,35 @@ const [previewScale, setPreviewScale] = useState(1);
 
     if (isJson) {
       try {
-        const content = await file.text();
-        const parsed = JSON.parse(content);
-        const validatedConfig = validateProjectConfig(parsed);
-        const normalizedConfig = validatedConfig.subtitleFormat
-          ? validatedConfig
-          : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
-        const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
-        setProjectPath('web-demo');
-        rememberRecentProject(file.name);
-        clearHistory();
-        clearProjectDirty();
-        setConfig((prev: any) => ({
-          ...normalizedConfig,
-          ui: {
-            ...(prev?.ui || DEFAULT_UI_CONFIG),
-            recentProject: file.name
+        await runWithUnsavedProjectGuard(async () => {
+          const content = await file.text();
+          const parsed = JSON.parse(content);
+          const validatedConfig = validateProjectConfig(parsed);
+          const normalizedConfig = validatedConfig.subtitleFormat
+            ? validatedConfig
+            : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
+          const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
+          setProjectPath('web-demo');
+          rememberRecentProject(file.name);
+          clearHistory();
+          clearProjectDirty();
+          setConfig((prev: any) => ({
+            ...normalizedConfig,
+            ui: {
+              ...(prev?.ui || DEFAULT_UI_CONFIG),
+              recentProject: file.name
+            }
+          }));
+          setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+          setIsMobileBottomPanelExpanded(false);
+          savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
+          setShowSettings(true);
+          const requiresAudioReload = Boolean(normalizedConfig.audioPath);
+          if (requiresAudioReload) {
+            setConfig((prev: any) => ({ ...prev, audioPath: '' }));
           }
-        }));
-        setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
-        setIsMobileBottomPanelExpanded(false);
-        savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
-        setShowSettings(true);
-        const requiresAudioReload = Boolean(normalizedConfig.audioPath);
-        if (requiresAudioReload) {
-          setConfig((prev: any) => ({ ...prev, audioPath: '' }));
-        }
-        showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
+          showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
+        });
       } catch (e: any) {
         alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
       }
@@ -5405,33 +5593,74 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     showToast(t('app.dropUnsupported'));
-  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, showToast, t, validateProjectConfig, webAudioObjectUrl]);
+  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, runWithUnsavedProjectGuard, showToast, t, validateProjectConfig, webAudioObjectUrl]);
 
   const handleSaveProject = useCallback(async (options?: { silent?: boolean }) => {
-    if (!window.electron || !projectPath || projectPath === 'web-demo') {
-      const finalConfig = getProjectConfig();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
-      rememberRecentProject(finalConfig.projectTitle || 'web-demo');
-      clearProjectDirty();
-      if (!options?.silent) {
-        showToast(t('app.projectSaved'));
+    return await saveProjectInternal(options);
+  }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, flushPendingDebouncedConfigCommit, getProjectConfig, projectPath, showToast, subtitles, t]);
+
+  const handleConfirmUnsavedProject = useCallback(async () => {
+    const pendingAction = pendingUnsavedProjectActionRef.current;
+    setUnsavedProjectDialog(null);
+    pendingUnsavedProjectActionRef.current = null;
+    const saved = await handleSaveProject({ silent: true });
+    if (!saved || isProjectDirtyRef.current) {
+      if (window.electron && pendingElectronAppCloseRef.current) {
+        pendingElectronAppCloseRef.current = false;
+        await window.electron.cancelAppClose();
       }
       return;
     }
-
-    try {
-      await backupAssIfSpeakerNamesChanged();
-      const finalConfig = getProjectConfig();
-      await window.electron.writeFile(projectPath, JSON.stringify(finalConfig, null, 2));
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(config.speakers);
-      clearProjectDirty();
-      if (!options?.silent) {
-        showToast(t('app.projectSaved'));
-      }
-    } catch (e: any) {
-      alert(`${t('dialog.errorSaveFailed')}: ${e.message}`);
+    if (pendingAction) {
+      await pendingAction();
     }
-  }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, getProjectConfig, projectPath, showToast, subtitles, t]);
+  }, [handleSaveProject]);
+
+  const handleDiscardUnsavedProject = useCallback(async () => {
+    const pendingAction = pendingUnsavedProjectActionRef.current;
+    setUnsavedProjectDialog(null);
+    pendingUnsavedProjectActionRef.current = null;
+    if (pendingAction) {
+      await pendingAction();
+    }
+  }, []);
+
+  const handleCancelUnsavedProject = useCallback(() => {
+    setUnsavedProjectDialog(null);
+    pendingUnsavedProjectActionRef.current = null;
+    if (window.electron && pendingElectronAppCloseRef.current) {
+      pendingElectronAppCloseRef.current = false;
+      void window.electron.cancelAppClose();
+    }
+  }, []);
+
+  const handleElectronAppCloseRequest = useCallback(async () => {
+    if (!window.electron) {
+      return;
+    }
+
+    pendingElectronAppCloseRef.current = true;
+
+    await runWithUnsavedProjectGuard(async () => {
+      pendingElectronAppCloseRef.current = false;
+      await window.electron.confirmAppClose();
+    });
+
+    if (pendingElectronAppCloseRef.current && !pendingUnsavedProjectActionRef.current) {
+      pendingElectronAppCloseRef.current = false;
+      await window.electron.cancelAppClose();
+    }
+  }, [runWithUnsavedProjectGuard]);
+
+  useEffect(() => {
+    if (!window.electron) {
+      return;
+    }
+
+    return window.electron.onAppCloseRequested(() => {
+      void handleElectronAppCloseRequest();
+    });
+  }, [handleElectronAppCloseRequest]);
 
   const handleWebProjectSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -5870,6 +6099,28 @@ const [previewScale, setPreviewScale] = useState(1);
     </div>
   ) : null;
 
+  const unsavedProjectModal = unsavedProjectDialog ? (
+    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}14 100%)`, borderColor: uiTheme.border, color: uiTheme.text }}>
+        <div className="border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: `${themeColor}10` }}>
+          <div className="text-lg font-semibold">{unsavedProjectDialog.title}</div>
+          <div className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{unsavedProjectDialog.description}</div>
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4">
+          <button type="button" onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+            {t('common.cancel')}
+          </button>
+          <button type="button" onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
+            {t('app.unsavedProjectDiscard')}
+          </button>
+          <button type="button" onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
+            {t('common.confirm')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!projectPath) {
     return (
       <div className="relative w-full h-[100dvh]" style={{ background: appBackground, color: uiTheme.text, ['--pomchat-scrollbar-thumb' as any]: `${secondaryThemeColor}77`, ['--pomchat-scrollbar-thumb-hover' as any]: `${secondaryThemeColor}AA`, ['--pomchat-number-spin-color' as any]: secondaryThemeColor }} onDragOver={handleAppDragOver} onDragLeave={handleAppDragLeave} onDrop={handleAppDrop}>
@@ -5908,15 +6159,7 @@ const [previewScale, setPreviewScale] = useState(1);
         <WelcomeScreen 
           onNewProject={handleNewProject} 
           onOpenProject={handleOpenProject} 
-          onOpenRecent={(path) => {
-            if (window.electron) {
-              if (path) {
-                void loadProjectFromPath(path);
-              }
-              return;
-            }
-            loadWebSavedProject();
-          }}
+          onOpenRecent={handleOpenRecentProject}
           onRemoveRecent={removeRecentProject}
           onOpenSettings={() => setShowSettings(true)}
           recentProject={recentProject}
@@ -5937,6 +6180,7 @@ const [previewScale, setPreviewScale] = useState(1);
               <SettingsPanel
                 config={config}
                 onConfigChange={applyTrackedConfigChange}
+                onConfigPreviewChange={applyDebouncedConfigChange}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -6000,6 +6244,27 @@ const [previewScale, setPreviewScale] = useState(1);
           </div>
         )}
         {projectResourceCheckModal}
+        {unsavedProjectDialog ? (
+          <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}14 100%)`, borderColor: uiTheme.border, color: uiTheme.text }}>
+              <div className="border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: `${themeColor}10` }}>
+                <div className="text-lg font-semibold">{unsavedProjectDialog.title}</div>
+                <div className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{unsavedProjectDialog.description}</div>
+              </div>
+              <div className="flex justify-end gap-2 px-6 py-4">
+                <button type="button" onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+                  {t('common.cancel')}
+                </button>
+                <button type="button" onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
+                  {t('app.unsavedProjectDiscard')}
+                </button>
+                <button type="button" onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
+                  {t('common.confirm')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -6343,6 +6608,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 <SettingsPanel
                   config={config}
                   onConfigChange={applyTrackedConfigChange}
+                  onConfigPreviewChange={applyDebouncedConfigChange}
                   isDarkMode={isDarkMode}
                    language={language}
                    themeColor={themeColor}
@@ -6926,8 +7192,9 @@ const [previewScale, setPreviewScale] = useState(1);
             />
             <div style={{ width: settingsWidth }} className="h-full shrink-0 flex flex-col min-h-0 overflow-hidden">
               <SettingsPanel 
-                config={config} 
-                onConfigChange={applyTrackedConfigChange} 
+                  config={config}
+                  onConfigChange={applyTrackedConfigChange}
+                  onConfigPreviewChange={applyDebouncedConfigChange}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -7017,6 +7284,10 @@ const [previewScale, setPreviewScale] = useState(1);
         onAudioVolumeChange={(value) => {
           setAudioVolume(Math.max(0, Math.min(1, Number(value.toFixed(2)))));
         }}
+        waveformZoomLevel={waveformZoomLevel}
+        onWaveformZoomLevelChange={(value) => {
+          setWaveformZoomLevel(Math.max(10, Math.min(1000, Number(value.toFixed(2)))));
+        }}
         exportRangeStart={exportRange.start}
         exportRangeEnd={exportRange.end}
         defaultExportStart={defaultExportRange.start}
@@ -7087,8 +7358,9 @@ const [previewScale, setPreviewScale] = useState(1);
             </div>
           )}
           <SettingsPanel
-            config={config}
-            onConfigChange={applyTrackedConfigChange}
+                config={config}
+                onConfigChange={applyTrackedConfigChange}
+                onConfigPreviewChange={applyDebouncedConfigChange}
             isDarkMode={isDarkMode}
             language={language}
             themeColor={themeColor}
@@ -7280,6 +7552,7 @@ const [previewScale, setPreviewScale] = useState(1);
       />
 
       {projectResourceCheckModal}
+      {unsavedProjectModal}
 
       {importProjectSettingsDialog && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">

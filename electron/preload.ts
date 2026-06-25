@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('electron', {
   setProxy: (proxy: string) => ipcRenderer.invoke('set-proxy', proxy),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  confirmAppClose: () => ipcRenderer.invoke('confirm-app-close'),
+  cancelAppClose: () => ipcRenderer.invoke('cancel-app-close'),
+  onAppCloseRequested: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('app-close-requested', listener);
+    return () => ipcRenderer.removeListener('app-close-requested', listener);
+  },
   onExportProgress: (callback: (progress: any) => void) => {
     const listener = (_event: any, value: any) => callback(value);
     ipcRenderer.on('export-progress', listener);

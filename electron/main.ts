@@ -513,6 +513,8 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST;
 
 let win: BrowserWindow | null;
+let allowWindowClose = false;
+let pendingWindowCloseRequest = false;
 
 function resolveAppFilePath(filePath: string) {
   if (!filePath) {
@@ -717,6 +719,8 @@ function compareVersions(a: string, b: string) {
 }
 
 function createWindow() {
+  allowWindowClose = false;
+  pendingWindowCloseRequest = false;
   win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -762,6 +766,27 @@ function createWindow() {
   win.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error('[Preload error]', preloadPath, error);
   });
+
+  win.on('close', (event) => {
+    if (allowWindowClose) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (pendingWindowCloseRequest) {
+      return;
+    }
+
+    pendingWindowCloseRequest = true;
+    win?.webContents.send('app-close-requested');
+  });
+
+  win.on('closed', () => {
+    win = null;
+    allowWindowClose = false;
+    pendingWindowCloseRequest = false;
+  });
 }
 
 app.on('window-all-closed', () => {
@@ -796,6 +821,22 @@ app.whenReady().then(async () => {
 
 // IPC Handlers
 ipcMain.handle('ping', () => 'pong');
+
+ipcMain.handle('confirm-app-close', () => {
+  if (!win || win.isDestroyed()) {
+    return false;
+  }
+
+  allowWindowClose = true;
+  pendingWindowCloseRequest = false;
+  win.close();
+  return true;
+});
+
+ipcMain.handle('cancel-app-close', () => {
+  pendingWindowCloseRequest = false;
+  return true;
+});
 
 ipcMain.handle('open-external', async (_event, url: string) => {
   if (!url) return false;

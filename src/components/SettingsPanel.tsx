@@ -23,6 +23,7 @@ const FONT_OPTIONS = [
 interface SettingsPanelProps {
   config: any;
   onConfigChange: (newConfig: any) => void;
+  onConfigPreviewChange?: (newConfig: any) => void;
   isDarkMode: boolean;
   language: Language;
   themeColor: string;
@@ -112,7 +113,7 @@ function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement
 }
 
 export function SettingsPanel({ 
-  config, onConfigChange, 
+  config, onConfigChange, onConfigPreviewChange,
   isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, uiFontScale, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onUiFontScaleChange, onProxyChange, onLanguageChange, onThemeChange, 
   onProjectAssetsCacheEnabledChange,
   settingsPosition, onPositionChange,
@@ -423,6 +424,13 @@ export function SettingsPanel({
     });
   };
 
+  const previewBackground = (key: string, value: any) => {
+    (onConfigPreviewChange || onConfigChange)({
+      ...config,
+      background: { ...config.background, [key]: value }
+    });
+  };
+
   const updateBackgroundSlides = (slides: any[]) => {
     onConfigChange({
       ...config,
@@ -582,6 +590,13 @@ export function SettingsPanel({
     });
   };
 
+  const previewChatLayout = (key: string, value: any) => {
+    (onConfigPreviewChange || onConfigChange)({
+      ...config,
+      chatLayout: { ...config.chatLayout, [key]: value }
+    });
+  };
+
   const updateSpeakerStyle = (speakerKey: string, styleKey: string, value: any) => {
     const newSpeakers = { ...config.speakers };
     newSpeakers[speakerKey] = { ...newSpeakers[speakerKey] };
@@ -591,6 +606,17 @@ export function SettingsPanel({
       newSpeakers[speakerKey].preset = "";
     }
     updateConfig('speakers', newSpeakers);
+  };
+
+  const previewSpeakerStyle = (speakerKey: string, styleKey: string, value: any) => {
+    const newSpeakers = { ...config.speakers };
+    newSpeakers[speakerKey] = { ...newSpeakers[speakerKey] };
+    newSpeakers[speakerKey].style = { ...(newSpeakers[speakerKey].style || {}) };
+    newSpeakers[speakerKey].style[styleKey] = value;
+    if (newSpeakers[speakerKey].preset) {
+      newSpeakers[speakerKey].preset = "";
+    }
+    (onConfigPreviewChange || onConfigChange)({ ...config, speakers: newSpeakers });
   };
 
   const updateSpeaker = (speakerKey: string, updater: (speaker: any) => any, options?: { preservePreset?: boolean }) => {
@@ -1765,7 +1791,7 @@ export function SettingsPanel({
                     max="5"
                     step="0.05"
                     value={config.chatLayout?.bubbleScale ?? 1.5}
-                    onChange={(e) => updateChatLayout('bubbleScale', parseFloat(e.target.value))}
+                    onChange={(e) => previewChatLayout('bubbleScale', parseFloat(e.target.value))}
                     className="w-full"
                     style={themedRangeStyle}
                     title={t('project.bubbleScale.title')}
@@ -1782,7 +1808,7 @@ export function SettingsPanel({
                     max="95"
                     step="1"
                     value={config.chatLayout?.bubbleMaxWidthPercent ?? 70}
-                    onChange={(e) => updateChatLayout('bubbleMaxWidthPercent', parseInt(e.target.value, 10))}
+                    onChange={(e) => previewChatLayout('bubbleMaxWidthPercent', parseInt(e.target.value, 10))}
                     className="w-full"
                     style={themedRangeStyle}
                     title={t('project.bubbleMaxWidth.title')}
@@ -1801,7 +1827,7 @@ export function SettingsPanel({
                     max="32"
                     step="1"
                     value={config.chatLayout?.maxVisibleBubbles ?? 15}
-                    onChange={(e) => updateChatLayout('maxVisibleBubbles', parseInt(e.target.value, 10))}
+                    onChange={(e) => previewChatLayout('maxVisibleBubbles', parseInt(e.target.value, 10))}
                     className="w-full"
                     style={themedRangeStyle}
                   />
@@ -1974,7 +2000,7 @@ export function SettingsPanel({
                       max="0.5"
                       step="0.01"
                       value={config.chatLayout?.animationDuration ?? 0.2}
-                      onChange={(e) => updateChatLayout('animationDuration', Number(parseFloat(e.target.value).toFixed(2)))}
+                      onChange={(e) => previewChatLayout('animationDuration', Number(parseFloat(e.target.value).toFixed(2)))}
                       className="w-full"
                       style={themedRangeStyle}
                     />
@@ -2101,7 +2127,7 @@ export function SettingsPanel({
                     min="0"
                     max="50"
                     value={config.background?.blur || 0}
-                    onChange={(e) => updateBackground('blur', parseInt(e.target.value))}
+                    onChange={(e) => previewBackground('blur', parseInt(e.target.value))}
                     className="w-full"
                     style={themedRangeStyle}
                   />
@@ -2117,7 +2143,7 @@ export function SettingsPanel({
                     max="2.0"
                     step="0.05"
                     value={config.background?.brightness ?? 1.0}
-                    onChange={(e) => updateBackground('brightness', parseFloat(e.target.value))}
+                    onChange={(e) => previewBackground('brightness', parseFloat(e.target.value))}
                     className="w-full"
                     style={themedRangeStyle}
                   />
@@ -2918,7 +2944,7 @@ export function SettingsPanel({
                           <input
                             type="range" min="0" max="1" step="0.05"
                             value={speaker.style?.opacity ?? 0.9}
-                            onChange={(e) => updateSpeakerStyle(key, 'opacity', parseFloat(e.target.value))}
+                            onChange={(e) => previewSpeakerStyle(key, 'opacity', parseFloat(e.target.value))}
                             className="w-full" style={themedRangeStyle}
                           />
                           <span className="text-[0.625rem] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
@@ -3000,7 +3026,7 @@ export function SettingsPanel({
                             <input 
                               type="range" min="0" max="1" step="0.05"
                               value={speaker.style?.borderOpacity ?? 1.0}
-                              onChange={(e) => updateSpeakerStyle(key, 'borderOpacity', parseFloat(e.target.value))}
+                              onChange={(e) => previewSpeakerStyle(key, 'borderOpacity', parseFloat(e.target.value))}
                               className="w-full" style={themedRangeStyle}
                             />
                             <span className="text-[0.625rem] w-6 text-right font-mono">{speaker.style?.borderOpacity ?? 1.0}</span>

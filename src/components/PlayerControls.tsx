@@ -25,6 +25,8 @@ interface PlayerControlsProps {
   secondaryThemeColor: string;
   audioVolume: number;
   onAudioVolumeChange: (volume: number) => void;
+  waveformZoomLevel?: number;
+  onWaveformZoomLevelChange?: (zoomLevel: number) => void;
   exportRangeStart: number;
   exportRangeEnd: number;
   defaultExportStart: number;
@@ -86,6 +88,8 @@ export const PlayerControls = memo(function PlayerControls({
   secondaryThemeColor,
   audioVolume,
   onAudioVolumeChange,
+  waveformZoomLevel = 50,
+  onWaveformZoomLevelChange,
   exportRangeStart,
   exportRangeEnd,
   defaultExportStart,
@@ -126,7 +130,7 @@ export const PlayerControls = memo(function PlayerControls({
   const hasUserAdjustedZoomRef = useRef(false);
   const exportRangeDragRef = useRef<{ mode: 'start' | 'end' | 'move'; initialStart: number; initialEnd: number; anchorTime: number } | null>(null);
   
-  const [zoomLevel, setZoomLevel] = useState(50);
+  const [zoomLevel, setZoomLevel] = useState(waveformZoomLevel);
   const [minZoom, setMinZoom] = useState(10);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
   const [displayCurrentTime, setDisplayCurrentTime] = useState(0);
@@ -227,6 +231,15 @@ export const PlayerControls = memo(function PlayerControls({
   useEffect(() => {
     hasUserAdjustedZoomRef.current = false;
   }, [audioPath]);
+
+  useEffect(() => {
+    setZoomLevel((prev) => (prev === waveformZoomLevel ? prev : waveformZoomLevel));
+  }, [waveformZoomLevel]);
+
+  const applyZoomLevel = useCallback((nextZoomLevel: number) => {
+    setZoomLevel(nextZoomLevel);
+    onWaveformZoomLevelChange?.(nextZoomLevel);
+  }, [onWaveformZoomLevelChange]);
 
   useEffect(() => {
     if (!exportRangeDragRef.current) {
@@ -497,10 +510,10 @@ export const PlayerControls = memo(function PlayerControls({
           setMinZoom(calculatedMin);
 
           if (!hasUserAdjustedZoomRef.current) {
-            setZoomLevel(calculatedMin);
+            applyZoomLevel(calculatedMin);
             wavesurfer.current.zoom(calculatedMin);
           } else if ((wavesurfer.current.options.minPxPerSec || 0) < calculatedMin) {
-            setZoomLevel(calculatedMin);
+            applyZoomLevel(calculatedMin);
             wavesurfer.current.zoom(calculatedMin);
           }
         }
@@ -625,7 +638,7 @@ export const PlayerControls = memo(function PlayerControls({
         const newZoom = Math.max(minZoom, Math.min(1000, currentZoom * zoomFactor));
 
         hasUserAdjustedZoomRef.current = true;
-        setZoomLevel(newZoom);
+        applyZoomLevel(newZoom);
         wavesurfer.current.zoom(newZoom);
       });
     };
@@ -1855,7 +1868,7 @@ export const PlayerControls = memo(function PlayerControls({
               if (wavesurfer.current) {
                 wavesurfer.current.zoom(z);
               }
-              setZoomLevel(z);
+              applyZoomLevel(z);
             }} />
             <input
               ref={zoomRangeRef}
@@ -1867,7 +1880,7 @@ export const PlayerControls = memo(function PlayerControls({
                 if (wavesurfer.current) {
                   wavesurfer.current.zoom(z);
                 }
-                setZoomLevel(z);
+                applyZoomLevel(z);
               }}
               className="w-16 h-1" style={{ accentColor: secondaryThemeColor }}
             />
@@ -1877,7 +1890,7 @@ export const PlayerControls = memo(function PlayerControls({
               if (wavesurfer.current) {
                 wavesurfer.current.zoom(z);
               }
-              setZoomLevel(z);
+              applyZoomLevel(z);
             }} />
           </div>
           )}
@@ -1890,7 +1903,7 @@ export const PlayerControls = memo(function PlayerControls({
                 if (wavesurfer.current) {
                   wavesurfer.current.zoom(z);
                 }
-                setZoomLevel(z);
+                applyZoomLevel(z);
               }} />
               <div className="text-[0.5625rem] font-mono leading-none min-w-[28px] text-center" style={{ color: uiTheme.textMuted }}>
                 {Math.round((zoomLevel / 50) * 10) / 10}x
@@ -1901,7 +1914,7 @@ export const PlayerControls = memo(function PlayerControls({
                 if (wavesurfer.current) {
                   wavesurfer.current.zoom(z);
                 }
-                setZoomLevel(z);
+                applyZoomLevel(z);
               }} />
             </div>
           )}
