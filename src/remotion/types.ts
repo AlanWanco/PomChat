@@ -7,6 +7,7 @@ export interface BackgroundSlideItem {
   id: string;
   type?: 'image' | 'text';
   name?: string;
+  visible?: boolean;
   image?: string;
   text?: string;
   intrinsicWidth?: number;

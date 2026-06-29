@@ -333,6 +333,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const topAnnotations = visibleAnnotations.filter((item) => props.speakers[item.speaker]?.style?.annotationPosition === 'top');
   const bottomAnnotations = visibleAnnotations.filter((item) => (props.speakers[item.speaker]?.style?.annotationPosition ?? 'bottom') === 'bottom');
   const visibleSlides = (props.background?.slides || []).filter((slide) => {
+    if (slide.visible === false) return false;
     const slideAnimationDuration = slide.animationDuration ?? 0.24;
     const instantAppearanceEpsilon = (slide.animationStyle || 'fade') === 'none' || slideAnimationDuration <= 0 ? (1 / Math.max(1, fps)) : 0;
     const appearanceTime = Math.max(0, slide.start - ((slide.animationStyle || 'fade') === 'none' ? 0 : slideAnimationDuration) - instantAppearanceEpsilon);

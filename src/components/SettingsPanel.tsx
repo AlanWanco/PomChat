@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy } from 'lucide-react';
+import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
@@ -2238,6 +2238,15 @@ export function SettingsPanel({
                             className={`min-w-0 flex-1 border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
                             style={inputSurfaceStyle}
                           />
+                          <button
+                            type="button"
+                            onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, visible: slide.visible === false }))}
+                            className="shrink-0 p-2 rounded border"
+                            style={{ borderColor: uiTheme.border, color: currentBackgroundSlide.visible === false ? uiTheme.textMuted : themeColor }}
+                            title={currentBackgroundSlide.visible === false ? t('project.showAsset') : t('project.hideAsset')}
+                          >
+                            {currentBackgroundSlide.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
                           <button type="button" onClick={() => duplicateBackgroundSlide(currentBackgroundSlide.id)} className="shrink-0 p-2 rounded border" style={{ borderColor: uiTheme.border, color: secondaryThemeColor }} title={t('project.duplicateAsset')}>
                             <Copy size={14} />
                           </button>
@@ -2247,49 +2256,54 @@ export function SettingsPanel({
                         </div>
 
                         {currentBackgroundSlide.type !== 'text' ? (
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={currentBackgroundSlide.image || ''}
-                              onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, image: e.target.value }))}
-                              onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], async (path) => {
-                                const naturalSize = await loadAssetNaturalSize(path);
-                                updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
-                                  ...slide,
-                                  image: path,
-                                  intrinsicWidth: naturalSize?.width,
-                                  intrinsicHeight: naturalSize?.height,
-                                }));
-                                activateImageSlideEditing(currentBackgroundSlide.id);
-                              })}
-                              title={t('project.quickPasteFilePathTip')}
-                              className={`flex-1 w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
-                              style={inputSurfaceStyle}
-                              placeholder={t('project.insertImagePath')}
-                            />
-                            {onSelectImage && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const path = await onSelectImage();
-                                  if (path) {
-                                    const naturalSize = await loadAssetNaturalSize(path);
-                                    updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
-                                      ...slide,
-                                      image: path,
-                                      intrinsicWidth: naturalSize?.width,
-                                      intrinsicHeight: naturalSize?.height,
-                                    }));
-                                    activateImageSlideEditing(currentBackgroundSlide.id);
-                                  }
-                                }}
-                                className="px-3 border rounded-md flex items-center justify-center transition-colors"
-                                style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}
-                                title={t('project.selectLocalImage')}
-                              >
-                                <FolderOpen size={16} style={{ color: uiTheme.textMuted }} />
-                              </button>
-                            )}
+                          <div className="space-y-1.5">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={currentBackgroundSlide.image || ''}
+                                onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, image: e.target.value }))}
+                                onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], async (path) => {
+                                  const naturalSize = await loadAssetNaturalSize(path);
+                                  updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
+                                    ...slide,
+                                    image: path,
+                                    intrinsicWidth: naturalSize?.width,
+                                    intrinsicHeight: naturalSize?.height,
+                                  }));
+                                  activateImageSlideEditing(currentBackgroundSlide.id);
+                                })}
+                                title={t('project.quickPasteFilePathTip')}
+                                className={`flex-1 w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
+                                style={inputSurfaceStyle}
+                                placeholder={t('project.insertImagePath')}
+                              />
+                              {onSelectImage && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const path = await onSelectImage();
+                                    if (path) {
+                                      const naturalSize = await loadAssetNaturalSize(path);
+                                      updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
+                                        ...slide,
+                                        image: path,
+                                        intrinsicWidth: naturalSize?.width,
+                                        intrinsicHeight: naturalSize?.height,
+                                      }));
+                                      activateImageSlideEditing(currentBackgroundSlide.id);
+                                    }
+                                  }}
+                                  className="px-3 border rounded-md flex items-center justify-center transition-colors"
+                                  style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}
+                                  title={t('project.selectLocalImage')}
+                                >
+                                  <FolderOpen size={16} style={{ color: uiTheme.textMuted }} />
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>
+                              {t('project.quickPasteFilePathTip')}
+                            </div>
                           </div>
                         ) : (
                           <div className="space-y-1.5">

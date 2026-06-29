@@ -5824,6 +5824,7 @@ const [previewScale, setPreviewScale] = useState(1);
     return Math.round(currentTime * fps) / fps;
   }, [currentTime, config.fps]);
   const visibleBackgroundSlides = backgroundSlides.filter((slide: BackgroundSlideItem) => {
+    if (slide.visible === false) return false;
     const animationDuration = slide.animationDuration ?? 0.24;
     const instantAppearanceEpsilon = (slide.animationStyle || 'fade') === 'none' || animationDuration <= 0 ? (1 / Math.max(1, config.fps || 60)) : 0;
     const appearanceTime = Math.max(0, slide.start - ((slide.animationStyle || 'fade') === 'none' ? 0 : animationDuration) - instantAppearanceEpsilon);
