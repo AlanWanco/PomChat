@@ -3558,12 +3558,28 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!baseProjectFilePath || baseProjectFilePath === 'web-demo') return trimmed;
 
     try {
-      const baseUrl = new URL(toFilePreviewPath(baseProjectFilePath));
-      const resolvedUrl = new URL(trimmed, baseUrl);
-      if (resolvedUrl.protocol !== 'file:') return resolvedUrl.toString();
-      const pathname = decodeURIComponent(resolvedUrl.pathname || '');
-      const normalizedPath = /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
-      return resolvedUrl.host ? `//${resolvedUrl.host}${normalizedPath}` : normalizedPath;
+      const normalizedBasePath = baseProjectFilePath.replace(/\\/g, '/');
+      const baseSegments = normalizedBasePath.split('/');
+      baseSegments.pop();
+
+      trimmed.replace(/\\/g, '/').split('/').forEach((segment) => {
+        if (!segment || segment === '.') {
+          return;
+        }
+        if (segment === '..') {
+          if (baseSegments.length > 1 || !/^[a-zA-Z]:$/.test(baseSegments[0] || '')) {
+            baseSegments.pop();
+          }
+          return;
+        }
+        baseSegments.push(segment);
+      });
+
+      const joined = baseSegments.join('/');
+      if (/^[a-zA-Z]:\//.test(joined)) {
+        return joined.replace(/\//g, '\\');
+      }
+      return joined;
     } catch {
       return trimmed;
     }
