@@ -1083,6 +1083,7 @@ function App() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isProjectDirty, setIsProjectDirty] = useState(false);
+  const [showAutoSavedTitle, setShowAutoSavedTitle] = useState(false);
   const [projectChangeTick, setProjectChangeTick] = useState(0);
   const [speakerReplaceDialog, setSpeakerReplaceDialog] = useState<SpeakerReplaceDialogState | null>(null);
   const [importProjectSettingsDialog, setImportProjectSettingsDialog] = useState<ImportProjectSettingsDialogState | null>(null);
@@ -1093,6 +1094,7 @@ function App() {
   const lastUiSyncSnapshotRef = useRef('');
   const audioVolumePersistTimeoutRef = useRef<number | null>(null);
   const customFilenamePersistTimeoutRef = useRef<number | null>(null);
+  const autoSavedTitleTimeoutRef = useRef<number | null>(null);
   const pendingUnsavedProjectActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const simpleModeCustomFilenameRef = useRef('');
   const isProjectDirtyRef = useRef(false);
@@ -1137,6 +1139,11 @@ function App() {
     setCanRedo(historyFutureRef.current.length > 0);
   }, []);
   const markProjectDirty = useCallback(() => {
+    if (autoSavedTitleTimeoutRef.current !== null) {
+      window.clearTimeout(autoSavedTitleTimeoutRef.current);
+      autoSavedTitleTimeoutRef.current = null;
+    }
+    setShowAutoSavedTitle(false);
     setIsProjectDirty(true);
     setProjectChangeTick((prev) => prev + 1);
   }, []);
@@ -2495,7 +2502,26 @@ const [previewScale, setPreviewScale] = useState(1);
 
   // Update window title with project path
   useEffect(() => {
-    const suffix = autoSaveProject
+    if (projectPath) {
+      return;
+    }
+    if (autoSavedTitleTimeoutRef.current !== null) {
+      window.clearTimeout(autoSavedTitleTimeoutRef.current);
+      autoSavedTitleTimeoutRef.current = null;
+    }
+    setShowAutoSavedTitle(false);
+  }, [projectPath]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSavedTitleTimeoutRef.current !== null) {
+        window.clearTimeout(autoSavedTitleTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const suffix = showAutoSavedTitle
       ? ' [已自动保存]'
       : (isProjectDirty ? ' *' : '');
 
@@ -2506,7 +2532,7 @@ const [previewScale, setPreviewScale] = useState(1);
     } else {
       document.title = `PomChat Studio${suffix}`;
     }
-  }, [autoSaveProject, isProjectDirty, projectPath, t]);
+  }, [isProjectDirty, projectPath, showAutoSavedTitle, t]);
 
   // Audio Sync
   useEffect(() => {
@@ -4809,7 +4835,7 @@ const [previewScale, setPreviewScale] = useState(1);
     document.title = 'PomChat Studio';
   };
 
-  async function saveProjectInternal(options?: { silent?: boolean }) {
+  async function saveProjectInternal(options?: { silent?: boolean; source?: 'manual' | 'autosave' | 'guard' }) {
     flushPendingDebouncedConfigCommit();
 
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
@@ -4817,6 +4843,16 @@ const [previewScale, setPreviewScale] = useState(1);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
       rememberRecentProject(finalConfig.projectTitle || 'web-demo');
       clearProjectDirty();
+      if (options?.source === 'autosave' && projectPath) {
+        setShowAutoSavedTitle(true);
+        if (autoSavedTitleTimeoutRef.current !== null) {
+          window.clearTimeout(autoSavedTitleTimeoutRef.current);
+        }
+        autoSavedTitleTimeoutRef.current = window.setTimeout(() => {
+          autoSavedTitleTimeoutRef.current = null;
+          setShowAutoSavedTitle(false);
+        }, 2000);
+      }
       if (!options?.silent) {
         showToast(t('app.projectSaved'));
       }
@@ -4829,6 +4865,16 @@ const [previewScale, setPreviewScale] = useState(1);
       await window.electron.writeFile(projectPath, JSON.stringify(finalConfig, null, 2));
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(config.speakers);
       clearProjectDirty();
+      if (options?.source === 'autosave') {
+        setShowAutoSavedTitle(true);
+        if (autoSavedTitleTimeoutRef.current !== null) {
+          window.clearTimeout(autoSavedTitleTimeoutRef.current);
+        }
+        autoSavedTitleTimeoutRef.current = window.setTimeout(() => {
+          autoSavedTitleTimeoutRef.current = null;
+          setShowAutoSavedTitle(false);
+        }, 2000);
+      }
       if (!options?.silent) {
         showToast(t('app.projectSaved'));
       }
@@ -4848,7 +4894,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     if (autoSaveProject) {
-      const saved = await saveProjectInternal({ silent: true });
+      const saved = await saveProjectInternal({ silent: true, source: 'guard' });
       if (!saved || isProjectDirtyRef.current) {
         return;
       }
@@ -5595,7 +5641,7 @@ const [previewScale, setPreviewScale] = useState(1);
     showToast(t('app.dropUnsupported'));
   }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, runWithUnsavedProjectGuard, showToast, t, validateProjectConfig, webAudioObjectUrl]);
 
-  const handleSaveProject = useCallback(async (options?: { silent?: boolean }) => {
+  const handleSaveProject = useCallback(async (options?: { silent?: boolean; source?: 'manual' | 'autosave' | 'guard' }) => {
     return await saveProjectInternal(options);
   }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, flushPendingDebouncedConfigCommit, getProjectConfig, projectPath, showToast, subtitles, t]);
 
@@ -5603,7 +5649,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const pendingAction = pendingUnsavedProjectActionRef.current;
     setUnsavedProjectDialog(null);
     pendingUnsavedProjectActionRef.current = null;
-    const saved = await handleSaveProject({ silent: true });
+    const saved = await handleSaveProject({ silent: true, source: 'guard' });
     if (!saved || isProjectDirtyRef.current) {
       if (window.electron && pendingElectronAppCloseRef.current) {
         pendingElectronAppCloseRef.current = false;
@@ -5704,7 +5750,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     const timer = window.setTimeout(() => {
-      void handleSaveProject({ silent: true });
+      void handleSaveProject({ silent: true, source: 'autosave' });
     }, 700);
 
     return () => window.clearTimeout(timer);
