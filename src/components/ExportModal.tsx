@@ -43,7 +43,8 @@ interface ExportModalProps {
   rangeStart: number;
   rangeEnd: number;
   defaultRangeStart: number;
-  defaultRangeEnd: number;
+  audioEndTime?: number;
+  subtitleEndTime?: number;
   isExporting: boolean;
   exportSucceeded: boolean;
   progress: ExportProgressState | null;
@@ -69,6 +70,7 @@ interface ExportModalProps {
   onStartExport: () => void | Promise<void>;
   onRevealOutput: () => void | Promise<void>;
   onClearRenderCache?: (type: 'remote-assets' | 'remotion-temp') => void | Promise<void>;
+  onCopyRemoteAssetsToProject?: () => void | Promise<void>;
   onQualityChange?: (quality: 'fast' | 'balance' | 'high') => void;
   onHardwareChange?: (mode: 'auto' | 'gpu' | 'cpu') => void;
   onExportParallelSegmentsChange?: (enabled: boolean) => void;
@@ -212,7 +214,8 @@ export function ExportModal({
   rangeStart,
   rangeEnd,
   defaultRangeStart,
-  defaultRangeEnd,
+  audioEndTime = 0,
+  subtitleEndTime = 0,
   isExporting,
   exportSucceeded,
   progress,
@@ -235,6 +238,7 @@ export function ExportModal({
   onStartExport,
   onRevealOutput,
   onClearRenderCache,
+  onCopyRemoteAssetsToProject,
   onQualityChange,
   onHardwareChange,
   onExportParallelSegmentsChange,
@@ -313,7 +317,7 @@ export function ExportModal({
   return (
     <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 backdrop-blur-sm px-4 py-4 overflow-y-auto">
       <div
-        className="w-full max-w-[53.75rem] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
+        className="w-full max-w-[60rem] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
         style={{
           background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`,
           borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26),
@@ -342,7 +346,7 @@ export function ExportModal({
           </button>
         </div>
 
-        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.05fr_0.95fr] overflow-y-auto">
+        <div className="grid gap-5 px-6 py-6 md:grid-cols-[1.15fr_0.85fr] overflow-y-auto">
           <div className="space-y-5">
               <section className="rounded-2xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -391,6 +395,9 @@ export function ExportModal({
                 <div>
                   <div className="text-sm font-medium">{t('export.range')}</div>
                   <div className="text-xs mt-1" style={{ color: uiTheme.textMuted }}>{t('export.rangeHint')}</div>
+                  <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>
+                    {t('export.rangeSourceTimes', { subtitle: formatTime(Math.max(0, subtitleEndTime)), audio: formatTime(Math.max(0, audioEndTime)) })}
+                  </div>
                 </div>
                 <div className="rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.18 : 0.09), color: themeColor }}>
                   {t('export.rangeDuration', { duration: formatTime(exportSpan) })}
@@ -399,14 +406,14 @@ export function ExportModal({
 
               <div className="grid gap-3 md:grid-cols-2">
                  <div className="rounded-2xl border p-3" style={{ borderColor: rgba(themeColor, 0.18), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.05) }}>
-                   <div className="mb-2 flex items-center justify-between gap-1">
+                   <div className="mb-2 flex items-center justify-between gap-2">
                      <span className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: themeColor }}>{t('export.start')}</span>
-                      <div className="flex gap-1">
+                       <div className="flex flex-nowrap gap-1">
                         <button
                           type="button"
                           onClick={() => onRangeChange({ start: defaultRangeStart })}
                           disabled={isExporting}
-                          className="rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          className="cursor-pointer rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: rgba(themeColor, 0.12), color: themeColor }}
                           title={t('export.useEarliest')}
                         >
@@ -429,18 +436,28 @@ export function ExportModal({
                 </div>
 
                  <div className="rounded-2xl border p-3" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.05) }}>
-                   <div className="mb-2 flex items-center justify-between gap-1">
+                   <div className="mb-2 flex items-center justify-between gap-2">
                      <span className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: secondaryThemeColor }}>{t('export.end')}</span>
-                      <div className="flex gap-1">
+                      <div className="flex flex-nowrap gap-1">
                         <button
                           type="button"
-                          onClick={() => onRangeChange({ end: defaultRangeEnd })}
+                          onClick={() => onRangeChange({ end: subtitleEndTime })}
                           disabled={isExporting}
-                          className="rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          className="cursor-pointer rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: rgba(secondaryThemeColor, 0.12), color: secondaryThemeColor }}
-                          title={t('export.useLatest')}
+                          title={t('export.useSubtitleEnd')}
                         >
-                          {t('export.useLatest')}
+                          {t('export.useSubtitleEnd')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRangeChange({ end: audioEndTime })}
+                          disabled={isExporting}
+                          className="cursor-pointer rounded-full px-2.5 py-1 text-[0.6875rem] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          style={{ backgroundColor: rgba(secondaryThemeColor, 0.12), color: secondaryThemeColor }}
+                          title={t('export.useAudioEnd')}
+                        >
+                          {t('export.useAudioEnd')}
                         </button>
                       </div>
                    </div>
@@ -605,16 +622,29 @@ export function ExportModal({
                       <div className="font-medium" style={{ color: uiTheme.text }}>{t('export.cacheRemoteAssets')}</div>
                       <div className="font-mono break-all mt-1">{renderCacheInfo.remoteAssets.path}</div>
                       <div className="mt-1">{t('export.cacheStats', { files: renderCacheInfo.remoteAssets.files, size: formatBytes(renderCacheInfo.remoteAssets.bytes) })}</div>
-                      <button
-                        type="button"
-                        disabled={isExporting}
-                        onClick={() => void onClearRenderCache?.('remote-assets')}
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border disabled:opacity-50"
-                        style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-                      >
-                        <Trash2 size={12} />
-                        {t('export.clearRemoteAssetsCache')}
-                      </button>
+                      <div className="mt-1 text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>{t('export.cacheRemoteAssetsWarning')}</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isExporting}
+                          onClick={() => void onClearRenderCache?.('remote-assets')}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border disabled:opacity-50"
+                          style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+                        >
+                          <Trash2 size={12} />
+                          {t('export.clearRemoteAssetsCache')}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isExporting || !onCopyRemoteAssetsToProject}
+                          onClick={() => void onCopyRemoteAssetsToProject?.()}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border disabled:opacity-50"
+                          style={{ borderColor: `${themeColor}55`, color: themeColor, backgroundColor: `${themeColor}12` }}
+                        >
+                          <FolderOpen size={12} />
+                          {t('global.copyRemoteAssetsToProject')}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="rounded-xl border p-2" style={{ borderColor: uiTheme.border }}>

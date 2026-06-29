@@ -757,7 +757,7 @@ const runRender = async (config) => {
     if (shouldPostMuxLocalAudio) {
       sendProgress(0.97, 'Muxing audio/video', true);
 
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomchat-postmux-'));
+      const tempDir = fs.mkdtempSync(path.join(path.dirname(config.outputPath), '.pomchat-postmux-'));
       const silentVideoPath = path.join(tempDir, path.basename(config.outputPath));
 
       try {

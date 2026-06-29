@@ -591,6 +591,17 @@ function findSiblingFileByBasename(projectFilePath: string, resourcePath: string
   return null;
 }
 
+function tryRecoverPseudoAbsolutePath(resourcePath: string) {
+  const normalized = String(resourcePath || '').trim().replace(/\\/g, '/');
+  const match = normalized.match(/^(?:\.\.\/)+((?:Users|Volumes|private|tmp)\/.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const candidate = `/${match[1]}`;
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
 async function inspectProjectResources(projectFilePath: string, resources: Array<{ id: string; value: string }>) {
   const results: Array<{ id: string; state: 'ok' | 'updated-relative' | 'missing'; resolvedValue: string; suggestedValue?: string }> = [];
 
@@ -616,6 +627,12 @@ async function inspectProjectResources(projectFilePath: string, resources: Array
       } catch {
         results.push({ id: resource.id, state: 'missing', resolvedValue });
       }
+      continue;
+    }
+
+    const recoveredAbsolutePath = tryRecoverPseudoAbsolutePath(originalValue);
+    if (recoveredAbsolutePath) {
+      results.push({ id: resource.id, state: 'ok', resolvedValue: recoveredAbsolutePath, suggestedValue: recoveredAbsolutePath });
       continue;
     }
 

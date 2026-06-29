@@ -4662,6 +4662,9 @@ const [previewScale, setPreviewScale] = useState(1);
           resources: [{ id: 'import-check', value: trimmed }],
         });
         const result = inspection?.[0];
+        if (result?.suggestedValue && result.suggestedValue !== trimmed) {
+          return result.suggestedValue;
+        }
         if (result?.state === 'ok' || result?.state === 'updated-relative') {
           return trimmed;
         }
@@ -5216,7 +5219,7 @@ const [previewScale, setPreviewScale] = useState(1);
         inspection.forEach((result) => {
           const resource = resources.find((entry) => entry.id === result.id);
           if (!resource) return;
-          if (result.state === 'updated-relative' && result.suggestedValue) {
+          if (result.suggestedValue && result.suggestedValue !== resource.value) {
             checkedConfig = updateConfigValueByPath(checkedConfig, resource.id, result.suggestedValue);
             updated.push({ ...resource, nextValue: result.suggestedValue });
             return;
@@ -7545,12 +7548,14 @@ const [previewScale, setPreviewScale] = useState(1);
          rangeStart={exportRange.start}
          rangeEnd={exportRange.end}
          defaultRangeStart={defaultExportRange.start}
-         defaultRangeEnd={defaultExportRange.end}
+         audioEndTime={duration}
+         subtitleEndTime={latestSubtitleEnd}
          isExporting={isExporting}
          exportSucceeded={lastExportSucceeded}
          progress={exportProgress}
          statusMessage={exportStatusMessage}
          renderCacheInfo={renderCacheInfo}
+         onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
          exportQuality={exportQuality}
          exportHardware={exportHardware}
          exportParallelSegments={exportParallelSegments}
