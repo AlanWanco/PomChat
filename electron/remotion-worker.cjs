@@ -145,6 +145,48 @@ const resolveFfmpegBinary = (binariesDirectory) => {
   return ffmpegName;
 };
 
+const muxAudioIntoMp4 = ({
+  binariesDirectory,
+  silentVideoPath,
+  audioSourcePath,
+  outputPath,
+  startTime,
+  duration,
+}) => {
+  const ffmpegBinary = resolveFfmpegBinary(binariesDirectory);
+  const baseArgs = [
+    '-y',
+    '-i', silentVideoPath,
+    ...(startTime > 0 ? ['-ss', String(startTime)] : []),
+    '-t', String(duration),
+    '-i', audioSourcePath,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-movflags', '+faststart',
+    '-avoid_negative_ts', 'make_zero',
+    '-t', String(duration),
+  ];
+
+  try {
+    execFileSync(ffmpegBinary, [
+      ...baseArgs,
+      '-c:a', 'copy',
+      outputPath,
+    ], { stdio: 'pipe' });
+    return { audioMode: 'copy' };
+  } catch (_copyError) {
+    execFileSync(ffmpegBinary, [
+      ...baseArgs,
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-af', 'aresample=async=1:first_pts=0',
+      outputPath,
+    ], { stdio: 'pipe' });
+    return { audioMode: 'aac-transcode' };
+  }
+};
+
 const transcodeGifAvatarToMp4 = (gifPath, binariesDirectory) => {
   if (!gifPath || path.extname(gifPath).toLowerCase() !== '.gif' || !fs.existsSync(gifPath)) {
     return gifPath;
@@ -566,12 +608,14 @@ const runRender = async (config) => {
 
   try {
     const inputProps = prepareInputProps(config, mediaServer, binariesDirectory);
+    const localAudioSourcePath = resolveLocalMediaPath(config.audioPath);
     const exportFormat = config.exportFormat === 'mov-alpha' || config.exportFormat === 'webm-alpha' ? config.exportFormat : 'mp4';
     const isMovAlpha = exportFormat === 'mov-alpha';
     const isWebmAlpha = exportFormat === 'webm-alpha';
     const isAlphaExport = isMovAlpha || isWebmAlpha;
+    const shouldPostMuxLocalAudio = exportFormat === 'mp4' && Boolean(localAudioSourcePath);
     const renderCodec = isMovAlpha ? 'prores' : isWebmAlpha ? 'vp8' : 'h264';
-    const renderAudioCodec = isMovAlpha ? null : isWebmAlpha ? 'opus' : 'aac';
+    const renderAudioCodec = isMovAlpha || shouldPostMuxLocalAudio ? null : isWebmAlpha ? 'opus' : 'aac';
     const renderPixelFormat = isMovAlpha ? 'yuva444p10le' : isWebmAlpha ? 'yuva420p' : 'yuv420p';
     const renderImageFormat = isAlphaExport ? 'png' : 'jpeg';
     const renderJpegQuality = isAlphaExport ? undefined : 92;
@@ -695,6 +739,7 @@ const runRender = async (config) => {
     };
 
     let composition;
+    let muxedAudioMode = null;
     let usedStrategy = hardwareStrategy;
     try {
       composition = await renderOnce(usedStrategy);
@@ -709,6 +754,29 @@ const runRender = async (config) => {
       }
     }
 
+    if (shouldPostMuxLocalAudio) {
+      sendProgress(0.97, 'Muxing audio/video', true);
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomchat-postmux-'));
+      const silentVideoPath = path.join(tempDir, path.basename(config.outputPath));
+
+      try {
+        fs.renameSync(config.outputPath, silentVideoPath);
+        const exportDuration = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
+        const muxResult = muxAudioIntoMp4({
+          binariesDirectory,
+          silentVideoPath,
+          audioSourcePath: localAudioSourcePath,
+          outputPath: config.outputPath,
+          startTime: Math.max(0, inputProps.exportRange.start || 0),
+          duration: exportDuration,
+        });
+        muxedAudioMode = muxResult.audioMode;
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+
     const elapsedMs = Date.now() - startedAt;
     const realTimeFactor = elapsedMs / (durationSeconds * 1000);
     sendProgress(1, 'Done', true);
@@ -719,7 +787,7 @@ const runRender = async (config) => {
         outputPath: config.outputPath,
         elapsedMs,
         realTimeFactor,
-        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime)`,
+        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime)${muxedAudioMode ? `, audio ${muxedAudioMode}` : ''}`,
       },
     });
   } finally {
