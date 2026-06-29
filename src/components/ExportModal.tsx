@@ -160,18 +160,25 @@ const normalizeFilenameWithExtension = (value: string, extension: string) => {
   return `${safeStem}.${resolvedExtension}`;
 };
 
+const buildPreviewTimestampParts = (now: Date) => {
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+  const unixTime = String(Math.floor(now.getTime() / 1000));
+
+  return { dateStr, timeStr, unixTime };
+};
+
 const buildFilenamePreview = (
   projectTitle: string,
   exportFormat: 'mp4' | 'mov-alpha' | 'webm-alpha',
   filenameTemplate: 'default' | 'timestamp' | 'unix' | 'custom',
   filenameEditorMode: 'simple' | 'advanced',
   customFilename: string,
+  now: Date,
 ) => {
   const extension = exportFormat === 'mov-alpha' ? 'mov' : exportFormat === 'webm-alpha' ? 'webm' : 'mp4';
   const projectName = sanitizeExportFileStem(projectTitle || 'pomchat');
-  const dateStr = '2026-03-28';
-  const timeStr = '12-07-03';
-  const unixTime = '1743192423';
+  const { dateStr, timeStr, unixTime } = buildPreviewTimestampParts(now);
 
   if (filenameTemplate === 'custom' && customFilename.trim()) {
     if (filenameEditorMode === 'simple') {
@@ -244,6 +251,7 @@ export function ExportModal({
   const [endInput, setEndInput] = useState(formatTime(rangeEnd));
   const [localCustomFilename, setLocalCustomFilename] = useState(customFilename);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [previewNow, setPreviewNow] = useState(() => new Date());
 
   useEffect(() => {
     if (!isOpen) return;
@@ -265,6 +273,12 @@ export function ExportModal({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    setPreviewNow(new Date());
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !isExporting) {
         onClose();
@@ -279,8 +293,8 @@ export function ExportModal({
   const exportSpan = useMemo(() => Math.max(0, rangeEnd - rangeStart), [rangeEnd, rangeStart]);
   const isErrorStatus = Boolean(statusMessage && /error|failed|超时|失败|异常/i.test(statusMessage));
   const filenamePreview = useMemo(
-    () => buildFilenamePreview(projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename),
-    [projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename],
+    () => buildFilenamePreview(projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename, previewNow),
+    [projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename, previewNow],
   );
   const simpleTemplates = ['default', 'timestamp', 'unix'] as const;
 
@@ -650,7 +664,7 @@ export function ExportModal({
                   <div className="space-y-3">
                     <div className="grid gap-2 md:grid-cols-2">
                       {simpleTemplates.map((template) => {
-                        const example = buildFilenamePreview(projectTitle, exportFormat, template, 'simple', '');
+                        const example = buildFilenamePreview(projectTitle, exportFormat, template, 'simple', '', previewNow);
                         const templateButton = (
                           <button
                             type="button"
