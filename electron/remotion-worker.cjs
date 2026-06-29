@@ -275,7 +275,10 @@ const createLocalMediaServer = async () => {
       return;
     }
 
-    const requestedPath = url.searchParams.get('path');
+    const requestedToken = url.searchParams.get('token');
+    const requestedPath = requestedToken
+      ? Buffer.from(requestedToken, 'base64url').toString('utf8')
+      : url.searchParams.get('path');
     if (!requestedPath) {
       res.writeHead(400);
       res.end('Missing path');
@@ -312,7 +315,10 @@ const createLocalMediaServer = async () => {
 
   return {
     close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
-    urlForPath: (filePath) => `http://127.0.0.1:${address.port}/media?path=${encodeURIComponent(filePath)}`,
+    urlForPath: (filePath) => {
+      const token = Buffer.from(filePath, 'utf8').toString('base64url');
+      return `http://127.0.0.1:${address.port}/media?token=${token}`;
+    },
   };
 };
 
