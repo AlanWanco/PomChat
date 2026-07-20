@@ -14,9 +14,9 @@ import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows,
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
-import { createThemeTokens } from './theme';
+import { createThemeTokens, rgba } from './theme';
 import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId, formatFontFamilyValue, replaceFontPresetFamilyReferences, type FontPresetMap } from './fontPresets';
-import { PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
+import { Camera, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { Tooltip } from './components/ui/Tooltip';
 import type { BackgroundSlideItem } from './remotion/types';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
@@ -364,8 +364,8 @@ const sanitizeProjectConfig = (parsed: any) => {
             overlayOrder: typeof slide?.overlayOrder === 'number' && Number.isFinite(slide.overlayOrder) ? slide.overlayOrder : index,
             layer: slide?.layer === 'overlay' ? 'overlay' : 'background',
             inheritBackgroundFilters: slide?.inheritBackgroundFilters !== false,
-            animationStyle: ['none', 'fade', 'rise', 'pop', 'slide', 'blur'].includes(slide?.animationStyle) ? slide.animationStyle : 'fade',
-            animationDuration: typeof slide?.animationDuration === 'number' && Number.isFinite(slide.animationDuration) ? slide.animationDuration : 0.24,
+            animationStyle: ['none', 'fade', 'rise', 'pop', 'slide', 'blur'].includes(slide?.animationStyle) ? slide.animationStyle : 'none',
+            animationDuration: typeof slide?.animationDuration === 'number' && Number.isFinite(slide.animationDuration) ? slide.animationDuration : 0,
             opacity: typeof slide?.opacity === 'number' && Number.isFinite(slide.opacity) ? slide.opacity : 1,
             imageBorderColor: typeof slide?.imageBorderColor === 'string' ? slide.imageBorderColor : '#FFFFFF',
             imageBorderWidth: typeof slide?.imageBorderWidth === 'number' && Number.isFinite(slide.imageBorderWidth) ? slide.imageBorderWidth : 0,
@@ -379,6 +379,8 @@ const sanitizeProjectConfig = (parsed: any) => {
             fontFamily: typeof slide?.fontFamily === 'string' ? slide.fontFamily : 'system-ui',
             fontSize: typeof slide?.fontSize === 'number' && Number.isFinite(slide.fontSize) ? slide.fontSize : 96,
             fontWeight: typeof slide?.fontWeight === 'string' ? slide.fontWeight : '700',
+            textAlign: typeof slide?.textAlign === 'string' && ['left', 'center', 'right'].includes(slide.textAlign) ? slide.textAlign : 'center',
+            visible: slide?.visible === false ? false : true,
           }))
         : []
     },
@@ -740,7 +742,9 @@ function PreviewTextAsset({
   const { textLines, fontSize, strokeWidth, estimatedWidth, estimatedHeight } = getTextAssetLayout(slide);
   const textGroupRef = useRef<SVGGElement | null>(null);
   const [textBox, setTextBox] = useState<{ width: number; height: number } | null>(null);
-  const transform = `translate(-50%, -50%) translate(${slide.offsetX ?? 0}px, ${slide.offsetY ?? 0}px) rotate(${slide.rotation ?? 0}deg) scale(${slide.scale ?? 1}) ${motionState.transform || ''}`.trim();
+  const textAlign = slide.textAlign || 'center';
+  const alignTransformX = textAlign === 'left' ? '0%' : textAlign === 'right' ? '-100%' : '-50%';
+  const transform = `translate(${alignTransformX}, -50%) translate(${slide.offsetX ?? 0}px, ${slide.offsetY ?? 0}px) rotate(${slide.rotation ?? 0}deg) scale(${slide.scale ?? 1}) ${motionState.transform || ''}`.trim();
   const baseStyle: React.CSSProperties = {
     position: 'absolute',
     left: '50%',
@@ -768,21 +772,22 @@ function PreviewTextAsset({
     } catch {
       setTextBox((prev) => prev ?? { width: estimatedWidth, height: estimatedHeight });
     }
-  }, [estimatedHeight, estimatedWidth, fontSize, slide.fontFamily, slide.fontWeight, slide.text, strokeWidth]);
+  }, [estimatedHeight, estimatedWidth, fontSize, slide.fontFamily, slide.fontWeight, slide.text, slide.textAlign, strokeWidth]);
 
   const measuredWidth = textBox?.width ?? estimatedWidth;
   const measuredHeight = textBox?.height ?? estimatedHeight;
-  const { textAnchorX, getLineY } = getTextAssetSvgMetrics({ width: estimatedWidth, height: estimatedHeight, fontSize, lineCount: textLines.length });
+  const { textAnchorX, getLineY } = getTextAssetSvgMetrics({ width: estimatedWidth, height: estimatedHeight, fontSize, lineCount: textLines.length, textAlign });
 
   useEffect(() => {
     if (!onEditBoxChange) return;
+    const alignOffsetX = textAlign === 'left' ? measuredWidth / 2 : textAlign === 'right' ? -measuredWidth / 2 : 0;
     onEditBoxChange({
-      centerX: canvasWidth / 2 + (slide.offsetX ?? 0),
+      centerX: canvasWidth / 2 + alignOffsetX + (slide.offsetX ?? 0),
       centerY: canvasHeight / 2 + (slide.offsetY ?? 0),
       width: measuredWidth * (slide.scale ?? 1),
       height: measuredHeight * (slide.scale ?? 1),
     });
-  }, [canvasHeight, canvasWidth, measuredHeight, measuredWidth, onEditBoxChange, slide.offsetX, slide.offsetY, slide.scale]);
+  }, [canvasHeight, canvasWidth, measuredHeight, measuredWidth, onEditBoxChange, slide.offsetX, slide.offsetY, slide.scale, textAlign]);
 
   return (
     <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
@@ -807,9 +812,9 @@ function PreviewTextAsset({
           style={{
             display: 'block',
             position: 'absolute',
-            left: '50%',
+            left: textAlign === 'left' ? '0%' : textAlign === 'right' ? '100%' : '50%',
             top: '50%',
-            transform: 'translate(-50%, -50%)',
+            transform: textAlign === 'left' ? 'translateY(-50%)' : textAlign === 'right' ? 'translate(-100%, -50%)' : 'translate(-50%, -50%)',
           }}
         >
           <g ref={textGroupRef}>
@@ -818,7 +823,7 @@ function PreviewTextAsset({
                 key={`${line}-${index}`}
                 x={textAnchorX}
                 y={getLineY(index)}
-                textAnchor="middle"
+                textAnchor={textAlign === 'left' ? 'start' : textAlign === 'right' ? 'end' : 'middle'}
                 dominantBaseline="hanging"
                 fontFamily={slide.fontFamily || 'system-ui'}
                 fontSize={fontSize}
@@ -1024,6 +1029,7 @@ function App() {
   const [isMobileBottomResizeActive, setIsMobileBottomResizeActive] = useState(false);
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
   const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
+  const [importAssDataIncremental, setImportAssDataIncremental] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [quickSavePath, setQuickSavePath] = useState('');
   const [exportOutputPath, setExportOutputPath] = useState('');
@@ -1174,6 +1180,11 @@ function App() {
   const clearHistory = useCallback(() => {
     historyPastRef.current = [];
     historyFutureRef.current = [];
+    if (debouncedConfigCommitTimerRef.current !== null) {
+      window.clearTimeout(debouncedConfigCommitTimerRef.current);
+      debouncedConfigCommitTimerRef.current = null;
+    }
+    debouncedConfigSnapshotRef.current = null;
     syncHistoryAvailability();
   }, [syncHistoryAvailability]);
   const pushHistorySnapshot = useCallback(() => {
@@ -1192,6 +1203,11 @@ function App() {
   }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, syncHistoryAvailability]);
   const restoreHistorySnapshot = useCallback((snapshot: HistorySnapshot) => {
     isRestoringHistoryRef.current = true;
+    if (debouncedConfigCommitTimerRef.current !== null) {
+      window.clearTimeout(debouncedConfigCommitTimerRef.current);
+      debouncedConfigCommitTimerRef.current = null;
+    }
+    debouncedConfigSnapshotRef.current = null;
     setConfig(sanitizeProjectConfig(snapshot.config));
     setWebAssContent(snapshot.webAssContent);
     setSubtitles(JSON.parse(JSON.stringify(snapshot.subtitles)));
@@ -1243,6 +1259,7 @@ function App() {
     }, 1000);
   }, [createHistorySnapshot, flushPendingDebouncedConfigCommit]);
   const undoProjectChange = useCallback(() => {
+    flushPendingDebouncedConfigCommit();
     const previousSnapshot = historyPastRef.current.pop();
     if (!previousSnapshot) {
       syncHistoryAvailability();
@@ -1252,8 +1269,9 @@ function App() {
     historyFutureRef.current.unshift(createHistorySnapshot());
     restoreHistorySnapshot(cloneHistorySnapshot(previousSnapshot));
     syncHistoryAvailability();
-  }, [cloneHistorySnapshot, createHistorySnapshot, restoreHistorySnapshot, syncHistoryAvailability]);
+  }, [cloneHistorySnapshot, createHistorySnapshot, flushPendingDebouncedConfigCommit, restoreHistorySnapshot, syncHistoryAvailability]);
   const redoProjectChange = useCallback(() => {
+    flushPendingDebouncedConfigCommit();
     const nextSnapshot = historyFutureRef.current.shift();
     if (!nextSnapshot) {
       syncHistoryAvailability();
@@ -1263,7 +1281,7 @@ function App() {
     historyPastRef.current.push(createHistorySnapshot());
     restoreHistorySnapshot(cloneHistorySnapshot(nextSnapshot));
     syncHistoryAvailability();
-  }, [cloneHistorySnapshot, createHistorySnapshot, restoreHistorySnapshot, syncHistoryAvailability]);
+  }, [cloneHistorySnapshot, createHistorySnapshot, flushPendingDebouncedConfigCommit, restoreHistorySnapshot, syncHistoryAvailability]);
   const activePlaybackSubtitle = useMemo(
     () => subtitles.find((sub) => currentTime >= sub.start && currentTime <= sub.end) ?? null,
     [subtitles, currentTime]
@@ -1506,6 +1524,21 @@ const [previewScale, setPreviewScale] = useState(1);
       speaker: defaultSpeakerId,
       text: row.text
     }));
+  };
+
+  const parseAssDialogueLines = (assContent: string) => {
+    return assContent.split(/\r?\n/)
+      .filter((line) => line.startsWith('Dialogue:'))
+      .map((line) => {
+        const parts = line.split(',');
+        if (parts.length < 10) return null;
+        const start = parseTimeToSeconds(parts[1]);
+        const end = parseTimeToSeconds(parts[2]);
+        const text = parts.slice(9).join(',').replace(/\\N/g, '\n').trim();
+        if (start === null || end === null || !text) return null;
+        return { start, end, text };
+      })
+      .filter((item): item is { start: number; end: number; text: string } => item !== null);
   };
 
   const backupAssIfSpeakerNamesChanged = async () => {
@@ -1772,22 +1805,65 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
-  const handleCopyPreviewToClipboard = async (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleCopyPreviewToClipboard = async (e: React.MouseEvent<HTMLDivElement> | React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!window.electron || !previewFrameRef.current) return;
+    if (!previewFrameRef.current) return;
 
-    const rect = previewFrameRef.current.getBoundingClientRect();
+    const frame = previewFrameRef.current;
+
     try {
-      await window.electron.captureRectToClipboard({
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      });
-      showToast(t('app.previewCopied'));
-    } catch (error) {
-      console.error('Failed to copy preview:', error);
+      const innerContent = frame.innerHTML;
+      const fullCss = Array.from(document.styleSheets).reduce((css, sheet) => {
+        try {
+          return css + '\n' + Array.from(sheet.cssRules).map((r) => r.cssText).join('\n');
+        } catch {
+          return css;
+        }
+      }, '');
+      const fullHtml = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>${fullCss}</style>
+    <style>
+      html, body { margin: 0; padding: 0; overflow: hidden; width: ${canvasWidth}px; height: ${canvasHeight}px; }
+    </style>
+  </head>
+  <body>
+    <div style="width:${canvasWidth}px;height:${canvasHeight}px;position:relative;overflow:hidden;">
+      ${innerContent}
+    </div>
+  </body>
+</html>`;
+      if (window.electron) {
+        const ok = await window.electron.capturePreviewToClipboard({
+          html: fullHtml,
+          width: canvasWidth,
+          height: canvasHeight,
+        });
+        if (ok) {
+          showToast(t('app.previewCopied'));
+          return;
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to capture preview at export resolution:', error);
+    }
+
+    try {
+      if (window.electron) {
+        const rect = frame.getBoundingClientRect();
+        await window.electron.captureRectToClipboard({
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        });
+        showToast(t('app.previewCopied'));
+      }
+    } catch (error: any) {
+      console.error('Failed to capture preview fallback:', error);
     }
   };
 
@@ -1834,6 +1910,15 @@ const [previewScale, setPreviewScale] = useState(1);
   }, []);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [hasUpdateAvailable, setHasUpdateAvailable] = useState(false);
+  useEffect(() => {
+    if (!window.electron) return;
+    window.electron.checkForUpdates().then((result) => {
+      if (result?.hasUpdate) {
+        setHasUpdateAvailable(true);
+      }
+    }).catch(() => {});
+  }, []);
   const language = (config.language || 'zh-CN') as Language;
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const themeColor = themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT);
@@ -1871,6 +1956,9 @@ const [previewScale, setPreviewScale] = useState(1);
       if (window.electron) {
         const result = await window.electron.checkForUpdates();
         setUpdateResult(result);
+        if (result.hasUpdate) {
+          setHasUpdateAvailable(true);
+        }
         showToast(result.ok ? (result.hasUpdate ? `${t('about.updateAvailable')}: v${result.latestVersion}` : t('about.upToDate')) : t('about.updateCheckFailed'));
         return;
       }
@@ -1893,6 +1981,9 @@ const [previewScale, setPreviewScale] = useState(1);
         hasUpdate: compareSemanticVersions(latestVersion, __APP_VERSION__) > 0,
       };
       setUpdateResult(result);
+      if (result.hasUpdate) {
+        setHasUpdateAvailable(true);
+      }
       showToast(result.hasUpdate ? `${t('about.updateAvailable')}: v${latestVersion}` : t('about.upToDate'));
     } catch (error) {
       setUpdateResult({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' });
@@ -2521,18 +2612,19 @@ const [previewScale, setPreviewScale] = useState(1);
   }, []);
 
   useEffect(() => {
+    const updatePrefix = hasUpdateAvailable ? `[${t('app.updateAvailablePrefix')}] ` : '';
     const suffix = showAutoSavedTitle
       ? ' [已自动保存]'
       : (isProjectDirty ? ' *' : '');
 
     if (projectPath) {
-      document.title = projectPath === 'web-demo' 
-        ? `${t('app.webDemo')}${suffix}`
-        : `PomChat Studio - ${projectPath}${suffix}`;
+      document.title = `${updatePrefix}${projectPath === 'web-demo' 
+        ? t('app.webDemo')
+        : `PomChat Studio - ${projectPath}`}${suffix}`;
     } else {
-      document.title = `PomChat Studio${suffix}`;
+      document.title = `${updatePrefix}PomChat Studio${suffix}`;
     }
-  }, [isProjectDirty, projectPath, showAutoSavedTitle, t]);
+  }, [hasUpdateAvailable, isProjectDirty, projectPath, showAutoSavedTitle, t]);
 
   // Audio Sync
   useEffect(() => {
@@ -3390,17 +3482,20 @@ const [previewScale, setPreviewScale] = useState(1);
         setLastExportSucceeded(true);
         setExportStatusMessage(res.message || t('app.exportSuccess'));
         showToast(t(res.placeholder ? 'app.exportPlaceholder' : 'app.exportSuccess'));
+        window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: t('app.exportSuccess') });
       } else {
         setLastExportSucceeded(false);
         const errorMsg = res.error || t('export.failed');
         setExportStatusMessage(errorMsg);
         showToast(errorMsg);
+        window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: errorMsg });
       }
     } catch (error: any) {
       setLastExportSucceeded(false);
       const errorMsg = `${t('export.failed')}: ${error.message}`;
       setExportStatusMessage(errorMsg);
       showToast(errorMsg);
+      window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: errorMsg });
     } finally {
       setIsExporting(false);
       exportProgressActiveRef.current = false;
@@ -4991,6 +5086,55 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
+  const handleIncrementalImportSubtitle = async () => {
+    if (!window.electron) {
+      alert('Incremental import is only available in the desktop app.');
+      return;
+    }
+    try {
+      const res = await window.electron.showOpenDialog({
+        title: t('dialog.selectSubtitleTitle'),
+        filters: [{ name: t('dialog.filterSubtitle'), extensions: ['ass', 'srt', 'lrc'] }],
+        properties: ['openFile']
+      });
+      if (!res.canceled && res.filePaths.length > 0) {
+        const selectedPath = res.filePaths[0];
+        const fileContent = await window.electron.readFile(selectedPath);
+        const lower = selectedPath.toLowerCase();
+        if (lower.endsWith('.ass')) {
+          setImportAssData({ path: selectedPath, content: fileContent });
+          setImportAssDataIncremental(true);
+        } else {
+          const rows = lower.endsWith('.srt') ? parseSrtSubtitles(fileContent) : parseLrcSubtitles(fileContent);
+          const newContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+          const existingContent = Array.isArray(config.content) ? [...config.content] : [];
+          const mergedContent = [...existingContent, ...newContent];
+          applyTrackedConfigUpdater((prev: any) => ({
+            ...prev,
+            assPath: '',
+            subtitleFormat: lower.endsWith('.srt') ? 'srt' : 'lrc',
+            content: mergedContent
+          }));
+          setWebAssContent(null);
+          showToast(t('app.subtitleIncrementalImported', { count: String(newContent.length) }));
+
+          const sortResult = await window.electron.showMessageBox({
+            type: 'question',
+            title: t('dialog.incrementalImportSortTitle'),
+            message: t('dialog.incrementalImportSortDesc'),
+            buttons: [t('common.yes'), t('common.no')],
+            defaultId: 0,
+          });
+          if (sortResult.response === 0) {
+            handleSortSubtitles();
+          }
+        }
+      }
+    } catch (e: any) {
+      alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
+    }
+  };
+
   const handleClearAudio = useCallback(() => {
     const previousWebAudioObjectUrl = webAudioObjectUrl;
 
@@ -6360,6 +6504,7 @@ const [previewScale, setPreviewScale] = useState(1);
         onSaveProject={handleSaveProject}
         onSetAudio={handleSetAudio}
         onSetSubtitle={handleSetSubtitle}
+        onIncrementalImportSubtitle={handleIncrementalImportSubtitle}
         onClearAudio={handleClearAudio}
         onClearSubtitle={handleClearSubtitle}
         onAddSubtitle={handleAddSubtitle}
@@ -6737,6 +6882,15 @@ const [previewScale, setPreviewScale] = useState(1);
           )}
           <div ref={previewAreaRef} className={`flex-1 min-w-0 min-h-0 relative z-10 ${isMobileWebLayout ? 'p-1' : 'p-8'} overflow-hidden ${canvasBg}`}>
             <div className="relative flex h-full w-full items-center justify-center">
+              <button
+                type="button"
+                onClick={handleCopyPreviewToClipboard}
+                className="absolute bottom-1 left-1 z-30 rounded-full p-2.5 shadow-lg transition-opacity hover:opacity-80"
+                style={{ backgroundColor: rgba('#000000', isDarkMode ? 0.45 : 0.3) }}
+                title={t('app.previewCopied')}
+              >
+                <Camera size={18} style={{ color: secondaryThemeColor }} />
+              </button>
               <div 
                 ref={previewFrameRef}
                 onContextMenuCapture={handleCopyPreviewToClipboard}
@@ -7886,9 +8040,11 @@ const [previewScale, setPreviewScale] = useState(1);
           language={language}
           themeColor={themeColor}
           secondaryThemeColor={secondaryThemeColor}
-          onCancel={() => setImportAssData(null)}
+          onCancel={() => { setImportAssData(null); setImportAssDataIncremental(false); }}
           onConfirm={async (path, newSpeakers, importedPresets, importedAnnotationPresets) => {
             const sanitizedContent = sanitizeImportedAssContent(importAssData.content);
+            const isIncremental = importAssDataIncremental;
+            setImportAssDataIncremental(false);
 
             pushHistorySnapshot();
             setConfig((prev: any) => {
@@ -7977,11 +8133,15 @@ const [previewScale, setPreviewScale] = useState(1);
                 nextSpeakers.ANNOTATION = prev?.speakers?.ANNOTATION || DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION;
               }
 
+              const mergedContent = isIncremental
+                ? [...(Array.isArray(prev?.content) ? prev.content : []), ...buildPlainSubtitleProjectContent(parseAssDialogueLines(sanitizedContent), nextSpeakers)]
+                : [];
+
               return {
                 ...prev,
                 subtitleFormat: 'ass',
-                assPath: path,
-                content: [],
+                assPath: isIncremental ? '' : path,
+                content: mergedContent,
                 speakers: nextSpeakers
               };
             });

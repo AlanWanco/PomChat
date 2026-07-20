@@ -29,6 +29,7 @@ interface Window {
     writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => Promise<boolean>;
     backupAssFile: (filePath: string) => Promise<string | null>;
     captureRectToClipboard: (rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+    capturePreviewToClipboard: (payload: { html: string; width: number; height: number }) => Promise<boolean>;
     copyImageBytesToClipboard: (payload: { bytes: number[] }) => Promise<boolean>;
     copyImageDataUrlToClipboard: (payload: { dataUrl: string }) => Promise<boolean>;
     writeImageDataUrlToFile: (payload: { filePath: string; dataUrl: string }) => Promise<boolean>;
@@ -43,5 +44,7 @@ interface Window {
     cancelAppClose: () => Promise<boolean>;
     onAppCloseRequested: (callback: () => void) => () => void;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
+    showNotification: (payload: { title: string; body: string }) => Promise<boolean>;
+    showMessageBox: (options: any) => Promise<{ response: number }>;
   };
 }

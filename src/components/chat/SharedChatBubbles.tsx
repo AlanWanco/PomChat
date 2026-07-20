@@ -363,6 +363,27 @@ export type MarkdownImageLinkMatch = {
 
 const MARKDOWN_ESCAPABLE_CHARS = new Set(['\\', '[', ']', '(', ')', '<', '>', '!', '*', '_', '`', '#', '+', '-', '.', '|', '{', '}']);
 
+const makeEscapeMap = () => {
+  const map: Record<string, string> = {};
+  let code = 0xe000;
+  for (const ch of MARKDOWN_ESCAPABLE_CHARS) {
+    map[ch] = String.fromCodePoint(code);
+    code += 1;
+  }
+  return map;
+};
+
+const ESCAPE_TO_PLACEHOLDER = makeEscapeMap();
+const PLACEHOLDER_TO_ESCAPE = Object.fromEntries(
+  Object.entries(ESCAPE_TO_PLACEHOLDER).map(([k, v]) => [v, k])
+);
+
+const escapeMarkdownChars = (input: string) =>
+  input.replace(/\\(.)/g, (_, ch) => ESCAPE_TO_PLACEHOLDER[ch] ? ESCAPE_TO_PLACEHOLDER[ch] : `\\${ch}`);
+
+const unescapeMarkdownChars = (input: string) =>
+  input.replace(/[\u{e000}-\u{e012}]/gu, (ch) => PLACEHOLDER_TO_ESCAPE[ch] || ch);
+
 const parseMarkdownImageLinkAt = (input: string, startIndex: number): MarkdownImageLinkMatch | null => {
   if (!input.startsWith('![', startIndex)) {
     return null;
@@ -499,7 +520,7 @@ export const replaceMarkdownImageLinkSrcs = (input: string, replacer: (match: Ma
 
 const tokenizeMarkdownInline = (input: string): MarkdownToken[] => {
   const tokens: MarkdownToken[] = [];
-  let rest = input;
+  let rest = escapeMarkdownChars(input);
 
   while (rest.length > 0) {
     const imageMatch = extractMarkdownImageLinks(rest)[0] || null;
@@ -699,9 +720,7 @@ const parseAssOverrideBlock = (block: string, currentStyle: AssInlineStyleState)
     }
 
     if (tag === 'fn') {
-      if (value) {
-        nextStyle.fontFamily = value;
-      }
+      nextStyle.fontFamily = value || 'inherit';
       return '';
     }
 
@@ -823,7 +842,7 @@ const renderMarkdownTokens = ({
   const key = `${keyPrefix}-${index}`;
   switch (token.type) {
     case 'text':
-      return <span key={key} style={inheritedTextStyle}>{token.value}</span>;
+      return <span key={key} style={inheritedTextStyle}>{unescapeMarkdownChars(token.value)}</span>;
     case 'linebreak':
       return <React.Fragment key={key}><br /><span style={inheritedTextStyle}>{'\u200B'}</span></React.Fragment>;
     case 'bold':
@@ -836,11 +855,12 @@ const renderMarkdownTokens = ({
       return <span key={key} style={{ ...inheritedTextStyle, color: token.color || textColor }}>{renderMarkdownTokens({ tokens: token.children, textColor: token.color || textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, color: token.color || textColor } })}</span>;
     case 'size': {
       const normalized = token.size.trim();
-      const numericMatch = normalized.match(/^(\d+(\.\d+)?)(px)?$/);
+      const stripped = normalized.replace(/\s+/g, '');
+      const numericMatch = stripped.match(/^(\d+(\.\d+)?)(px)?$/);
       const cssSize = numericMatch
         ? `${(Number.parseFloat(numericMatch[1]) / 30) * baseFontSize}px`
-        : /^(\d+(\.\d+)?)(em|rem|%)$/.test(normalized)
-          ? normalized
+        : /^(\d+(\.\d+)?)(em|rem|%)$/.test(stripped)
+          ? stripped
           : `${baseFontSize}px`;
       return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
     }

@@ -1,5 +1,6 @@
 import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
@@ -1129,7 +1130,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </div>
         </div>
       )}
-      {contextMenu ? (
+      {contextMenu && typeof document !== 'undefined' ? createPortal(
         <div
           className="fixed z-[1200] min-w-[12rem] overflow-hidden rounded-2xl border shadow-2xl"
           style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260), backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
@@ -1158,7 +1159,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               {item.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       ) : null}
       {editModalSubtitle ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">

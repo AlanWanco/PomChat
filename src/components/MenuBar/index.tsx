@@ -18,6 +18,7 @@ interface MenuBarProps {
   onSaveProject: () => void;
   onSetAudio: () => void;
   onSetSubtitle: () => void;
+  onIncrementalImportSubtitle: () => void;
   onAddSubtitle: () => void;
   onClearAudio: () => void;
   onClearSubtitle: () => void;
@@ -48,6 +49,7 @@ export function MenuBar({
   onSaveProject,
   onSetAudio,
   onSetSubtitle,
+  onIncrementalImportSubtitle,
   onAddSubtitle,
   onClearAudio,
   onClearSubtitle,
@@ -140,7 +142,7 @@ export function MenuBar({
                 disabled={!projectPath}
                 className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
               >
-                <Subtitles size={14} /> {t('menu.importSubtitle')}
+                <Subtitles size={14} /> {t('menu.importSubtitleOverwrite')}
               </button>
               <div className={`my-1 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}></div>
               <button 
@@ -232,6 +234,13 @@ export function MenuBar({
                 className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
               >
                 <Plus size={14} /> {t('menu.addSubtitle')}
+              </button>
+              <button
+                onClick={() => executeAction(onIncrementalImportSubtitle)}
+                disabled={!projectPath}
+                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
+              >
+                <Subtitles size={14} /> {t('menu.importSubtitleIncremental')}
               </button>
               <button
                 onClick={() => executeAction(onImportPresets)}

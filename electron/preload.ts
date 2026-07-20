@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electron', {
   writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => ipcRenderer.invoke('write-binary-file', payload),
   backupAssFile: (filePath: string) => ipcRenderer.invoke('backup-ass-file', filePath),
   captureRectToClipboard: (rect: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('capture-rect-to-clipboard', rect),
+  capturePreviewToClipboard: (payload: { html: string; width: number; height: number }) => ipcRenderer.invoke('capture-preview-to-clipboard', payload),
   copyImageBytesToClipboard: (payload: { bytes: number[] }) => ipcRenderer.invoke('copy-image-bytes-to-clipboard', payload),
   copyImageDataUrlToClipboard: (payload: { dataUrl: string }) => ipcRenderer.invoke('copy-image-data-url-to-clipboard', payload),
   writeImageDataUrlToFile: (payload: { filePath: string; dataUrl: string }) => ipcRenderer.invoke('write-image-data-url-to-file', payload),
@@ -45,5 +46,7 @@ contextBridge.exposeInMainWorld('electron', {
     const listener = (_event: any, value: any) => callback(value);
     ipcRenderer.on('export-progress', listener);
     return () => ipcRenderer.removeListener('export-progress', listener);
-  }
+  },
+  showNotification: (payload: { title: string; body: string }) => ipcRenderer.invoke('show-notification', payload),
+  showMessageBox: (options: any) => ipcRenderer.invoke('show-message-box', options)
 });

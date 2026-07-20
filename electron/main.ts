@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session, nativeImage, Notification } from 'electron';
 import { execFileSync, fork } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, fileURLToPath as urlToPath } from 'node:url';
@@ -1606,6 +1606,65 @@ ipcMain.handle('backup-ass-file', async (_event, filePath) => {
   }
 });
 
+ipcMain.handle('capture-preview-to-clipboard', async (_event, payload: { html: string; width: number; height: number }) => {
+  let tempWindow: BrowserWindow | null = null;
+  let tempPath: string | null = null;
+  try {
+    if (!payload?.html || !Number.isFinite(payload.width) || !Number.isFinite(payload.height)) {
+      return false;
+    }
+    const width = Math.max(1, Math.ceil(payload.width));
+    const height = Math.max(1, Math.ceil(payload.height));
+
+    tempPath = path.join(os.tmpdir(), `pomchat-preview-${Date.now()}.html`);
+    await fs.promises.writeFile(tempPath, payload.html, 'utf-8');
+
+    tempWindow = new BrowserWindow({
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      useContentSize: true,
+      width,
+      height,
+      webPreferences: {
+        sandbox: false,
+        webSecurity: false,
+      },
+    });
+
+    await tempWindow.loadURL(`file://${tempPath}`);
+
+    await tempWindow.webContents.executeJavaScript(`
+      (async () => {
+        if (document.fonts?.ready) {
+          try { await document.fonts.ready; } catch {}
+        }
+        await Promise.all(Array.from(document.images).map((img) => new Promise((resolve) => {
+          if (img.complete) { resolve(undefined); return; }
+          img.addEventListener('load', () => resolve(undefined), { once: true });
+          img.addEventListener('error', () => resolve(undefined), { once: true });
+        })));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return true;
+      })();
+    `);
+
+    const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height });
+    clipboard.writeImage(image);
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to capture preview: ${error.message}`);
+  } finally {
+    if (tempWindow && !tempWindow.isDestroyed()) {
+      tempWindow.destroy();
+    }
+    if (tempPath) {
+      fs.promises.unlink(tempPath).catch(() => {});
+    }
+  }
+});
+
 ipcMain.handle('capture-rect-to-clipboard', async (_event, rect) => {
   if (!win) return false;
 
@@ -1645,6 +1704,20 @@ ipcMain.handle('save-config', async (_event, config) => {
     console.error('Failed to save config:', error);
     return false;
   }
+});
+
+ipcMain.handle('show-message-box', async (_event, options: any) => {
+  if (!win) return { response: 0 };
+  return await dialog.showMessageBox(win, options);
+});
+
+ipcMain.handle('show-notification', async (_event, payload: { title: string; body: string }) => {
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title: payload.title, body: payload.body });
+    notification.show();
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('set-proxy', async (_event, proxy) => {

@@ -465,8 +465,8 @@ export function SettingsPanel({
       overlayOrder: maxOverlayOrder + 1,
       layer: 'overlay',
       inheritBackgroundFilters: true,
-      animationStyle: 'blur',
-      animationDuration: 0.01,
+      animationStyle: 'none',
+      animationDuration: 0,
       opacity: 1,
       imageBorderColor: '#FFFFFF',
       imageBorderWidth: 0,
@@ -480,6 +480,7 @@ export function SettingsPanel({
       fontFamily: 'system-ui',
       fontSize: 96,
       fontWeight: '700',
+      textAlign: 'center',
     };
     updateBackgroundSlides([...backgroundSlides, slide]);
     setActiveBackgroundSlideTab(slide.id);
@@ -2461,6 +2462,14 @@ export function SettingsPanel({
                             <div className="space-y-1.5">
                               <span className="text-xs opacity-70">{t('project.fontFamily')}</span>
                               {renderFontFamilyFields(currentBackgroundSlide.fontFamily || 'system-ui', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontFamily: value })))}
+                            </div>
+                            <div className="space-y-1.5">
+                              <span className="text-xs opacity-70">{t('project.textAlign')}</span>
+                              <select value={currentBackgroundSlide.textAlign || 'center'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textAlign: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
+                                <option value="left">{t('project.textAlignLeft')}</option>
+                                <option value="center">{t('project.textAlignCenter')}</option>
+                                <option value="right">{t('project.textAlignRight')}</option>
+                              </select>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">

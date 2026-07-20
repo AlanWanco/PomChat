@@ -99,7 +99,9 @@ const renderSlideText = ({
   const motionState = getBubbleMotionState(progress * disappearProgress, animationStyle, 'left');
   const { textLines, fontSize, strokeWidth, estimatedWidth, estimatedHeight } = getTextAssetLayout(slide);
   const shadowSize = slide.textShadowSize ?? 0;
-  const { textAnchorX, getLineY } = getTextAssetSvgMetrics({ width: estimatedWidth, height: estimatedHeight, fontSize, lineCount: textLines.length });
+  const textAlign = slide.textAlign || 'center';
+  const alignTransformX = textAlign === 'left' ? '0%' : textAlign === 'right' ? '-100%' : '-50%';
+  const { textAnchorX, getLineY } = getTextAssetSvgMetrics({ width: estimatedWidth, height: estimatedHeight, fontSize, lineCount: textLines.length, textAlign });
 
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
@@ -108,7 +110,7 @@ const renderSlideText = ({
           position: 'absolute',
           left: '50%',
           top: '50%',
-          transform: `translate(-50%, -50%) translate(${slide.offsetX ?? 0}px, ${slide.offsetY ?? 0}px) rotate(${slide.rotation ?? 0}deg) scale(${slide.scale ?? 1}) ${motionState.transform || ''}`.trim(),
+          transform: `translate(${alignTransformX}, -50%) translate(${slide.offsetX ?? 0}px, ${slide.offsetY ?? 0}px) rotate(${slide.rotation ?? 0}deg) scale(${slide.scale ?? 1}) ${motionState.transform || ''}`.trim(),
           transformOrigin: '50% 50%',
           opacity: (slide.opacity ?? 1) * motionState.opacity,
           filter: `blur(${blur}px) brightness(${brightness})`,
@@ -118,7 +120,7 @@ const renderSlideText = ({
           lineHeight: 1.15,
           color: slide.textColor || '#FFFFFF',
           whiteSpace: 'pre-wrap',
-          textAlign: 'center',
+          textAlign: textAlign === 'left' ? 'left' as any : textAlign === 'right' ? ('right' as any) : 'center',
           width: `${estimatedWidth}px`,
           height: `${estimatedHeight}px`,
         }}
@@ -130,7 +132,7 @@ const renderSlideText = ({
               key={`${line}-${index}`}
               x={textAnchorX}
               y={getLineY(index)}
-              textAnchor="middle"
+              textAnchor={textAlign === 'left' ? 'start' : textAlign === 'right' ? 'end' : 'middle'}
               dominantBaseline="hanging"
               fontFamily={slide.fontFamily || 'system-ui'}
               fontSize={fontSize}

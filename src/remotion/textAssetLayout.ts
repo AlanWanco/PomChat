@@ -25,17 +25,21 @@ export const getTextAssetSvgMetrics = ({
   height,
   fontSize,
   lineCount,
+  textAlign = 'center',
 }: {
   width: number;
   height: number;
   fontSize: number;
   lineCount: number;
+  textAlign?: 'left' | 'center' | 'right';
 }) => {
   const contentHeight = lineCount * fontSize * TEXT_ASSET_LINE_HEIGHT;
   const startY = height / 2 - contentHeight / 2;
 
+  const textAnchorX = textAlign === 'left' ? 0 : textAlign === 'right' ? width : width / 2;
+
   return {
-    textAnchorX: width / 2,
+    textAnchorX,
     getLineY: (index: number) => startY + index * fontSize * TEXT_ASSET_LINE_HEIGHT,
   };
 };

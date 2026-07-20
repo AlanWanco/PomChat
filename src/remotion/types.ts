@@ -39,6 +39,7 @@ export interface BackgroundSlideItem {
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: string;
+  textAlign?: 'left' | 'center' | 'right';
 }
 
 export interface SubtitleContentItem {
