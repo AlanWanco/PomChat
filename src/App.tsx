@@ -3482,20 +3482,20 @@ const [previewScale, setPreviewScale] = useState(1);
         setLastExportSucceeded(true);
         setExportStatusMessage(res.message || t('app.exportSuccess'));
         showToast(t(res.placeholder ? 'app.exportPlaceholder' : 'app.exportSuccess'));
-        window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: t('app.exportSuccess') });
+        window.electron?.showNotification({ title: 'PomChat', body: t('app.exportSuccess') });
       } else {
         setLastExportSucceeded(false);
         const errorMsg = res.error || t('export.failed');
         setExportStatusMessage(errorMsg);
         showToast(errorMsg);
-        window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: errorMsg });
+        window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
       }
     } catch (error: any) {
       setLastExportSucceeded(false);
       const errorMsg = `${t('export.failed')}: ${error.message}`;
       setExportStatusMessage(errorMsg);
       showToast(errorMsg);
-      window.electron?.showNotification({ title: config.projectTitle || 'PomChat', body: errorMsg });
+      window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
     } finally {
       setIsExporting(false);
       exportProgressActiveRef.current = false;
