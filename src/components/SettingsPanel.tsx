@@ -1305,24 +1305,6 @@ export function SettingsPanel({
             </div>
 
             <div className="space-y-2">
-              <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.uiFontScale')}</label>
-              <select
-                value={uiFontScale}
-                onChange={(e) => onUiFontScaleChange(Number(e.target.value))}
-                className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
-                style={inputSurfaceStyle}
-              >
-                {[0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4].map((scale) => (
-                  <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>
-                ))}
-              </select>
-              <div className="flex items-center justify-between text-xs opacity-70">
-                <span>{t('global.uiFontScaleHint')}</span>
-                <span className="font-mono">{Math.round(uiFontScale * 100)}%</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.secondaryThemeColor')}</label>
               <select
                 value={secondaryThemeColor}
@@ -1354,7 +1336,25 @@ export function SettingsPanel({
                 </button>
               </div>
             </div>
-            
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.uiFontScale')}</label>
+              <select
+                value={uiFontScale}
+                onChange={(e) => onUiFontScaleChange(Number(e.target.value))}
+                className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`}
+                style={inputSurfaceStyle}
+              >
+                {[0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4].map((scale) => (
+                  <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>
+                ))}
+              </select>
+              <div className="flex items-center justify-between text-xs opacity-70">
+                <span>{t('global.uiFontScaleHint')}</span>
+                <span className="font-mono">{Math.round(uiFontScale * 100)}%</span>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.position')}</label>
               <div className="flex rounded-lg p-1" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
@@ -3276,6 +3276,19 @@ export function SettingsPanel({
                           <option value="left">{t('annotation.align.left')}</option>
                           <option value="center">{t('annotation.align.center')}</option>
                           <option value="right">{t('annotation.align.right')}</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.textAlign')}</span>
+                        <select
+                          value={annotation.style?.annotationTextAlign || 'center'}
+                          onChange={(e) => updateSpeakerStyle('ANNOTATION', 'annotationTextAlign', e.target.value)}
+                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                          style={inputSurfaceStyle}
+                        >
+                          <option value="left">{t('annotation.textAlign.left')}</option>
+                          <option value="center">{t('annotation.textAlign.center')}</option>
+                          <option value="right">{t('annotation.textAlign.right')}</option>
                         </select>
                       </div>
                       <div className="space-y-1">

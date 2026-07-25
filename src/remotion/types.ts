@@ -80,6 +80,7 @@ export interface SpeakerStyle {
   trackPaddingRight?: number;
   annotationPosition?: 'top' | 'bottom';
   annotationAlign?: 'left' | 'center' | 'right';
+  annotationTextAlign?: 'left' | 'center' | 'right';
   annotationMarginX?: number;
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
 }

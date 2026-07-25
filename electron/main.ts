@@ -1625,8 +1625,8 @@ ipcMain.handle('capture-preview-to-clipboard', async (_event, payload: { html: s
       transparent: true,
       backgroundColor: '#00000000',
       useContentSize: true,
-      width,
-      height,
+      width: 100,
+      height: 100,
       webPreferences: {
         sandbox: false,
         webSecurity: false,
@@ -1650,8 +1650,12 @@ ipcMain.handle('capture-preview-to-clipboard', async (_event, payload: { html: s
       })();
     `);
 
+    tempWindow.setContentSize(width, height, true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     const image = await tempWindow.webContents.capturePage({ x: 0, y: 0, width, height });
-    clipboard.writeImage(image);
+    const resized = image.resize({ width, height });
+    clipboard.writeImage(resized);
     return true;
   } catch (error: any) {
     throw new Error(`Failed to capture preview: ${error.message}`);

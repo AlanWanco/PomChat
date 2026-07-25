@@ -166,6 +166,8 @@ const getImportedSpeakerStyle = (assStyle: ParsedAssStyle | undefined, isAnnotat
     bgColor: outlineColor?.hex || (isAnnotation ? '#111827' : '#2563eb'),
     textColor: primaryColor?.hex || (isAnnotation ? '#ffffff' : '#ffffff'),
     nameColor: primaryColor?.hex || '#ffffff',
+    nameStrokeColor: outlineColor?.hex || '#000000',
+    nameStrokeWidth: Number.isFinite(outlineWidth) && outlineWidth > 0 ? Math.round(outlineWidth) : 0,
     borderColor: backColor?.hex || '#ffffff',
     borderOpacity: backColor?.opacity ?? 1,
     opacity: outlineColor?.opacity ?? 0.9,
@@ -194,8 +196,11 @@ const getBaseImportedStyle = (isAnnotation: boolean, charCode: number) => ({
   fontSize: isAnnotation ? 24 : 30,
   fontWeight: 'normal',
   nameColor: '#ffffff',
+  nameStrokeColor: '#000000',
+  nameStrokeWidth: 0,
   annotationPosition: 'bottom',
   annotationAlign: 'center',
+  annotationTextAlign: 'center',
   annotationMarginX: 0,
 });
 

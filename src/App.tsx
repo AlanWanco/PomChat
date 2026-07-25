@@ -292,6 +292,7 @@ const DEFAULT_PROJECT_CONFIG = {
         fontSize: 24,
         annotationPosition: 'bottom',
         annotationAlign: 'center',
+        annotationTextAlign: 'center',
         annotationMarginX: 0,
       }
     }
@@ -473,6 +474,7 @@ const createBlankProjectConfig = (projectTitle: string) => ({
         fontSize: 24,
         annotationPosition: 'bottom',
         annotationAlign: 'center',
+        annotationTextAlign: 'center',
         annotationMarginX: 0,
       }
     }
@@ -6907,7 +6909,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   transformOrigin: 'center center',
                 }}
               >
-              <div className="absolute inset-0 overflow-hidden rounded-lg">
+              <div className="absolute inset-0 overflow-hidden rounded-lg" style={{ WebkitFontSmoothing: 'antialiased' }}>
               {previewFontFaceCss ? <style>{previewFontFaceCss}</style> : null}
               
               {/* Fallback color layer if no background image */}
@@ -7175,7 +7177,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 <div
                   key={slide.id}
                   className="absolute inset-0"
-                  style={{ zIndex: 25 + (slide.overlayOrder ?? 0), overflow: activeInsertImageId === slide.id && isInsertImageEditMode ? 'visible' : 'hidden', pointerEvents: 'none' }}
+                  style={{ zIndex: 35 + (slide.overlayOrder ?? 0), overflow: activeInsertImageId === slide.id && isInsertImageEditMode ? 'visible' : 'hidden', pointerEvents: 'none' }}
                 >
                   {slide.type === 'text' ? (
                     <PreviewTextAsset
@@ -7233,7 +7235,7 @@ const [previewScale, setPreviewScale] = useState(1);
               ))}
 
               {visibleAnnotations.length > 0 && (
-                <div className="absolute inset-x-0 top-0 bottom-0 z-30 pointer-events-none flex flex-col justify-between" style={{ padding: '24px 32px' }}>
+                <div className="absolute inset-x-0 top-0 bottom-0 z-30 pointer-events-none flex flex-col justify-between" style={{ paddingTop: 24, paddingBottom: 24, paddingLeft: previewChatLayout?.paddingLeft ?? previewChatLayout?.paddingX ?? 48, paddingRight: previewChatLayout?.paddingRight ?? previewChatLayout?.paddingX ?? 48 }}>
                   <div className="flex flex-col items-stretch gap-3 w-full">
                     {visibleAnnotations.filter((item) => config.speakers[item.speakerId]?.style?.annotationPosition === 'top').map((item) => {
                       const speaker = config.speakers[item.speakerId];

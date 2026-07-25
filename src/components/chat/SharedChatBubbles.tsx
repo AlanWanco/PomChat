@@ -37,6 +37,7 @@ export interface SharedChatSpeakerStyle {
   trackPaddingRight?: number;
   annotationPosition?: 'top' | 'bottom';
   annotationAlign?: 'left' | 'center' | 'right';
+  annotationTextAlign?: 'left' | 'center' | 'right';
   annotationMarginX?: number;
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
 }
@@ -1332,6 +1333,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
   const maxWidth = (speaker.style?.maxWidth ?? 720) * combinedScale;
   const inlineImageMaxWidthPx = Math.max(80, maxWidth - (speaker.style?.paddingX ?? 24) * combinedScale * 2);
   const annotationAlign = speaker.style?.annotationAlign ?? 'center';
+  const annotationTextAlign = speaker.style?.annotationTextAlign ?? 'center';
   const annotationMarginX = (speaker.style?.annotationMarginX ?? 0) * combinedScale;
   const opacity = speaker.style?.opacity ?? 0.9;
   const bgColor = speaker.style?.bgColor || '#111827';
@@ -1360,7 +1362,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       fontSize: `${(speaker.style?.fontSize ?? 24) * combinedScale}px`,
       fontWeight: speaker.style?.fontWeight || 'normal',
       lineHeight: 0,
-      textAlign: annotationAlign as 'left' | 'center' | 'right',
+      textAlign: annotationTextAlign as 'left' | 'center' | 'right',
       whiteSpace: 'pre-wrap' as const,
       color: textColor
     },
