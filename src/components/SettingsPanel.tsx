@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff } from 'lucide-react';
+import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
@@ -50,8 +50,8 @@ interface SettingsPanelProps {
   onAnnotationPresetsChange: (presets: Record<string, any>) => void;
   fontPresets: FontPresetMap;
   onFontPresetsChange: (presets: FontPresetMap) => void;
-  activeTab: 'subtitle' | 'global' | 'project' | 'speakers' | 'annotation';
-  setActiveTab: (tab: 'subtitle' | 'global' | 'project' | 'speakers' | 'annotation') => void;
+  activeTab: 'subtitle' | 'global' | 'project' | 'speakers' | 'assets';
+  setActiveTab: (tab: 'subtitle' | 'global' | 'project' | 'speakers' | 'assets') => void;
   onSelectImage?: () => Promise<string | null>;
   onRequestRemoveSpeaker?: (speakerKey: string) => void;
   globalOnly?: boolean;
@@ -202,6 +202,7 @@ export function SettingsPanel({
   const [activeFontPresetId, setActiveFontPresetId] = useState<string>('');
   const [fontPresetNameDraft, setFontPresetNameDraft] = useState('');
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
+  const [speakerSubTab, setSpeakerSubTab] = useState<'speakers' | 'annotation'>('speakers');
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
@@ -243,14 +244,16 @@ export function SettingsPanel({
   ];
   const speakerJumpSections = [
     { id: 'speaker-basic', label: t('speakers.title') },
+    { id: 'speaker-pose', label: '气泡位置' },
     { id: 'speaker-typography', label: t('speakers.typography') },
+    { id: 'speaker-name', label: t('speakers.name') },
     { id: 'speaker-colors', label: t('speakers.colors') },
     { id: 'speaker-border', label: t('speakers.border') },
     { id: 'speaker-layout', label: t('speakers.layout') },
   ];
   const visibleSettingsSections = activeTab === 'project'
     ? projectJumpSections
-    : activeTab === 'speakers' && currentSpeakerTab
+    : activeTab === 'speakers' && speakerSubTab === 'speakers' && currentSpeakerTab
       ? speakerJumpSections
       : [];
   const visibleSettingsSectionIds = visibleSettingsSections.map((section) => section.id).join('|');
@@ -393,7 +396,7 @@ export function SettingsPanel({
   }, [pendingScrollSlideId, tabOrderedSlides]);
 
   useEffect(() => {
-    if (!focusInsertImageSettingsKey || activeTab !== 'project' || !activeInsertImageId || !backgroundSectionHeaderRef.current) {
+    if (!focusInsertImageSettingsKey || activeTab !== 'assets' || !activeInsertImageId || !backgroundSectionHeaderRef.current) {
       return;
     }
 
@@ -1159,18 +1162,38 @@ export function SettingsPanel({
            {t('tab.project')}
          </button>
          <button 
-           className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
-           style={activeTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
-           onClick={() => setActiveTab('speakers')}
-         >
-           {t('tab.speakers')}
+            className={`flex-1 py-2 font-medium transition-colors text-sm relative group ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
+            style={activeTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
+            onClick={() => { setActiveTab('speakers'); setSpeakerSubTab('speakers'); }}
+          >
+            {speakerSubTab === 'annotation' ? t('tab.annotation') : t('tab.speakers')}
+            <div className="absolute top-full left-0 mt-0 z-50 hidden group-hover:block min-w-[8rem] rounded-md border py-1 shadow-xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2"
+                style={{ backgroundColor: speakerSubTab === 'speakers' ? `${secondaryThemeColor}14` : 'transparent', color: speakerSubTab === 'speakers' ? secondaryThemeColor : uiTheme.text }}
+                onClick={(e) => { e.stopPropagation(); setActiveTab('speakers'); setSpeakerSubTab('speakers'); }}
+                onMouseEnter={(e) => { if (speakerSubTab !== 'speakers') e.currentTarget.style.backgroundColor = uiTheme.hoverBg; }}
+                onMouseLeave={(e) => { if (speakerSubTab !== 'speakers') e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                {t('tab.speakers')}
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2"
+                style={{ backgroundColor: speakerSubTab === 'annotation' ? `${secondaryThemeColor}14` : 'transparent', color: speakerSubTab === 'annotation' ? secondaryThemeColor : uiTheme.text }}
+                onClick={(e) => { e.stopPropagation(); setActiveTab('speakers'); setSpeakerSubTab('annotation'); }}
+                onMouseEnter={(e) => { if (speakerSubTab !== 'annotation') e.currentTarget.style.backgroundColor = uiTheme.hoverBg; }}
+                onMouseLeave={(e) => { if (speakerSubTab !== 'annotation') e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                {t('tab.annotation')}
+              </button>
+            </div>
          </button>
           <button 
-            className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'annotation' ? 'border-b-2' : ''}`}
-            style={activeTab === 'annotation' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
-            onClick={() => setActiveTab('annotation')}
+            className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'assets' ? 'border-b-2' : ''}`}
+            style={activeTab === 'assets' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
+            onClick={() => setActiveTab('assets')}
            >
-             {t('tab.annotation')}
+             {t('tab.assets')}
            </button>
             </>
           )}
@@ -2150,7 +2173,13 @@ export function SettingsPanel({
                   />
                 </div>
               </div>
-              <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'assets' && (
+          <div className="space-y-4">
+               <div className="rounded-xl border p-3 space-y-3 shadow-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
                 <div ref={(node) => {
                   backgroundSectionHeaderRef.current = node;
                   registerSettingsSection('project-insert-assets')(node);
@@ -2335,6 +2364,9 @@ export function SettingsPanel({
                               <div className="flex-1">
                                 {renderNumberInput(currentBackgroundSlide.start ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Math.max(0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
+                              <button type="button" onClick={() => onSeek?.(currentBackgroundSlide.start ?? 0)} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.jumpToTime')}>
+                                <SkipForward size={12} />
+                              </button>
                               <button type="button" onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Number(currentTime.toFixed(2)) }))} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.useCurrentTime')}>
                                 <Clock3 size={12} />
                               </button>
@@ -2346,6 +2378,9 @@ export function SettingsPanel({
                               <div className="flex-1">
                                 {renderNumberInput(currentBackgroundSlide.end ?? 3, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, end: Math.max(slide.start ?? 0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
+                              <button type="button" onClick={() => onSeek?.(currentBackgroundSlide.end ?? 0)} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.jumpToTime')}>
+                                <SkipForward size={12} />
+                              </button>
                               <button type="button" onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, end: Math.max(slide.start ?? 0, Number(currentTime.toFixed(2))) }))} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.useCurrentTime')}>
                                 <Clock3 size={12} />
                               </button>
@@ -2401,7 +2436,12 @@ export function SettingsPanel({
 
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.insertImageLayer')}</span>
+                            <span className="text-xs opacity-70 inline-flex items-center gap-1">
+                              {t('project.insertImageLayer')}
+                              <Tooltip content={t('project.insertImageLayerTip')} placement="bottom" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                                <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
+                              </Tooltip>
+                            </span>
                             <select value={currentBackgroundSlide.layer || 'background'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => {
                               const nextLayer = e.target.value as 'background' | 'overlay';
                               if (nextLayer === slide.layer) {
@@ -2433,7 +2473,8 @@ export function SettingsPanel({
                         </div>
 
                         {currentBackgroundSlide.type !== 'text' ? (
-                          <div className="space-y-3">
+                          <div className="space-y-2">
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.imageBorderColor')}</span>
@@ -2444,6 +2485,8 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.imageBorderWidth ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageBorderWidth: Math.max(0, value) })), { min: 0, step: 0.5, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                             </div>
+                            </div>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.imageShadowColor')}</span>
@@ -2454,23 +2497,35 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.imageShadowSize ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageShadowSize: Math.max(0, value) })), { min: 0, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                             </div>
+                            </div>
                           </div>
                         ) : null}
 
                         {currentBackgroundSlide.type === 'text' ? (
                           <>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="space-y-1.5">
                               <span className="text-xs opacity-70">{t('project.fontFamily')}</span>
                               {renderFontFamilyFields(currentBackgroundSlide.fontFamily || 'system-ui', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontFamily: value })))}
                             </div>
-                            <div className="space-y-1.5">
-                              <span className="text-xs opacity-70">{t('project.textAlign')}</span>
-                              <select value={currentBackgroundSlide.textAlign || 'center'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textAlign: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
-                                <option value="left">{t('project.textAlignLeft')}</option>
-                                <option value="center">{t('project.textAlignCenter')}</option>
-                                <option value="right">{t('project.textAlignRight')}</option>
-                              </select>
                             </div>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <span className="text-xs opacity-70">{t('project.textColor')}</span>
+                                {renderColorInput(currentBackgroundSlide.textColor || '#FFFFFF', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textColor: value })))}
+                              </div>
+                              <div className="space-y-1.5">
+                                <span className="text-xs opacity-70">{t('project.textAlign')}</span>
+                                <select value={currentBackgroundSlide.textAlign || 'center'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textAlign: e.target.value }))} className={`w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`} style={inputSurfaceStyle}>
+                                  <option value="left">{t('project.textAlignLeft')}</option>
+                                  <option value="center">{t('project.textAlignCenter')}</option>
+                                  <option value="right">{t('project.textAlignRight')}</option>
+                                </select>
+                              </div>
+                            </div>
+                            </div>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.fontWeight')}</span>
@@ -2489,32 +2544,30 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.fontSize ?? 96, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, fontSize: Math.max(8, value) })), { min: 8, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                             </div>
+                            </div>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <span className="text-xs opacity-70">{t('project.textColor')}</span>
-                                {renderColorInput(currentBackgroundSlide.textColor || '#FFFFFF', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textColor: value })))}
-                              </div>
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.textStrokeColor')}</span>
                                 {renderColorInput(currentBackgroundSlide.textStrokeColor || '#000000', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textStrokeColor: value })))}
                               </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.textStrokeWidth')}</span>
                                 {renderNumberInput(currentBackgroundSlide.textStrokeWidth ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textStrokeWidth: Math.max(0, value) })), { min: 0, step: 0.5, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
+                            </div>
+                            </div>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                            <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.textShadowColor')}</span>
                                 {renderColorInput(currentBackgroundSlide.textShadowColor || '#00000088', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textShadowColor: value })))}
                               </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
                                 <span className="text-xs opacity-70">{t('project.textShadowSize')}</span>
                                 {renderNumberInput(currentBackgroundSlide.textShadowSize ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, textShadowSize: Math.max(0, value) })), { min: 0, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
-                              <div />
+                            </div>
                             </div>
                           </>
                         ) : null}
@@ -2566,10 +2619,9 @@ export function SettingsPanel({
                 )}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'speakers' && (
+        {activeTab === 'speakers' && speakerSubTab === 'speakers' && (
           <div className="space-y-4">
             {/* Speakers */}
             <div className="space-y-2">
@@ -2905,36 +2957,91 @@ export function SettingsPanel({
                             <option value="900">900</option>
                           </select>
                         </div>
+                      </div>
+                    </div>
+
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Position */}
+                    <div ref={registerSettingsSection('speaker-pose')} className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><ArrowLeftRight size={12} /> 气泡位置</span>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.side')}</span>
+                        <select 
+                          value={speaker.side}
+                          onChange={(e) => {
+                            updateSpeaker(key, (currentSpeaker) => ({
+                              ...currentSpeaker,
+                              side: e.target.value
+                            }));
+                          }}
+                          className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
+                          style={inputSurfaceStyle}
+                        >
+                          <option value="left">{t('speakers.side.left')}</option>
+                          <option value="right">{t('speakers.side.right')}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Name */}
+                    <div ref={registerSettingsSection('speaker-name')} className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><User size={12} /> {t('speakers.name')}</span>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
+                        {renderFontFamilyFields(speaker.style?.nameFontFamily, (value) => updateSpeakerStyle(key, 'nameFontFamily', value))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.side')}</span>
-                          <select 
-                            value={speaker.side}
-                            onChange={(e) => {
-                              updateSpeaker(key, (currentSpeaker) => ({
-                                ...currentSpeaker,
-                                side: e.target.value
-                              }));
-                            }}
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameColor')}</span>
+                          {renderColorInput(speaker.style?.nameColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'nameColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFontWeight')}</span>
+                          <select
+                            value={speaker.style?.nameFontWeight || '700'}
+                            onChange={(e) => updateSpeakerStyle(key, 'nameFontWeight', e.target.value)}
                             className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
                             style={inputSurfaceStyle}
                           >
-                            <option value="left">{t('speakers.side.left')}</option>
-                            <option value="right">{t('speakers.side.right')}</option>
+                            <option value="normal">{t('fontWeight.normal')}</option>
+                            <option value="bold">{t('fontWeight.bold')}</option>
+                            <option value="bolder">{t('fontWeight.bolder')}</option>
+                            <option value="lighter">{t('fontWeight.lighter')}</option>
+                            <option value="100">100</option>
+                            <option value="300">300</option>
+                            <option value="500">500</option>
+                            <option value="700">700</option>
+                            <option value="900">900</option>
                           </select>
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameStrokeColor')}</span>
+                          {renderColorInput(speaker.style?.nameStrokeColor || '#000000', (value) => updateSpeakerStyle(key, 'nameStrokeColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameStrokeWidth')}</span>
+                          {renderNumberInput(speaker.style?.nameStrokeWidth ?? 0, (value) => updateSpeakerStyle(key, 'nameStrokeWidth', value), { min: 0, max: 12, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                        </div>
+                      </div>
                     </div>
+
+                    <hr style={{ borderColor: uiTheme.border }} />
 
                     {/* Colors & Background */}
                     <div ref={registerSettingsSection('speaker-colors')} className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><div className="w-3 h-3 rounded-full flex items-center justify-center border shadow-sm" style={{ backgroundColor: themeColor }}></div> {t('speakers.colors')}</span>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">气泡颜色</span>
                           {renderColorInput(speaker.style?.bgColor || '#3B82F6', (value) => updateSpeakerStyle(key, 'bgColor', value))}
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">文字颜色</span>
                           {renderColorInput(speaker.style?.textColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'textColor', value))}
                         </div>
                       </div>
@@ -2971,48 +3078,6 @@ export function SettingsPanel({
                             className="w-full" style={themedRangeStyle}
                           />
                           <span className="text-[0.625rem] w-6 text-right font-mono">{speaker.style?.opacity ?? 0.9}</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1 pt-1">
-                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFont')}</span>
-                        {renderFontFamilyFields(speaker.style?.nameFontFamily, (value) => updateSpeakerStyle(key, 'nameFontFamily', value))}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameColor')}</span>
-                          {renderColorInput(speaker.style?.nameColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'nameColor', value))}
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameFontWeight')}</span>
-                          <select
-                            value={speaker.style?.nameFontWeight || '700'}
-                            onChange={(e) => updateSpeakerStyle(key, 'nameFontWeight', e.target.value)}
-                            className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`}
-                            style={inputSurfaceStyle}
-                          >
-                            <option value="normal">{t('fontWeight.normal')}</option>
-                            <option value="bold">{t('fontWeight.bold')}</option>
-                            <option value="bolder">{t('fontWeight.bolder')}</option>
-                            <option value="lighter">{t('fontWeight.lighter')}</option>
-                            <option value="100">100</option>
-                            <option value="300">300</option>
-                            <option value="500">500</option>
-                            <option value="700">700</option>
-                            <option value="900">900</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.nameStrokeColor')}</span>
-                          {renderColorInput(speaker.style?.nameStrokeColor || '#000000', (value) => updateSpeakerStyle(key, 'nameStrokeColor', value))}
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.nameStrokeWidth')}</span>
-                          {renderNumberInput(speaker.style?.nameStrokeWidth ?? 0, (value) => updateSpeakerStyle(key, 'nameStrokeWidth', value), { min: 0, max: 12, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
                       </div>
 
@@ -3089,8 +3154,8 @@ export function SettingsPanel({
           </div>
         )}
 
-        {activeTab === 'annotation' && config.speakers?.ANNOTATION && (
-          <div className="space-y-4">
+        {activeTab === 'speakers' && speakerSubTab === 'annotation' && config.speakers?.ANNOTATION && (
+          <div className="space-y-4 pt-4">
             {(() => {
               const annotation = config.speakers.ANNOTATION;
               return (
@@ -3252,6 +3317,11 @@ export function SettingsPanel({
                         </button>
                         </div>
                       )}
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Position */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><ArrowLeftRight size={12} /> 位置与对齐</span>
                       <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.position')}</span>
@@ -3291,6 +3361,19 @@ export function SettingsPanel({
                           <option value="right">{t('annotation.textAlign.right')}</option>
                         </select>
                       </div>
+                    </div>
+                    </div>
+
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Typography */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Type size={12} /> {t('speakers.typography')}</span>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
+                        {renderFontFamilyFields(annotation.style?.fontFamily, (value) => updateSpeakerStyle('ANNOTATION', 'fontFamily', value))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.fontSize')}</span>
                         {renderNumberInput(annotation.style?.fontSize ?? 24, (value) => updateSpeakerStyle('ANNOTATION', 'fontSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -3315,11 +3398,14 @@ export function SettingsPanel({
                         </select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1 col-span-2">
-                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.font')}</span>
-                        {renderFontFamilyFields(annotation.style?.fontFamily, (value) => updateSpeakerStyle('ANNOTATION', 'fontFamily', value))}
-                      </div>
+                    </div>
+
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Animation */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80">动画</span>
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('project.animationStyle')}</span>
                         <select
@@ -3341,21 +3427,24 @@ export function SettingsPanel({
                         {renderNumberInput(annotation.style?.shadowSize ?? 1, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
-                      {renderNumberInput(annotation.style?.maxWidth ?? 720, (value) => updateSpeakerStyle('ANNOTATION', 'maxWidth', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+
+                    <hr style={{ borderColor: uiTheme.border }} />
+
+                    {/* Bubble Style */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Box size={12} /> 气泡样式</span>
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.bg')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">气泡颜色</span>
                         {renderColorInput(annotation.style?.bgColor || '#111827', (value) => updateSpeakerStyle('ANNOTATION', 'bgColor', value))}
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.text')}</span>
+                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">文字颜色</span>
                         {renderColorInput(annotation.style?.textColor || '#FFFFFF', (value) => updateSpeakerStyle('ANNOTATION', 'textColor', value))}
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.paddingX')}</span>
                         {renderNumberInput(annotation.style?.paddingX ?? 24, (value) => updateSpeakerStyle('ANNOTATION', 'paddingX', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -3365,7 +3454,7 @@ export function SettingsPanel({
                         {renderNumberInput(annotation.style?.paddingY ?? 12, (value) => updateSpeakerStyle('ANNOTATION', 'paddingY', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.marginX')}</span>
                         {renderNumberInput(annotation.style?.annotationMarginX ?? 0, (value) => updateSpeakerStyle('ANNOTATION', 'annotationMarginX', Math.max(0, value)), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -3375,7 +3464,7 @@ export function SettingsPanel({
                         {renderNumberInput(annotation.style?.margin ?? 12, (value) => updateSpeakerStyle('ANNOTATION', 'margin', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.roundness')}</span>
                         {renderNumberInput(annotation.style?.annotationBorderRadius ?? 28, (value) => updateSpeakerStyle('ANNOTATION', 'annotationBorderRadius', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
@@ -3383,6 +3472,11 @@ export function SettingsPanel({
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.opacity')}</span>
                         {renderNumberInput(annotation.style?.opacity ?? 0.9, (value) => updateSpeakerStyle('ANNOTATION', 'opacity', value), { min: 0, max: 1, step: 0.05, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                      </div>
+                    </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
+                        {renderNumberInput(annotation.style?.maxWidth ?? 720, (value) => updateSpeakerStyle('ANNOTATION', 'maxWidth', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
                   </div>

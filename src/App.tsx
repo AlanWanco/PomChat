@@ -1022,7 +1022,7 @@ function App() {
   // Panel Widths
   const [subtitleWidth, setSubtitleWidth] = useState(320);
   const [settingsWidth, setSettingsWidth] = useState(400);
-  const [activeTab, setActiveTab] = useState<'subtitle' | 'global' | 'project' | 'speakers' | 'annotation'>(
+  const [activeTab, setActiveTab] = useState<'subtitle' | 'global' | 'project' | 'speakers' | 'assets'>(
     !window.electron && window.innerWidth < 700 ? 'subtitle' : 'speakers'
   );
   const [isMobileBottomPanelCollapsed, setIsMobileBottomPanelCollapsed] = useState(false);
@@ -4439,7 +4439,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setShowSettings(true);
     }
     if (options?.ensureProjectTab) {
-      setActiveTab('project');
+      setActiveTab('assets');
     }
     window.requestAnimationFrame(() => {
       enterInsertImageEditMode(id);
@@ -6974,7 +6974,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       onDoubleClick={() => {
                         enterInsertImageEditMode(slide.id);
                         setShowSettings(true);
-                        setActiveTab('project');
+                        setActiveTab('assets');
                         focusInsertImageSettings();
                       }}
                       onPointerDown={undefined}
@@ -7008,7 +7008,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onDoubleClick={() => {
                       enterInsertImageEditMode(slide.id);
                       setShowSettings(true);
-                      setActiveTab('project');
+                      setActiveTab('assets');
                       focusInsertImageSettings();
                     }}
                     onPointerDown={undefined}
@@ -7191,7 +7191,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onDoubleClick={() => {
                       enterInsertImageEditMode(slide.id);
                       setShowSettings(true);
-                      setActiveTab('project');
+                      setActiveTab('assets');
                       focusInsertImageSettings();
                     }}
                     onPointerDown={undefined}
@@ -7225,7 +7225,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     onDoubleClick={() => {
                       enterInsertImageEditMode(slide.id);
                       setShowSettings(true);
-                      setActiveTab('project');
+                      setActiveTab('assets');
                       focusInsertImageSettings();
                     }}
                     onPointerDown={undefined}
