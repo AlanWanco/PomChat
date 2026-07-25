@@ -1164,10 +1164,10 @@ export function SettingsPanel({
          <button 
             className={`flex-1 py-2 font-medium transition-colors text-sm relative group ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
             style={activeTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
-            onClick={() => { setActiveTab('speakers'); setSpeakerSubTab('speakers'); }}
+            onClick={() => setActiveTab('speakers')}
           >
             {speakerSubTab === 'annotation' ? t('tab.annotation') : t('tab.speakers')}
-            <div className="absolute top-full left-0 mt-0 z-50 hidden group-hover:block min-w-[8rem] rounded-md border py-1 shadow-xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div className="absolute top-full left-0 z-50 hidden group-hover:block min-w-[8rem] rounded-md border py-1 shadow-xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2"
                 style={{ backgroundColor: speakerSubTab === 'speakers' ? `${secondaryThemeColor}14` : 'transparent', color: speakerSubTab === 'speakers' ? secondaryThemeColor : uiTheme.text }}
@@ -3360,6 +3360,20 @@ export function SettingsPanel({
                           <option value="center">{t('annotation.textAlign.center')}</option>
                           <option value="right">{t('annotation.textAlign.right')}</option>
                         </select>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.followGlobalPadding')}</span>
+                        <button
+                          type="button"
+                          onClick={() => updateSpeakerStyle('ANNOTATION', 'annotationFollowGlobalPadding', !(annotation.style?.annotationFollowGlobalPadding !== false))}
+                          className="w-full flex items-center rounded-md border px-2 py-1.5 text-xs transition-colors"
+                          style={{
+                            backgroundColor: (annotation.style?.annotationFollowGlobalPadding !== false) ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                            borderColor: (annotation.style?.annotationFollowGlobalPadding !== false) ? `${secondaryThemeColor}55` : uiTheme.border,
+                          }}
+                        >
+                          {(annotation.style?.annotationFollowGlobalPadding !== false) ? t('common.enabled') : t('common.disabled')}
+                        </button>
                       </div>
                     </div>
                     </div>

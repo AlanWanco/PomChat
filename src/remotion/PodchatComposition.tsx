@@ -572,8 +572,8 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
             pointerEvents: 'none',
             paddingTop: 24 * effectiveScale,
             paddingBottom: 24 * effectiveScale,
-            paddingLeft: leftPadding,
-            paddingRight: rightPadding,
+            paddingLeft: (props.speakers?.ANNOTATION?.style?.annotationFollowGlobalPadding !== false) ? leftPadding : 0,
+            paddingRight: (props.speakers?.ANNOTATION?.style?.annotationFollowGlobalPadding !== false) ? rightPadding : 0,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between'

@@ -294,6 +294,7 @@ const DEFAULT_PROJECT_CONFIG = {
         annotationAlign: 'center',
         annotationTextAlign: 'center',
         annotationMarginX: 0,
+        annotationFollowGlobalPadding: true,
       }
     }
   }
@@ -476,6 +477,7 @@ const createBlankProjectConfig = (projectTitle: string) => ({
         annotationAlign: 'center',
         annotationTextAlign: 'center',
         annotationMarginX: 0,
+        annotationFollowGlobalPadding: true,
       }
     }
   },
@@ -7235,7 +7237,7 @@ const [previewScale, setPreviewScale] = useState(1);
               ))}
 
               {visibleAnnotations.length > 0 && (
-                <div className="absolute inset-x-0 top-0 bottom-0 z-30 pointer-events-none flex flex-col justify-between" style={{ paddingTop: 24, paddingBottom: 24, paddingLeft: previewChatLayout?.paddingLeft ?? previewChatLayout?.paddingX ?? 48, paddingRight: previewChatLayout?.paddingRight ?? previewChatLayout?.paddingX ?? 48 }}>
+                <div className="absolute inset-x-0 top-0 bottom-0 z-30 pointer-events-none flex flex-col justify-between" style={{ paddingTop: 24, paddingBottom: 24, paddingLeft: (config.speakers?.ANNOTATION?.style?.annotationFollowGlobalPadding !== false) ? (previewChatLayout?.paddingLeft ?? previewChatLayout?.paddingX ?? 48) : 0, paddingRight: (config.speakers?.ANNOTATION?.style?.annotationFollowGlobalPadding !== false) ? (previewChatLayout?.paddingRight ?? previewChatLayout?.paddingX ?? 48) : 0 }}>
                   <div className="flex flex-col items-stretch gap-3 w-full">
                     {visibleAnnotations.filter((item) => config.speakers[item.speakerId]?.style?.annotationPosition === 'top').map((item) => {
                       const speaker = config.speakers[item.speakerId];

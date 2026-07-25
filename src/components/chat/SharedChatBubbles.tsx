@@ -39,6 +39,7 @@ export interface SharedChatSpeakerStyle {
   annotationAlign?: 'left' | 'center' | 'right';
   annotationTextAlign?: 'left' | 'center' | 'right';
   annotationMarginX?: number;
+  annotationFollowGlobalPadding?: boolean;
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
 }
 
