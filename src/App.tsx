@@ -4487,10 +4487,10 @@ const [previewScale, setPreviewScale] = useState(1);
 
     switch (mode) {
       case 'center-horizontal':
-        nextOffsetX = 0;
+        nextOffsetX = Math.round((activeInsertImageSlide.offsetX ?? 0) + canvasWidth / 2 - boundsCenterX);
         break;
       case 'center-vertical':
-        nextOffsetY = 0;
+        nextOffsetY = Math.round((activeInsertImageSlide.offsetY ?? 0) + canvasHeight / 2 - boundsCenterY);
         break;
       case 'align-left':
         nextOffsetX = Math.round((activeInsertImageSlide.offsetX ?? 0) - activeInsertImageBounds.left);
