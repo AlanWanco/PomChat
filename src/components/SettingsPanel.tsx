@@ -2192,8 +2192,7 @@ export function SettingsPanel({
 
                 {backgroundSlides.length > 0 ? (
                   <>
-                    <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1 max-h-[360px] overflow-y-auto custom-scrollbar">
-                      {tabOrderedSlides.map((slide: any, index: number) => {
+                    <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1">                      {tabOrderedSlides.map((slide: any, index: number) => {
                         const fallbackLabel = slide.type === 'text' ? `${t('project.assetTypeText')}${index + 1}` : `${t('project.assetTypeImage')}${index + 1}`;
                         const label = (slide.name || '').trim() || fallbackLabel;
                         const isActive = (currentBackgroundSlide?.id || activeBackgroundSlideTab) === slide.id;
