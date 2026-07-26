@@ -41,7 +41,7 @@ interface SettingsPanelProps {
   onLanguageChange: (language: Language) => void;
   onThemeChange: (isDark: boolean) => void;
   settingsPosition: 'left' | 'right';
-  onPositionChange: (pos: 'left' | 'right') => void;
+  onPositionChange?: (pos: 'left' | 'right') => void;
   onClose: () => void;
   onSave: () => void;
   showToast: (msg: string) => void;
@@ -117,7 +117,6 @@ export function SettingsPanel({
   config, onConfigChange, onConfigPreviewChange,
   isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, uiFontScale, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onUiFontScaleChange, onProxyChange, onLanguageChange, onThemeChange, 
   onProjectAssetsCacheEnabledChange,
-  settingsPosition, onPositionChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
   annotationPresets, onAnnotationPresetsChange,
   fontPresets, onFontPresetsChange,
@@ -1369,26 +1368,6 @@ export function SettingsPanel({
               <div className="flex items-center justify-between text-xs opacity-70">
                 <span>{t('global.uiFontScaleHint')}</span>
                 <span className="font-mono">{Math.round(uiFontScale * 100)}%</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.position')}</label>
-              <div className="flex rounded-lg p-1" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
-                <button 
-                  onClick={() => onPositionChange('left')}
-                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm transition-colors"
-                  style={settingsPosition === 'left' ? { backgroundColor: uiTheme.panelBg, color: isDarkMode ? uiTheme.text : themeColor, boxShadow: `0 4px 10px ${uiTheme.shadow}` } : { color: uiTheme.textSoft }}
-                >
-                  <ArrowLeftRight size={14} /> {t('global.position.left')}
-                </button>
-                <button 
-                  onClick={() => onPositionChange('right')}
-                  className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-sm transition-colors"
-                  style={settingsPosition === 'right' ? { backgroundColor: uiTheme.panelBg, color: isDarkMode ? uiTheme.text : themeColor, boxShadow: `0 4px 10px ${uiTheme.shadow}` } : { color: uiTheme.textSoft }}
-                >
-                  <ArrowLeftRight size={14} /> {t('global.position.right')}
-                </button>
               </div>
             </div>
 
