@@ -2173,7 +2173,7 @@ export function SettingsPanel({
 
                 {backgroundSlides.length > 0 ? (
                   <>
-                    <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1">                      {tabOrderedSlides.map((slide: any, index: number) => {
+                    <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1 max-h-[260px] overflow-y-auto custom-scrollbar">                      {tabOrderedSlides.map((slide: any, index: number) => {
                         const fallbackLabel = slide.type === 'text' ? `${t('project.assetTypeText')}${index + 1}` : `${t('project.assetTypeImage')}${index + 1}`;
                         const label = (slide.name || '').trim() || fallbackLabel;
                         const isActive = (currentBackgroundSlide?.id || activeBackgroundSlideTab) === slide.id;
@@ -2350,13 +2350,25 @@ export function SettingsPanel({
                         )}
 
                         <div className="space-y-1.5">
-                          <button type="button" onClick={() => {
-                            onSeek?.(currentBackgroundSlide.start ?? 0);
-                            onEditInsertImage?.(currentBackgroundSlide.id);
-                          }} className="w-full h-8 rounded-md border px-2.5 text-[0.6875rem] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
-                            <Pencil size={14} style={{ color: secondaryThemeColor }} />
-                            {currentBackgroundSlide.type === 'text' ? t('project.editTextAsset') : t('project.editImageAsset')}
-                          </button>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => {
+                              onSeek?.(currentBackgroundSlide.start ?? 0);
+                              onEditInsertImage?.(currentBackgroundSlide.id);
+                            }} className="flex-1 h-8 rounded-md border px-2.5 text-[0.6875rem] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
+                              <Pencil size={14} style={{ color: secondaryThemeColor }} />
+                              {currentBackgroundSlide.type === 'text' ? t('project.editTextAsset') : t('project.editImageAsset')}
+                            </button>
+                            <button type="button" onClick={() => {
+                              const duration = (currentBackgroundSlide.end ?? 0) - (currentBackgroundSlide.start ?? 0);
+                              updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
+                                ...slide,
+                                start: Number(currentTime.toFixed(2)),
+                                end: Number((Number(currentTime.toFixed(2)) + Math.max(0.01, duration)).toFixed(2)),
+                              }));
+                            }} className="shrink-0 h-8 rounded-md border px-2 text-xs transition-colors inline-flex items-center justify-center" title={t('project.shiftToCurrentTime')} style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg, color: uiTheme.text }}>
+                              <SkipForward size={14} style={{ color: secondaryThemeColor, transform: 'scaleX(-1)' }} />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -2367,7 +2379,7 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.start ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Math.max(0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                               <button type="button" onClick={() => onSeek?.(currentBackgroundSlide.start ?? 0)} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.jumpToTime')}>
-                                <SkipForward size={12} />
+                                <SkipForward size={12} style={{ transform: 'scaleX(-1)' }} />
                               </button>
                               <button type="button" onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Number(currentTime.toFixed(2)) }))} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.useCurrentTime')}>
                                 <Clock3 size={12} />
