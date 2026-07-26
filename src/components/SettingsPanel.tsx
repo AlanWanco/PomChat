@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
@@ -204,7 +205,7 @@ export function SettingsPanel({
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const [speakerSubTab, setSpeakerSubTab] = useState<'speakers' | 'annotation'>('speakers');
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
-  const [hoveredLayerPreview, setHoveredLayerPreview] = useState<{ type: 'image' | 'text'; image?: string; text?: string; textColor?: string; fontFamily?: string; fontSize?: number; fontWeight?: string } | null>(null);
+  const [hoveredLayerPreview, setHoveredLayerPreview] = useState<{ type: 'image' | 'text'; image?: string; text?: string; textColor?: string; fontFamily?: string; fontSize?: number; fontWeight?: string; x: number; y: number } | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
   const [hoveredSettingsSection, setHoveredSettingsSection] = useState<string>('');
@@ -2203,7 +2204,6 @@ export function SettingsPanel({
                             key={slide.id}
                             data-slide-tab-id={slide.id}
                             draggable
-                            onMouseEnter={() => setHoveredLayerPreview(slide.type === 'image' && slide.image ? { type: 'image', image: previewSrc ?? undefined } : slide.type === 'text' ? { type: 'text', text: slide.text, textColor: slide.textColor, fontFamily: slide.fontFamily, fontSize: slide.fontSize, fontWeight: slide.fontWeight } : null)}
                             onMouseLeave={() => setHoveredLayerPreview(null)}
                             onDragStart={(event) => {
                               event.dataTransfer.effectAllowed = 'move';
@@ -2246,7 +2246,7 @@ export function SettingsPanel({
                                 <ImageIcon size={12} style={{ color: uiTheme.textMuted }} />
                               )}
                             </div>
-                            <span className="shrink-0 inline-flex items-center justify-center text-[0.625rem]" style={{ color: slide.type === 'text' ? secondaryThemeColor : themeColor }}>
+                            <span className="shrink-0 inline-flex items-center justify-center text-[0.625rem] cursor-pointer" style={{ color: slide.type === 'text' ? secondaryThemeColor : themeColor }} onMouseEnter={(e) => setHoveredLayerPreview(slide.type === 'image' && slide.image ? { type: 'image', x: e.clientX, y: e.clientY, image: previewSrc ?? undefined } : slide.type === 'text' ? { type: 'text', x: e.clientX, y: e.clientY, text: slide.text, textColor: slide.textColor, fontFamily: slide.fontFamily, fontSize: slide.fontSize, fontWeight: slide.fontWeight } : null)}>
                               {slide.type === 'text' ? <Type size={10} /> : <ImageIcon size={10} />}
                             </span>
                             <span className="flex-1 truncate" style={{ color: isActive ? uiTheme.text : uiTheme.textMuted }}>{label}</span>
@@ -2258,15 +2258,16 @@ export function SettingsPanel({
                       })}
                     </div>
 
-                    {hoveredLayerPreview && (
-                      <div className="rounded-lg border p-3 shadow-lg" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
+                    {hoveredLayerPreview && typeof document !== 'undefined' ? createPortal(
+                      <div className="fixed z-[9999] rounded-lg border shadow-xl pointer-events-none" style={{ left: Math.min(hoveredLayerPreview.x + 12, window.innerWidth - 260), top: Math.min(hoveredLayerPreview.y - 20, window.innerHeight - 200), borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated, boxShadow: `0 8px 28px ${secondaryThemeColor}22, 0 0 0 1px ${secondaryThemeColor}18` }}>
                         {hoveredLayerPreview.type === 'image' && hoveredLayerPreview.image ? (
-                          <img src={resolveAssetSrc ? resolveAssetSrc(hoveredLayerPreview.image) : hoveredLayerPreview.image} alt="" className="max-w-full max-h-40 object-contain rounded" referrerPolicy="no-referrer" />
+                          <img src={resolveAssetSrc ? resolveAssetSrc(hoveredLayerPreview.image) : hoveredLayerPreview.image} alt="" className="max-w-[240px] max-h-[160px] object-contain rounded" referrerPolicy="no-referrer" />
                         ) : hoveredLayerPreview.type === 'text' ? (
-                          <div className="text-sm leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto" style={{ color: hoveredLayerPreview.textColor || uiTheme.text, fontFamily: hoveredLayerPreview.fontFamily || 'system-ui', fontSize: `${Math.min(20, (hoveredLayerPreview.fontSize ?? 96) / 6)}px`, fontWeight: hoveredLayerPreview.fontWeight || '700' }}>{hoveredLayerPreview.text}</div>
+                          <div className="p-3 text-sm leading-relaxed whitespace-pre-wrap max-w-[240px] max-h-[160px] overflow-y-auto" style={{ color: hoveredLayerPreview.textColor || uiTheme.text, fontFamily: hoveredLayerPreview.fontFamily || 'system-ui', fontSize: `${Math.min(18, (hoveredLayerPreview.fontSize ?? 96) / 6)}px`, fontWeight: hoveredLayerPreview.fontWeight || '700' }}>{hoveredLayerPreview.text}</div>
                         ) : null}
-                      </div>
-                    )}
+                      </div>,
+                      document.body
+                    ) : null}
 
                     {currentBackgroundSlide ? (
                       <div className="space-y-3">
