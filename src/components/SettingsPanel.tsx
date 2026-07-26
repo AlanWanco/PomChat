@@ -2238,7 +2238,7 @@ export function SettingsPanel({
                     </div>
 
                     {hoveredLayerPreview && typeof document !== 'undefined' ? createPortal(
-                      <div className="fixed z-[9999] rounded-lg border shadow-xl pointer-events-none" style={{ left: Math.min(hoveredLayerPreview.x + 12, window.innerWidth - 260), top: Math.min(hoveredLayerPreview.y - 20, window.innerHeight - 200), borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated, boxShadow: `0 8px 28px ${secondaryThemeColor}22, 0 0 0 1px ${secondaryThemeColor}18` }}>
+                      <div className="fixed z-[9999] rounded-lg border shadow-xl pointer-events-none animate-[slideRight_200ms_ease-out]" style={{ left: Math.min(hoveredLayerPreview.x + 12, window.innerWidth - 260), top: Math.min(hoveredLayerPreview.y - 20, window.innerHeight - 200), borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated, boxShadow: `0 8px 28px ${secondaryThemeColor}22, 0 0 0 1px ${secondaryThemeColor}18`, animation: 'slideRight 200ms ease-out' }}>
                         {hoveredLayerPreview.type === 'image' && hoveredLayerPreview.image ? (
                           <img src={resolveAssetSrc ? resolveAssetSrc(hoveredLayerPreview.image) : hoveredLayerPreview.image} alt="" className="max-w-[240px] max-h-[160px] object-contain rounded" referrerPolicy="no-referrer" />
                         ) : hoveredLayerPreview.type === 'text' ? (

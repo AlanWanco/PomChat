@@ -167,3 +167,14 @@ textarea,
     transform: rotate(0deg) scale(1);
   }
 }
+
+@keyframes slideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
