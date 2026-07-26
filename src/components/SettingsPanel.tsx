@@ -1160,7 +1160,7 @@ export function SettingsPanel({
             onClick={() => setActiveTab('speakers')}
           >
             {speakerSubTab === 'annotation' ? t('tab.annotation') : t('tab.speakers')}
-            <div className="absolute top-full left-0 z-50 hidden group-hover:block min-w-[8rem] rounded-md border py-1 shadow-xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div className="absolute top-full left-0 z-50 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 -translate-y-1 group-hover:translate-y-0 min-w-[8rem] rounded-md border py-1 shadow-xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2"
                 style={{ backgroundColor: speakerSubTab === 'speakers' ? `${secondaryThemeColor}14` : 'transparent', color: speakerSubTab === 'speakers' ? secondaryThemeColor : uiTheme.text }}
