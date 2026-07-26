@@ -204,6 +204,7 @@ export function SettingsPanel({
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const [speakerSubTab, setSpeakerSubTab] = useState<'speakers' | 'annotation'>('speakers');
   const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
+  const [hoveredLayerPreview, setHoveredLayerPreview] = useState<{ type: 'image' | 'text'; image?: string; text?: string; textColor?: string; fontFamily?: string; fontSize?: number; fontWeight?: string } | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
   const [hoveredSettingsSection, setHoveredSettingsSection] = useState<string>('');
@@ -2202,6 +2203,8 @@ export function SettingsPanel({
                             key={slide.id}
                             data-slide-tab-id={slide.id}
                             draggable
+                            onMouseEnter={() => setHoveredLayerPreview(slide.type === 'image' && slide.image ? { type: 'image', image: previewSrc ?? undefined } : slide.type === 'text' ? { type: 'text', text: slide.text, textColor: slide.textColor, fontFamily: slide.fontFamily, fontSize: slide.fontSize, fontWeight: slide.fontWeight } : null)}
+                            onMouseLeave={() => setHoveredLayerPreview(null)}
                             onDragStart={(event) => {
                               event.dataTransfer.effectAllowed = 'move';
                               event.dataTransfer.setData('application/x-pomchat-insert-image-tab', slide.id);
@@ -2254,6 +2257,16 @@ export function SettingsPanel({
                         );
                       })}
                     </div>
+
+                    {hoveredLayerPreview && (
+                      <div className="rounded-lg border p-3 shadow-lg" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
+                        {hoveredLayerPreview.type === 'image' && hoveredLayerPreview.image ? (
+                          <img src={resolveAssetSrc ? resolveAssetSrc(hoveredLayerPreview.image) : hoveredLayerPreview.image} alt="" className="max-w-full max-h-40 object-contain rounded" referrerPolicy="no-referrer" />
+                        ) : hoveredLayerPreview.type === 'text' ? (
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto" style={{ color: hoveredLayerPreview.textColor || uiTheme.text, fontFamily: hoveredLayerPreview.fontFamily || 'system-ui', fontSize: `${Math.min(20, (hoveredLayerPreview.fontSize ?? 96) / 6)}px`, fontWeight: hoveredLayerPreview.fontWeight || '700' }}>{hoveredLayerPreview.text}</div>
+                        ) : null}
+                      </div>
+                    )}
 
                     {currentBackgroundSlide ? (
                       <div className="space-y-3">
