@@ -900,7 +900,7 @@ export const PlayerControls = memo(function PlayerControls({
   // Removed manual Sync effect since WaveSurfer syncs via the media element automatically.
   // UI time display is read directly from the audio element.
 
-  const rates = [0.5, 1.0, 1.25, 1.5, 2.0];
+  const rates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -991,9 +991,15 @@ export const PlayerControls = memo(function PlayerControls({
           )}
           {showWaveformContainer && waveformHoverPreview && waveformDuration > 0 && (
             <div
-              className="absolute bottom-full mb-2 px-2 py-1 rounded-md text-[0.625rem] font-mono z-[65] pointer-events-none whitespace-nowrap -translate-x-1/2"
+              className="fixed z-[9999] px-2 py-1 rounded-md text-[0.625rem] font-mono pointer-events-none whitespace-nowrap -translate-x-1/2"
+              ref={(el) => {
+                if (el && waveformRef.current) {
+                  const rect = waveformRef.current.getBoundingClientRect();
+                  el.style.left = `${rect.left + waveformHoverPreview.x}px`;
+                  el.style.top = `${rect.top - 28}px`;
+                }
+              }}
               style={{
-                left: `${waveformHoverPreview.x}px`,
                 backgroundColor: isDarkMode ? `${themeColor}F2` : uiTheme.panelBgElevated,
                 color: isDarkMode ? '#ffffff' : uiTheme.text,
                 border: `1px solid ${secondaryThemeColor}`,
