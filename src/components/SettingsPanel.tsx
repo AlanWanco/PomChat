@@ -340,29 +340,12 @@ export function SettingsPanel({
 
   // Keep tabOrderIds in sync when slides are added/removed (not during drags)
   useEffect(() => {
-    if (draggingBackgroundSlideId) return; // don't resync during drag
-    // New slides are inserted in visual layer order: overlay (above) first, then background (below)
-    const aboveIds: string[] = backgroundSlides
-      .filter((s: any) => s.layer === 'overlay')
-      .sort((a: any, b: any) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0))
-      .map((s: any) => s.id as string);
-    const belowIds: string[] = backgroundSlides
-      .filter((s: any) => (s.layer || 'background') === 'background')
-      .sort((a: any, b: any) => (a.backgroundOrder ?? 0) - (b.backgroundOrder ?? 0))
-      .map((s: any) => s.id as string);
+    if (draggingBackgroundSlideId) return;
+    const aboveIds: string[] = backgroundSlides.filter((s: any) => s.layer === 'overlay').sort((a: any, b: any) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0)).map((s: any) => s.id as string);
+    const belowIds: string[] = backgroundSlides.filter((s: any) => (s.layer || 'background') === 'background').sort((a: any, b: any) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0)).map((s: any) => s.id as string);
     const allIds = [...aboveIds, ...belowIds];
-    setTabOrderIds((prev) => {
-      // Keep existing order, add new ones at end (in layer order), remove deleted ones
-      const kept = prev.filter((id) => allIds.includes(id));
-      const added = allIds.filter((id) => !kept.includes(id));
-      const next = [...kept, ...added];
-      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
-        return prev;
-      }
-      return next;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backgroundSlides.map((s: any) => s.id).join(',')]);
+    setTabOrderIds((prev) => { if (prev.length === allIds.length && prev.every((id, i) => id === allIds[i])) return prev; return allIds; });
+  }, [backgroundSlides.map((s: any) => `${s.id}:${s.backgroundOrder ?? 0}:${s.overlayOrder ?? 0}:${s.layer || 'background'}`).join(',')]);
 
   // Tabs rendered in tabOrderIds order (falls back to backgroundSlides order when tabOrderIds empty)
   const tabOrderedSlides: any[] = tabOrderIds.length > 0
@@ -554,7 +537,7 @@ export function SettingsPanel({
     const sameLayerSlides = backgroundSlides
       .filter((slide: any) => (slide.layer || 'background') === (sourceSlide.layer || 'background'))
       .sort((a: any, b: any) => ((a[layerKey] ?? 0) - (b[layerKey] ?? 0)));
-    const clampedIndex = Math.max(0, Math.min(sameLayerSlides.length - 1, nextOrder - 1));
+    const clampedIndex = Math.max(0, Math.min(sameLayerSlides.length - 1, sameLayerSlides.length - nextOrder));
     const reorderedLayerSlides = sameLayerSlides.filter((slide: any) => slide.id !== slideId);
     const movingSlide = sameLayerSlides.find((slide: any) => slide.id === slideId);
     if (!movingSlide) return;
@@ -564,8 +547,8 @@ export function SettingsPanel({
       if (replacementIndex === -1) return item;
       return {
         ...item,
-        backgroundOrder: item.layer === 'background' ? replacementIndex : item.backgroundOrder,
-        overlayOrder: item.layer !== 'background' ? replacementIndex : item.overlayOrder,
+        backgroundOrder: item.layer === 'background' ? (reorderedLayerSlides.length - 1 - replacementIndex) : item.backgroundOrder,
+        overlayOrder: item.layer !== 'background' ? (reorderedLayerSlides.length - 1 - replacementIndex) : item.overlayOrder,
       };
     });
     updateBackgroundSlides(nextSlides);
@@ -575,16 +558,25 @@ export function SettingsPanel({
 
   const reorderBackgroundSlideTabs = (fromId: string, toId: string) => {
     if (!fromId || !toId || fromId === toId) return;
-    // Only reorder the tab display order — completely independent of layer/backgroundOrder/overlayOrder
-    setTabOrderIds((prev) => {
-      const fromIndex = prev.indexOf(fromId);
-      const toIndex = prev.indexOf(toId);
-      if (fromIndex < 0 || toIndex < 0) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
+    const fromSlide = backgroundSlides.find((s: any) => s.id === fromId);
+    const toSlide = backgroundSlides.find((s: any) => s.id === toId);
+    if (!fromSlide || !toSlide) return;
+    const fromLayer = fromSlide.layer || 'background';
+    const toLayer = toSlide.layer || 'background';
+    if (fromLayer !== toLayer) return;
+    const orderKey = fromLayer === 'overlay' ? 'overlayOrder' : 'backgroundOrder';
+    const sameLayerSlides = backgroundSlides.filter((s: any) => (s.layer || 'background') === fromLayer).sort((a: any, b: any) => (b[orderKey] ?? 0) - (a[orderKey] ?? 0));
+    const fromIndex = sameLayerSlides.findIndex((s: any) => s.id === fromId);
+    const toIndex = sameLayerSlides.findIndex((s: any) => s.id === toId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const reordered = [...sameLayerSlides];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    const updates: Record<string, number> = {};
+    const maxIndex = reordered.length - 1;
+    reordered.forEach((s: any, i: number) => { const nextOrder = maxIndex - i; if ((s[orderKey] ?? 0) !== nextOrder) updates[s.id] = nextOrder; });
+    if (Object.keys(updates).length === 0) return;
+    onConfigChange({ ...config, background: { ...config.background, slides: backgroundSlides.map((slide: any) => updates[slide.id] !== undefined ? { ...slide, [orderKey]: updates[slide.id] } : slide) } });
   };
 
   const updateChatLayout = (key: string, value: any) => {
@@ -2187,28 +2179,29 @@ export function SettingsPanel({
                   <label className="flex items-center gap-2 text-sm font-medium" style={{ color: uiTheme.text }}>
                     <LayoutTemplate size={14} /> {t('project.insertImages')}
                   </label>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => addBackgroundSlide('image')} className="text-xs flex items-center gap-1" style={{ color: secondaryThemeColor }}>
-                      <Plus size={12} /> {t('project.addImageAsset')}
-                    </button>
-                    <button type="button" onClick={() => addBackgroundSlide('text')} className="text-xs flex items-center gap-1" style={{ color: themeColor }}>
-                      <Plus size={12} /> {t('project.addTextAsset')}
-                    </button>
-                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => addBackgroundSlide('image')} className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-colors" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: secondaryThemeColor }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = uiTheme.panelBgSubtle; }}>
+                    <ImageIcon size={16} /> {t('project.addImageAsset')}
+                  </button>
+                  <button type="button" onClick={() => addBackgroundSlide('text')} className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-colors" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: themeColor }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${themeColor}14`; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = uiTheme.panelBgSubtle; }}>
+                    <Type size={16} /> {t('project.addTextAsset')}
+                  </button>
                 </div>
 
                 {backgroundSlides.length > 0 ? (
                   <>
-                    <div ref={backgroundSlideTabsRef} className="flex overflow-x-auto custom-scrollbar pb-2 gap-2 border-b" style={{ borderColor: uiTheme.border }}>
+                    <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1 max-h-[360px] overflow-y-auto custom-scrollbar">
                       {tabOrderedSlides.map((slide: any, index: number) => {
                         const fallbackLabel = slide.type === 'text' ? `${t('project.assetTypeText')}${index + 1}` : `${t('project.assetTypeImage')}${index + 1}`;
                         const label = (slide.name || '').trim() || fallbackLabel;
                         const isActive = (currentBackgroundSlide?.id || activeBackgroundSlideTab) === slide.id;
+                        const previewSrc = slide.type === 'image' && slide.image ? (resolveAssetSrc ? resolveAssetSrc(slide.image) : slide.image) : null;
                         return (
-                          <button
+                          <div
                             key={slide.id}
                             data-slide-tab-id={slide.id}
-                            type="button"
                             draggable
                             onDragStart={(event) => {
                               event.dataTransfer.effectAllowed = 'move';
@@ -2234,14 +2227,31 @@ export function SettingsPanel({
                                 onSeek(slide.start);
                               }
                             }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors border inline-flex items-center gap-1.5"
-                            style={isActive ? { backgroundColor: themeColor, borderColor: themeColor, color: '#ffffff' } : { backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}
+                            className="flex items-center gap-2 px-2 py-2 rounded-lg text-xs transition-colors border cursor-pointer"
+                            style={isActive ? { backgroundColor: `${themeColor}14`, borderColor: themeColor } : { backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border }}
                           >
-                            <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[0.625rem] font-bold" style={{ backgroundColor: isActive ? 'rgba(255,255,255,0.18)' : (slide.type === 'text' ? `${secondaryThemeColor}18` : `${themeColor}18`), color: isActive ? '#ffffff' : (slide.type === 'text' ? secondaryThemeColor : themeColor) }}>
-                              {slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')}
+                            <span className="shrink-0 w-6 text-center text-[0.625rem] font-mono font-bold" style={{ color: slide.layer === 'overlay' ? secondaryThemeColor : themeColor }}>
+                              {((slide.layer === 'overlay' ? (slide.overlayOrder ?? 0) : (slide.backgroundOrder ?? 0)) + 1)}
                             </span>
-                            {label}
-                          </button>
+                            <div className="shrink-0 w-8 h-8 rounded border flex items-center justify-center overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                              {slide.type === 'image' && previewSrc ? (
+                                <img src={previewSrc} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                              ) : slide.type === 'text' ? (
+                                <div className="px-1 text-[0.5rem] leading-tight text-center line-clamp-2" style={{ color: slide.textColor || uiTheme.textMuted }}>
+                                  {(slide.text || '').slice(0, 6)}
+                                </div>
+                              ) : (
+                                <ImageIcon size={12} style={{ color: uiTheme.textMuted }} />
+                              )}
+                            </div>
+                            <span className="shrink-0 inline-flex items-center justify-center text-[0.625rem]" style={{ color: slide.type === 'text' ? secondaryThemeColor : themeColor }}>
+                              {slide.type === 'text' ? <Type size={10} /> : <ImageIcon size={10} />}
+                            </span>
+                            <span className="flex-1 truncate" style={{ color: isActive ? uiTheme.text : uiTheme.textMuted }}>{label}</span>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); updateBackgroundSlide(slide.id, (s) => ({ ...s, visible: s.visible === false })); }} className="shrink-0 p-1 rounded hover:opacity-80" style={{ color: slide.visible === false ? uiTheme.textMuted : secondaryThemeColor }} title={slide.visible === false ? t('project.showAsset') : t('project.hideAsset')}>{slide.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); duplicateBackgroundSlide(slide.id); }} className="shrink-0 p-1 rounded hover:opacity-80" style={{ color: secondaryThemeColor }} title={t('project.duplicateAsset')}><Copy size={12} /></button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); removeBackgroundSlide(slide.id); }} className="shrink-0 p-1 rounded hover:opacity-80" style={{ color: '#ef4444' }}><Trash2 size={12} /></button>
+                          </div>
                         );
                       })}
                     </div>
