@@ -386,18 +386,25 @@ const sanitizeProjectConfig = (parsed: any) => {
           }))
         : []
     },
-    speakers: Object.fromEntries(
-      Object.entries({ ...DEFAULT_PROJECT_CONFIG.speakers, ...(parsed?.speakers || {}) }).map(([speakerId, speaker]: [string, any]) => [
-        speakerId,
-        {
-          ...speaker,
-          style: {
-            ...DEFAULT_BUBBLE_STYLE,
-            ...(speaker?.style || {})
+    speakers: (() => {
+      const parsedSpeakers = parsed?.speakers || {};
+      const hasNonAnnotationSpeaker = Object.values(parsedSpeakers).some((s: any) => s?.type !== 'annotation');
+      const baseSpeakers = hasNonAnnotationSpeaker
+        ? { ANNOTATION: DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION, ...parsedSpeakers }
+        : { ...DEFAULT_PROJECT_CONFIG.speakers, ...parsedSpeakers };
+      return Object.fromEntries(
+        Object.entries(baseSpeakers).map(([speakerId, speaker]: [string, any]) => [
+          speakerId,
+          {
+            ...speaker,
+            style: {
+              ...DEFAULT_BUBBLE_STYLE,
+              ...(speaker?.style || {})
+            }
           }
-        }
-      ])
-    ),
+        ])
+      );
+    })(),
     ui: {
       ...DEFAULT_UI_CONFIG,
       ...(parsed?.ui || {}),
