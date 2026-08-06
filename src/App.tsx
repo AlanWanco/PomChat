@@ -9,6 +9,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AssImportModal } from './components/AssImportModal';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
+import { StyleManagerModal } from './components/StyleManagerModal';
 import { BubbleSnapshotModal } from './components/BubbleSnapshotModal';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
 import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
@@ -1880,6 +1881,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showStyleManager, setShowStyleManager] = useState(false);
   const rememberRecentProject = useCallback((path: string | null | undefined) => {
     if (!path) return;
     setRecentProject(path);
@@ -6536,6 +6538,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }}
         onExportConfig={exportConfig}
         onOpenAbout={() => setShowAboutModal(true)}
+        onOpenStyleManager={() => setShowStyleManager(true)}
       />
 
       {!window.electron && (
@@ -7782,6 +7785,24 @@ const [previewScale, setPreviewScale] = useState(1);
         onCheckUpdates={() => { void handleCheckForUpdates(); }}
         isCheckingUpdates={isCheckingUpdates}
         updateResult={updateResult}
+      />
+
+      <StyleManagerModal
+        isOpen={showStyleManager}
+        isDarkMode={isDarkMode}
+        language={language}
+        themeColor={themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT)}
+        secondaryThemeColor={secondaryThemeColorState || SECONDARY_THEME_DEFAULT}
+        speakers={config.speakers || {}}
+        fontPresets={fontPresets}
+        speakerPresets={presets}
+        onSpeakerPresetsChange={setPresets}
+        onSave={(nextSpeakers) => {
+          pushHistorySnapshot();
+          setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
+          showToast(t('speakers.presetSaved', { name: '' }));
+        }}
+        onClose={() => setShowStyleManager(false)}
       />
 
       {projectResourceCheckModal}

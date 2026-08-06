@@ -337,12 +337,18 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       text: sub.text,
       visible: sub.visible !== false,
     });
+    if (setEditingSub) setEditingSub({ id: sub.id, start: sub.start, end: sub.end, text: sub.text });
   };
 
   const openSpeakerModal = (sub: SubtitleItem) => {
     setContextMenu(null);
     setSpeakerModalSubtitleId(sub.id);
     setModalSpeakerId(sub.speakerId);
+  };
+
+  const openDurationModal = (sub: SubtitleItem) => {
+    setContextMenu(null);
+    if (setEditingSub) setEditingSub({ id: sub.id, start: sub.start, end: sub.end, text: sub.text });
   };
 
   const handleCopySubtitleText = async (sub: SubtitleItem) => {
@@ -396,6 +402,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       visible: modalEditForm.visible,
     });
     setEditModalSubtitleId(null);
+    if (setEditingSub) setEditingSub(null);
   };
 
   const saveSpeakerModal = () => {
@@ -452,6 +459,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     });
     
     setInlineEditingId(null);
+    if (setEditingSub) setEditingSub(null);
   };
 
   const insertImageMarkdown = (markdown: string, textarea: HTMLTextAreaElement | null, mode: 'inline' | 'modal') => {
@@ -546,11 +554,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   // Global shortcuts for Region Edit
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && editingSub && !inlineEditingId) {
+      const isEditableTarget = () => {
+        const tag = (e.target as HTMLElement)?.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
+      };
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && editingSub && !inlineEditingId && !isEditableTarget()) {
         e.preventDefault();
         if (setEditingSub) setEditingSub(null);
       }
-
       if (e.key === 'Escape' && editingSub && !inlineEditingId) {
         e.preventDefault();
         if (setEditingSub) setEditingSub(null);
@@ -1142,6 +1153,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             { key: 'edit', label: t('subtitle.contextEdit'), action: () => openEditModal(contextMenu.subtitle) },
             { key: 'copy-text', label: t('subtitle.contextCopyText'), action: () => { void handleCopySubtitleText(contextMenu.subtitle); } },
             { key: 'speaker', label: t('subtitle.contextChangeSpeaker'), action: () => openSpeakerModal(contextMenu.subtitle) },
+            { key: 'duration', label: t('subtitle.contextAdjustDuration'), action: () => openDurationModal(contextMenu.subtitle) },
           ].map((item, index) => (
             <button
               key={item.key}
@@ -1180,7 +1192,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 <input value={modalEditForm.end} onChange={(e) => setModalEditForm((prev) => ({ ...prev, end: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
               </div>
               <div className="space-y-1.5">
-                <textarea ref={modalEditTextareaRef} value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} onPaste={(e) => { void handleModalEditorPaste(e); }} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+                <textarea ref={modalEditTextareaRef} value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} onPaste={(e) => { void handleModalEditorPaste(e); }} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveModalEdit(); } }} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
                 <div className="text-[0.6875rem] leading-5" style={{ color: uiTheme.textMuted }}>{t('subtitle.markdownHint')}</div>
                 <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>{t('subtitle.imagePasteHint')}</div>
               </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircle, Undo2, Redo2 } from 'lucide-react';
+import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircle, Undo2, Redo2, Settings } from 'lucide-react';
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
 
@@ -33,6 +33,7 @@ interface MenuBarProps {
   onExportVideo: () => void;
   onExportConfig: () => void;
   onOpenAbout: () => void;
+  onOpenStyleManager: () => void;
 }
 
 export function MenuBar({
@@ -63,7 +64,8 @@ export function MenuBar({
   onCloseProject,
   onExportVideo,
   onExportConfig,
-  onOpenAbout
+  onOpenAbout,
+  onOpenStyleManager
 }: MenuBarProps) {
   const isWebMode = !window.electron;
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -262,6 +264,13 @@ export function MenuBar({
                 className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
               >
                 <Subtitles size={14} /> {t('menu.sortSubtitles')}
+              </button>
+              <button
+                onClick={() => executeAction(onOpenStyleManager)}
+                disabled={!projectPath}
+                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath && 'opacity-50 cursor-not-allowed'}`}
+              >
+                <Settings size={14} /> {t('menu.styleManager')}
               </button>
             </div>
           )}

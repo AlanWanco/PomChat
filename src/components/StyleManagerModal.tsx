@@ -1,0 +1,397 @@
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, Copy, Save, X, Sparkles } from 'lucide-react';
+import { translate, type Language } from '../i18n';
+import { createThemeTokens } from '../theme';
+import type { SpeakerConfig, FontPreset } from '../remotion/types';
+
+interface StyleManagerModalProps {
+  isOpen: boolean;
+  language: Language;
+  isDarkMode: boolean;
+  themeColor: string;
+  secondaryThemeColor: string;
+  speakers: Record<string, SpeakerConfig>;
+  fontPresets?: Record<string, FontPreset>;
+  speakerPresets?: Record<string, any>;
+  onSave: (speakers: Record<string, SpeakerConfig>) => void;
+  onSpeakerPresetsChange?: (presets: Record<string, any>) => void;
+  onClose: () => void;
+}
+
+const DEFAULT_SPEAKER: SpeakerConfig = {
+  name: '', avatar: '', side: 'left', type: 'speaker',
+  style: {
+    bgColor: '#2563eb', textColor: '#ffffff', nameColor: '#ffffff',
+    nameStrokeWidth: 0, nameStrokeColor: '#000000', borderRadius: 28,
+    opacity: 0.9, borderWidth: 0, avatarBorderColor: '#ffffff',
+    borderColor: '#ffffff', borderOpacity: 1, margin: 14,
+    paddingX: 20, paddingY: 12, shadowSize: 1,
+    fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal',
+    animationStyle: 'rise',
+  },
+};
+
+const SYSTEM_FONTS = ['system-ui', 'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans'];
+
+export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, onSave, onSpeakerPresetsChange, onClose }: StyleManagerModalProps) {
+  const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
+  const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
+  const [leftTab, setLeftTab] = useState<'speakers' | 'presets'>('speakers');
+  const [localPresets, setLocalPresets] = useState<Record<string, any>>({});
+  const [selectedPresetIds, setSelectedPresetIds] = useState<Set<string>>(new Set());
+  const [editingPresetName, setEditingPresetName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSpeakers(JSON.parse(JSON.stringify(speakers || {})));
+      setSelectedIds(new Set());
+      setEditingSpeakerId(null);
+      setLocalPresets(JSON.parse(JSON.stringify(speakerPresets || {})));
+      setSelectedPresetIds(new Set());
+      setEditingPresetName(null);
+    }
+  }, [isOpen, speakers, speakerPresets]);
+
+  if (!isOpen) return null;
+
+  const editingSpeaker = editingSpeakerId ? localSpeakers[editingSpeakerId] : null;
+  const editingPreset = editingPresetName ? localPresets[editingPresetName] : null;
+  const ic = isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-900';
+
+  const handleAdd = () => {
+    let key = 'S'; for (let i = 0; i < 99; i++) { key = i === 0 ? 'S' : `S_${i + 1}`; if (!localSpeakers[key]) break; }
+    setLocalSpeakers({ ...localSpeakers, [key]: { ...JSON.parse(JSON.stringify(DEFAULT_SPEAKER)), name: key } });
+    setEditingSpeakerId(key);
+    setSelectedIds(new Set([key]));
+  };
+  const handleDelete = () => {
+    if (selectedIds.size === 0) return; const next = { ...localSpeakers }; selectedIds.forEach((id) => delete next[id]);
+    setLocalSpeakers(next); setSelectedIds(new Set()); if (editingSpeakerId && selectedIds.has(editingSpeakerId)) setEditingSpeakerId(null);
+  };
+  const handleDuplicate = () => {
+    if (selectedIds.size === 0) return; const next = { ...localSpeakers };
+    selectedIds.forEach((id) => { let ck = `${id}_copy`; let c = 1; while (next[ck]) { c++; ck = `${id}_copy${c}`; } next[ck] = JSON.parse(JSON.stringify(localSpeakers[id])); if (next[ck].name) next[ck].name = `${next[ck].name} (copy)`; });
+    setLocalSpeakers(next);
+  };
+  const handlePresetDelete = () => {
+    if (selectedPresetIds.size === 0 || !onSpeakerPresetsChange) return;
+    const next = { ...localPresets }; selectedPresetIds.forEach((id) => delete next[id]);
+    onSpeakerPresetsChange(next);
+    setLocalPresets(next);
+    setSelectedPresetIds(new Set());
+    if (editingPresetName && selectedPresetIds.has(editingPresetName)) setEditingPresetName(null);
+  };
+  const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig) => setLocalSpeakers((p) => ({ ...p, [id]: u(p[id]) }));
+  const updateStyle = (id: string, k: string, v: any) => setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], style: { ...(p[id]?.style || {}), [k]: v } } }));
+  const updatePresetStyle = (name: string, k: string, v: any) => {
+    const next = { ...localPresets, [name]: { ...localPresets[name], style: { ...(localPresets[name]?.style || {}), [k]: v } } };
+    setLocalPresets(next);
+    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+  };
+
+  const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined) => {
+    const presetEntries = Object.entries(fontPresets || {});
+    const presets = presetEntries.map(([id_, p]) => ({ label: p.name, value: p.family, id: id_ }));
+    const isPreset = presets.some((f) => f.value === (value || ''));
+    return (
+      <div className="space-y-1.5">
+        {presets.length > 0 && (
+          <select value={isPreset ? value : ''} onChange={(e) => { if (e.target.value) updateFn('fontFamily', e.target.value); }}
+            className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
+            <option value="">Font presets</option>
+            {presets.map((f) => <option key={f.id} value={f.value}>{f.label}</option>)}
+            {SYSTEM_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        )}
+        <input type="text" placeholder="Custom font name" value={value || ''} onChange={(e) => updateFn('fontFamily', e.target.value)}
+          className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+      </div>
+    );
+  };
+  const renderColor = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined) => (
+    <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
+      <input type="color" value={value || '#000000'} onChange={(e) => updateFn(key, e.target.value.toUpperCase())}
+        className="w-7 h-7 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0 shadow-sm"
+        style={{ WebkitAppearance: 'none' } as React.CSSProperties} />
+      <input type="text" value={(value || '').toUpperCase()} onChange={(e) => updateFn(key, e.target.value)}
+        onBlur={(e) => { const v = e.target.value.trim(); if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(v)) updateFn(key, v.toUpperCase()); }}
+        placeholder="#RRGGBB" className={`w-full rounded border px-2 py-1 text-[0.6875rem] font-mono focus:outline-none ${ic}`}
+        style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+    </div>
+  );
+  const renderNum = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min?: number, max?: number, step?: number) => {
+    const s = step || 1;
+    const safeVal = Number.isFinite(value ?? 0) ? (value ?? 0) : 0;
+    const applyDelta = (d: number) => {
+      let next = safeVal + d;
+      if (typeof min === 'number') next = Math.max(min, next);
+      if (typeof max === 'number') next = Math.min(max, next);
+      updateFn(key, Number(next.toFixed(s.toString().includes('.') ? s.toString().split('.')[1].length : 0)));
+    };
+    return (
+      <div className="relative">
+        <input type="number" min={min} max={max} step={s} value={safeVal} onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) updateFn(key, n); }}
+          className={`w-full border rounded px-2 py-1 text-xs focus:outline-none pr-8 ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+        <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-px">
+          <button type="button" onClick={() => applyDelta(s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▲</button>
+          <button type="button" onClick={() => applyDelta(-s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▼</button>
+        </div>
+      </div>
+    );
+  };
+  const renderRange = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min: number, max: number, step: number) => (
+    <div className="flex items-center gap-2"><input type="range" min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
+  );
+  const renderSel = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, opts: string[]) => (
+    <select value={value || ''} onChange={(e) => updateFn(key, e.target.value)}
+      className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
+      {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+
+  const modalBg = isDarkMode ? 'rgba(2, 6, 23, 0.72)' : 'rgba(15, 23, 42, 0.48)';
+  const sectionStyle = { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg };
+
+  const renderEditorFields = (style: any, updateFn: (k: string, v: any) => void) => (
+    <>
+      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.typography')}</span>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.font')}</span>{renderFontField(updateFn, style?.fontFamily)}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontSize')}</span>{renderNum(updateFn, 'fontSize', style?.fontSize, 8)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontWeight')}</span>{renderSel(updateFn, 'fontWeight', style?.fontWeight, ['normal','bold','100','300','500','700','900'])}</div>
+        </div>
+      </div>
+      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.name')}</span>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFont')}</span>{renderFontField(updateFn, style?.nameFontFamily)}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameColor')}</span>{renderColor(updateFn, 'nameColor', style?.nameColor)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFontWeight')}</span>{renderSel(updateFn, 'nameFontWeight', style?.nameFontWeight, ['normal','bold','100','300','500','700','900'])}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeColor')}</span>{renderColor(updateFn, 'nameStrokeColor', style?.nameStrokeColor)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeWidth')}</span>{renderNum(updateFn, 'nameStrokeWidth', style?.nameStrokeWidth, 0, 12)}</div>
+        </div>
+      </div>
+      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.colors')}</span>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor(updateFn, 'bgColor', style?.bgColor)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor(updateFn, 'textColor', style?.textColor)}</div>
+        </div>
+        <button onClick={() => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('speakers.swapBgText') || 'Swap'}</button>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05)}</div>
+      </div>
+      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.border')}</span>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderColor')}</span>{renderColor(updateFn, 'avatarBorderColor', style?.avatarBorderColor)}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderColor')}</span>{renderColor(updateFn, 'borderColor', style?.borderColor)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderWidth')}</span>{renderNum(updateFn, 'borderWidth', style?.borderWidth, 0, 10)}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderRadius')}</span>{renderNum(updateFn, 'borderRadius', style?.borderRadius, 0, 64)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderOpacity')}</span>{renderRange(updateFn, 'borderOpacity', style?.borderOpacity, 0, 1, 0.05)}</div>
+        </div>
+      </div>
+      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.layout')}</span>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingX')}</span>{renderNum(updateFn, 'paddingX', style?.paddingX, 0)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0)}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.margin')}</span>{renderNum(updateFn, 'margin', style?.margin, 0)}</div>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg, backdropFilter: 'blur(10px)' }} onClick={onClose}>
+      <div className="flex flex-col w-full max-w-[45rem] max-h-[85vh] overflow-hidden rounded-[28px] border shadow-2xl"
+        style={{ ...{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties, background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Banner Header */}
+        <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}24` }}>
+              <Sparkles size={12} /> {t('menu.styleManager')}
+            </div>
+            <h3 className="text-xl font-semibold" style={{ color: uiTheme.text }}>{t('speakers.title')}</h3>
+            <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>管理所有说话人的样式配置和预设</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: uiTheme.textMuted }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-b shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+          <button onClick={() => setLeftTab('speakers')} className={`flex-1 py-2 text-sm font-medium transition-colors ${leftTab === 'speakers' ? 'border-b-2' : ''}`}
+            style={leftTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft, borderColor: 'transparent' }}>
+            {t('speakers.title')}
+          </button>
+          <button onClick={() => setLeftTab('presets')} className={`flex-1 py-2 text-sm font-medium transition-colors ${leftTab === 'presets' ? 'border-b-2' : ''}`}
+            style={leftTab === 'presets' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft, borderColor: 'transparent' }}>
+            预设管理器
+          </button>
+        </div>
+
+        <div className="flex flex-1 min-h-0">
+          {/* Left Panel */}
+          <div className="w-60 shrink-0 border-r flex flex-col" style={{ borderColor: uiTheme.border }}>
+            {leftTab === 'speakers' ? (
+              <>
+                <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
+                  <span className="text-xs font-medium opacity-70">{Object.keys(localSpeakers).filter((k) => localSpeakers[k]?.type !== 'annotation').length} 个说话人</span>
+                  <button onClick={handleAdd} className="p-1.5 rounded-md hover:opacity-80" style={{ backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor }}><Plus size={14} /></button>
+                </div>
+                <div className="flex gap-1 px-3 py-2 border-b" style={{ borderColor: uiTheme.border }}>
+                  <button onClick={handleDelete} disabled={selectedIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedIds.size > 0 ? 1 : 0.4, backgroundColor: selectedIds.size > 0 ? 'rgba(239,68,68,0.12)' : 'transparent', color: selectedIds.size > 0 ? '#ef4444' : uiTheme.textMuted }}><Trash2 size={12} /> {t('common.delete')}</button>
+                  <button onClick={handleDuplicate} disabled={selectedIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedIds.size > 0 ? 1 : 0.4, backgroundColor: selectedIds.size > 0 ? `${secondaryThemeColor}14` : 'transparent', color: selectedIds.size > 0 ? secondaryThemeColor : uiTheme.textMuted }}><Copy size={12} /> {t('common.copy')}</button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  {Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation').map(([id, speaker]) => (
+                    <div key={id} onClick={() => { setEditingSpeakerId(id); setSelectedIds(new Set([id])); }}
+                      className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs"
+                      style={{ backgroundColor: editingSpeakerId === id ? `${themeColor}14` : 'transparent', borderColor: uiTheme.border, color: editingSpeakerId === id ? uiTheme.text : uiTheme.textMuted }}>
+                      <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
+                      <span className="truncate flex-1">{speaker.name || id}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
+                  <button onClick={() => { onSave(localSpeakers); onClose(); }} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90" style={{ backgroundColor: secondaryThemeColor }}><Save size={14} /> {t('settings.save') || 'Save'}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
+                  <span className="text-xs font-medium opacity-70">{Object.keys(localPresets).length} 个预设</span>
+                  <button onClick={() => {
+                    const name = `preset-${Date.now()}`;
+                    const next = { ...localPresets, [name]: { ...JSON.parse(JSON.stringify(DEFAULT_SPEAKER)), name } };
+                    setLocalPresets(next);
+                    setEditingPresetName(name);
+                    setSelectedPresetIds(new Set([name]));
+                    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                  }} className="p-1.5 rounded-md hover:opacity-80" style={{ backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor }}><Plus size={14} /></button>
+                </div>
+                <div className="flex gap-1 px-3 py-2 border-b" style={{ borderColor: uiTheme.border }}>
+                  <button onClick={handlePresetDelete} disabled={selectedPresetIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedPresetIds.size > 0 ? 1 : 0.4, backgroundColor: selectedPresetIds.size > 0 ? 'rgba(239,68,68,0.12)' : 'transparent', color: selectedPresetIds.size > 0 ? '#ef4444' : uiTheme.textMuted }}><Trash2 size={12} /> {t('common.delete')}</button>
+                  <button onClick={() => {
+                    if (selectedPresetIds.size === 0) return; const next = { ...localPresets };
+                    selectedPresetIds.forEach((name) => { let ck = `${name}_copy`; let c = 1; while (next[ck]) { c++; ck = `${name}_copy${c}`; } next[ck] = JSON.parse(JSON.stringify(localPresets[name])); if (next[ck].name) next[ck].name = `${next[ck].name} (copy)`; });
+                    setLocalPresets(next);
+                    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                  }} disabled={selectedPresetIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedPresetIds.size > 0 ? 1 : 0.4, backgroundColor: selectedPresetIds.size > 0 ? `${secondaryThemeColor}14` : 'transparent', color: selectedPresetIds.size > 0 ? secondaryThemeColor : uiTheme.textMuted }}><Copy size={12} /> {t('common.copy')}</button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  {Object.keys(localPresets).length > 0 ? (
+                    Object.entries(localPresets).map(([name, preset]) => (
+                      <div key={name} onClick={() => { setEditingPresetName(name); setSelectedPresetIds(new Set([name])); }}
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs"
+                        style={{ backgroundColor: editingPresetName === name ? `${themeColor}14` : 'transparent', borderColor: uiTheme.border, color: editingPresetName === name ? uiTheme.text : uiTheme.textMuted }}>
+                        <input type="checkbox" checked={selectedPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => togglePresetSelect(name)} style={{ accentColor: secondaryThemeColor }} />
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: preset?.style?.bgColor || '#888' }} />
+                        <span className="truncate flex-1">{name}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-sm opacity-50 p-4 text-center">暂无预设</div>
+                  )}
+                </div>
+                <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
+                  <button onClick={() => { if (onSpeakerPresetsChange) onSpeakerPresetsChange(localPresets); }} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90" style={{ backgroundColor: secondaryThemeColor }}><Save size={14} /> {t('settings.save') || 'Save'}</button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right Panel */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {leftTab === 'speakers' && editingSpeaker ? (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.title')}</span>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.name') || 'Name'}</span><input type="text" value={editingSpeaker.name || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, name: e.target.value }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} /></div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={editingSpeaker.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`}
+                        alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`; }}
+                      />
+                      <input type="text" value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }))} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                    </div>
+                  </div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设</span>
+                    <select value={editingSpeaker.preset || ''} onChange={(e) => {
+                      const val = e.target.value;
+                      updateSpeaker(editingSpeakerId!, (s) => {
+                        if (!val) return { ...s, preset: '' };
+                        const presetData = speakerPresets?.[val];
+                        if (!presetData) return s;
+                        return { ...s, preset: val, avatar: presetData.avatar || s.avatar, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } };
+                      });
+                    }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
+                      <option value="">{t('speakers.applyPreset') || 'Apply preset'}</option>
+                      {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
+                    <select value={editingSpeaker.side || 'left'} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, side: e.target.value as 'left' | 'right' }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
+                  </div>
+                </div>
+                {renderEditorFields(editingSpeaker.style, (k, v) => updateStyle(editingSpeakerId!, k, v))}
+              </div>
+            ) : leftTab === 'presets' && editingPreset ? (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">预设配置</span>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
+                    <input type="text" value={editingPresetName || ''} onChange={(e) => {
+                      const newName = e.target.value;
+                      if (newName && newName !== editingPresetName) {
+                        const next = { ...localPresets };
+                        next[newName] = next[editingPresetName!];
+                        delete next[editingPresetName!];
+                        setLocalPresets(next);
+                        setEditingPresetName(newName);
+                        if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                      }
+                    }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                  </div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={editingPreset.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`}
+                        alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }}
+                      />
+                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetStyle(editingPresetName!, 'avatar', e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                    </div>
+                  </div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
+                    <select value={editingPreset.side || 'left'} onChange={(e) => updatePresetStyle(editingPresetName!, 'side', e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
+                  </div>
+                </div>
+                {renderEditorFields(editingPreset.style, (k, v) => updatePresetStyle(editingPresetName!, k, v))}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-sm opacity-50">{t('speakers.applyPreset') || 'Select a speaker to edit'}</div>
+            )}
+            <div className="px-4 py-3 border-t flex justify-end" style={{ borderColor: uiTheme.border }}>
+              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.cancel')}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

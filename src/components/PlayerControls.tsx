@@ -978,7 +978,7 @@ export const PlayerControls = memo(function PlayerControls({
       >
       {showWaveformContainer && editingSub && regionTooltip && (
             <div
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 px-2 py-1 rounded-md text-[0.625rem] font-mono z-[70] pointer-events-none whitespace-nowrap"
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-6 px-2 py-1 rounded-md text-[0.625rem] font-mono z-[70] pointer-events-none whitespace-nowrap text-center"
               style={{
                 backgroundColor: isDarkMode ? `${themeColor}F2` : uiTheme.panelBgElevated,
                 color: isDarkMode ? '#ffffff' : uiTheme.text,
@@ -986,7 +986,8 @@ export const PlayerControls = memo(function PlayerControls({
                 boxShadow: isDarkMode ? `0 8px 22px ${secondaryThemeColor}22` : `0 8px 20px ${secondaryThemeColor}1A`
               }}
             >
-              {formatTime(regionTooltip.start)} - {formatTime(regionTooltip.end)}
+              <div className="text-[0.5625rem] opacity-70 leading-tight">{t('player.regionEditHint')}</div>
+              <div>{formatTime(regionTooltip.start)} - {formatTime(regionTooltip.end)}</div>
             </div>
           )}
           {showWaveformContainer && waveformHoverPreview && waveformDuration > 0 && (

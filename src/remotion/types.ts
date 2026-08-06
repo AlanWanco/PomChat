@@ -92,6 +92,7 @@ export interface SpeakerConfig {
   side?: 'left' | 'right' | 'center';
   type?: 'speaker' | 'annotation';
   theme?: 'dark' | 'light';
+  preset?: string;
   style?: SpeakerStyle;
 }
 
