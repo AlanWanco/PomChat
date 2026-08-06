@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import type { SpeakerConfig, FontPreset } from '../remotion/types';
@@ -107,6 +107,76 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     const next = { ...localPresets, [name]: { ...localPresets[name], [k]: v } };
     setLocalPresets(next);
     setPresetsDirty(true);
+  };
+
+  const matchesAcceptedExtension = (path: string, extensions: string[]) => {
+    const normalizedPath = path.trim().replace(/^['"]|['"]$/g, '');
+    return extensions.some((extension) => normalizedPath.toLowerCase().endsWith(`.${extension.toLowerCase()}`));
+  };
+  const extractClipboardFilePath = (event: React.ClipboardEvent<HTMLInputElement>, extensions: string[]) => {
+    const clipboardItems = Array.from(event.clipboardData?.items || []);
+    const fileItem = clipboardItems.find((item) => item.kind === 'file');
+    if (fileItem) {
+      const file = fileItem.getAsFile();
+      const filePath = file && (window as any).electron ? (window as any).electron.getDroppedFilePath(file) : '';
+      if (filePath && matchesAcceptedExtension(filePath, extensions)) return filePath;
+    }
+    const text = event.clipboardData?.getData('text/plain')?.trim() || '';
+    if (text && matchesAcceptedExtension(text, extensions)) return text.replace(/^['"]|['"]$/g, '');
+    return '';
+  };
+  const saveClipboardImageToCache = async (event: React.ClipboardEvent<HTMLInputElement>) => {
+    const electron = (window as any).electron; if (!electron) return '';
+    const clipboardItems = Array.from(event.clipboardData?.items || []);
+    const imageItem = clipboardItems.find((item: any) => item.kind === 'file' && item.type.startsWith('image/'));
+    if (!imageItem) return '';
+    const file = imageItem.getAsFile(); if (!file) return '';
+    const directPath = electron.getDroppedFilePath(file) || '';
+    if (directPath) return directPath;
+    const arrayBuffer = await file.arrayBuffer();
+    return await electron.saveClipboardImageToCache({ bytes: Array.from(new Uint8Array(arrayBuffer)), contentType: file.type, preferredName: file.name }) || '';
+  };
+  const createImageAwarePathPasteHandler = (extensions: string[], onPath: (path: string) => void) => {
+    return (event: React.ClipboardEvent<HTMLInputElement>) => {
+      const textOrFilePath = extractClipboardFilePath(event, extensions);
+      if (textOrFilePath) { event.preventDefault(); onPath(textOrFilePath); return; }
+      void (async () => {
+        const cachedImagePath = await saveClipboardImageToCache(event);
+        if (!cachedImagePath) return;
+        event.preventDefault(); onPath(cachedImagePath);
+      })();
+    };
+  };
+
+  const handleBrowseFile = async (): Promise<string | null> => {
+    const electron = (window as any).electron; if (!electron) return null;
+    try {
+      const res = await electron.showOpenDialog({
+        title: '选择图片',
+        filters: [{ name: t('dialog.filterMedia') || 'Media', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'] }],
+        properties: ['openFile']
+      });
+      if (!res.canceled && res.filePaths.length > 0) return res.filePaths[0];
+    } catch (_) { /* ignore */ }
+    return null;
+  };
+
+  const resolveLocalPreviewPath = (path: string | undefined): string | undefined => {
+    if (!path) return path;
+    const trimmed = path.trim();
+    if (!trimmed) return undefined;
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) return trimmed;
+    const normalized = trimmed.replace(/\\/g, '/');
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `file:///${drive}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `file://${host}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    const segments = normalized.split('/');
+    return `file://${segments.map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')}`;
   };
 
   const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined) => {
@@ -407,7 +477,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
             {leftTab === 'speakers' && editingSpeaker ? (() => {
                 const isLeft = (editingSpeaker.side || 'left') === 'left';
                 const s = editingSpeaker.style;
-                const PREVIEW_SCALE = 0.45;
+                const PREVIEW_SCALE = 0.63;
                 const AVATAR_DEFAULT = 80;
                 const NAME_DEFAULT = 22;
                 const FONT_DEFAULT = 30;
@@ -443,7 +513,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const nameFontWeight = s?.nameFontWeight || '700';
                 const nameText = editingSpeaker.name || 'Speaker';
                 
-                const avatarEl = <img src={editingSpeaker.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} />;
+                const avatarEl = <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} />;
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%' }}>
@@ -468,12 +538,19 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
                       <img
-                        src={editingSpeaker.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`}
+                        src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`}
                         alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`; }}
                       />
-                      <input type="text" value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }))} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                      <input type="text" value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }))}
+                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path })))}
+                        className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
+                        title={t('project.quickPasteFilePathTip') || '支持右键粘贴文件路径；若剪贴板里是图片，也会自动保存到缓存并填入路径。'} />
+                      <button onClick={async () => { const path = await handleBrowseFile(); if (path) updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path })); }}
+                        className="shrink-0 p-1.5 rounded-md hover:brightness-90" style={{ backgroundColor: `${secondaryThemeColor}18`, color: uiTheme.textMuted }} title={t('project.selectLocalImage') || '选择本地文件'}>
+                        <FolderOpen size={14} />
+                      </button>
                     </div>
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设</span>
@@ -500,7 +577,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
             ); })() : leftTab === 'presets' && editingPreset ? (() => {
                 const isLeft = (editingPreset.side || 'left') === 'left';
                 const s = editingPreset.style;
-                const PREVIEW_SCALE = 0.45;
+                const PREVIEW_SCALE = 0.63;
                 const AVATAR_DEFAULT = 80;
                 const NAME_DEFAULT = 22;
                 const FONT_DEFAULT = 30;
@@ -536,7 +613,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const nameFontWeight = s?.nameFontWeight || '700';
                 const nameText = editingPresetName || 'Preset';
                 
-                const avatarEl = <img src={editingPreset.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }} />;
+                const avatarEl = <img src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }} />;
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%' }}>
@@ -575,12 +652,19 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
                       <img
-                        src={editingPreset.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`}
+                        src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`}
                         alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }}
                       />
-                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)}
+                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updatePresetField(editingPresetName!, 'avatar', path))}
+                        className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
+                        title={t('project.quickPasteFilePathTip') || '支持右键粘贴文件路径；若剪贴板里是图片，也会自动保存到缓存并填入路径。'} />
+                      <button onClick={async () => { const path = await handleBrowseFile(); if (path) updatePresetField(editingPresetName!, 'avatar', path); }}
+                        className="shrink-0 p-1.5 rounded-md hover:brightness-90" style={{ backgroundColor: `${secondaryThemeColor}18`, color: uiTheme.textMuted }} title={t('project.selectLocalImage') || '选择本地文件'}>
+                        <FolderOpen size={14} />
+                      </button>
                     </div>
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
