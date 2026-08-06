@@ -1155,7 +1155,7 @@ export function SettingsPanel({
            {t('tab.project')}
          </button>
          <div 
-            className={`flex-1 py-2 font-medium transition-colors text-sm relative group cursor-pointer select-none ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
+            className={`flex-1 py-2 font-medium transition-colors text-sm relative group cursor-pointer select-none text-center ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
             style={activeTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
             onClick={() => setActiveTab('speakers')}
           >

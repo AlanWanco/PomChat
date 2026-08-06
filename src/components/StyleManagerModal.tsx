@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical } from 'lucide-react';
 import { translate, type Language } from '../i18n';
-import { createThemeTokens } from '../theme';
+import { createThemeTokens, rgba } from '../theme';
 import type { SpeakerConfig, FontPreset } from '../remotion/types';
 
 interface StyleManagerModalProps {
@@ -96,10 +96,15 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   };
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
-  const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig) => { setLocalSpeakers((p) => ({ ...p, [id]: u(p[id]) })); setSpeakersDirty(true); };
-  const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
+  const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig, keepPreset?: boolean) => { setLocalSpeakers((p) => { const updated = u(p[id]); return { ...p, [id]: keepPreset ? updated : { ...updated, preset: '' } }; }); setSpeakersDirty(true); };
+  const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], preset: '', style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
   const updatePresetStyle = (name: string, k: string, v: any) => {
     const next = { ...localPresets, [name]: { ...localPresets[name], style: { ...(localPresets[name]?.style || {}), [k]: v } } };
+    setLocalPresets(next);
+    setPresetsDirty(true);
+  };
+  const updatePresetField = (name: string, k: string, v: any) => {
+    const next = { ...localPresets, [name]: { ...localPresets[name], [k]: v } };
     setLocalPresets(next);
     setPresetsDirty(true);
   };
@@ -155,7 +160,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     );
   };
   const renderRange = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min: number, max: number, step: number) => (
-    <div className="flex items-center gap-2"><input type="range" min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
+    <div className="flex items-center gap-2"><input type="range" min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
   );
   const renderSel = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, opts: string[]) => (
     <select value={value || ''} onChange={(e) => updateFn(key, e.target.value)}
@@ -267,23 +272,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <button onClick={handleDelete} disabled={selectedIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedIds.size > 0 ? 1 : 0.4, backgroundColor: selectedIds.size > 0 ? 'rgba(239,68,68,0.12)' : 'transparent', color: selectedIds.size > 0 ? '#ef4444' : uiTheme.textMuted }}><Trash2 size={12} /> {t('common.delete')}</button>
                   <button onClick={handleDuplicate} disabled={selectedIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedIds.size > 0 ? 1 : 0.4, backgroundColor: selectedIds.size > 0 ? `${secondaryThemeColor}14` : 'transparent', color: selectedIds.size > 0 ? secondaryThemeColor : uiTheme.textMuted }}><Copy size={12} /> {t('common.copy')}</button>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
                   {Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation').map(([id, speaker]) => (
                     <div key={id} onClick={() => { setEditingSpeakerId(id); setSelectedIds(new Set([id])); }}
-                      className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs transition-all"
-                      style={{
-                        backgroundColor: editingSpeakerId === id ? `${themeColor}14` : dragOverSpeakerId === id ? `${secondaryThemeColor}14` : 'transparent',
-                        borderColor: dragOverSpeakerId === id ? secondaryThemeColor : uiTheme.border,
-                        color: editingSpeakerId === id ? uiTheme.text : uiTheme.textMuted,
-                        borderTop: dragOverSpeakerId === id ? `2px solid ${secondaryThemeColor}` : undefined,
-                      }}>
-                      <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
-                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
-                      <span className="truncate flex-1">{speaker.name || id}</span>
-                      <div
-                        draggable
-                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id, type: 'speaker' }; e.stopPropagation(); }}
-                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); setDragOverSpeakerId(id); }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverSpeakerId(id); }}
                       onDragLeave={() => setDragOverSpeakerId(null)}
                       onDrop={(e) => {
                         e.preventDefault(); e.stopPropagation();
@@ -303,6 +295,19 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           setLocalSpeakers(ordered);
                           setSpeakersDirty(true);
                         }}
+                      className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs transition-all"
+                      style={{
+                        backgroundColor: editingSpeakerId === id ? `${themeColor}14` : dragOverSpeakerId === id ? `${secondaryThemeColor}14` : 'transparent',
+                        borderColor: dragOverSpeakerId === id ? secondaryThemeColor : uiTheme.border,
+                        color: editingSpeakerId === id ? uiTheme.text : uiTheme.textMuted,
+                        borderTop: dragOverSpeakerId === id ? `2px solid ${secondaryThemeColor}` : undefined,
+                      }}>
+                      <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
+                      <span className="truncate flex-1">{speaker.name || id}</span>
+                      <div
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id, type: 'speaker' }; e.stopPropagation(); }}
                         className="shrink-0 cursor-grab active:cursor-grabbing"
                       >
                         <GripVertical size={12} className="opacity-30 hover:opacity-60 pointer-events-none" style={{ color: uiTheme.textMuted }} />
@@ -311,7 +316,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   ))}
                 </div>
                 <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
-                  <button onClick={() => { onSave(localSpeakers); setSpeakersDirty(false); onClose(); }} disabled={!speakersDirty}
+                  <button onClick={() => { onSave(localSpeakers); setSpeakersDirty(false); }} disabled={!speakersDirty}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all"
                     style={{ backgroundColor: speakersDirty ? secondaryThemeColor : uiTheme.border, opacity: speakersDirty ? 1 : 0.5, cursor: speakersDirty ? 'pointer' : 'default' }}>
                     <Save size={14} /> {t('settings.save') || 'Save'}
@@ -340,10 +345,29 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     setPresetsDirty(true);
                   }} disabled={selectedPresetIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedPresetIds.size > 0 ? 1 : 0.4, backgroundColor: selectedPresetIds.size > 0 ? `${secondaryThemeColor}14` : 'transparent', color: selectedPresetIds.size > 0 ? secondaryThemeColor : uiTheme.textMuted }}><Copy size={12} /> {t('common.copy')}</button>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
                   {Object.keys(localPresets).length > 0 ? (
                     Object.entries(localPresets).map(([name, preset]) => (
                       <div key={name} onClick={() => { setEditingPresetName(name); setSelectedPresetIds(new Set([name])); }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverPresetName(name); }}
+                        onDragLeave={() => setDragOverPresetName(null)}
+                        onDrop={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          setDragOverPresetName(null);
+                          const from = dragRef.current;
+                          dragRef.current = null;
+                          if (!from || from.type !== 'preset' || from.id === name) return;
+                          const entries = Object.entries(localPresets);
+                          const fromIdx = entries.findIndex(([k]) => k === from!.id);
+                          const toIdx = entries.findIndex(([k]) => k === name);
+                          if (fromIdx < 0 || toIdx < 0) return;
+                          const [moved] = entries.splice(fromIdx, 1);
+                          entries.splice(toIdx, 0, moved);
+                          const ordered: Record<string, any> = {};
+                          entries.forEach(([k, v]) => { ordered[k] = v; });
+                          setLocalPresets(ordered);
+                          setPresetsDirty(true);
+                        }}
                         className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs transition-all"
                         style={{
                           backgroundColor: editingPresetName === name ? `${themeColor}14` : dragOverPresetName === name ? `${secondaryThemeColor}14` : 'transparent',
@@ -357,25 +381,6 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         <div
                           draggable
                           onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id: name, type: 'preset' }; e.stopPropagation(); }}
-                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); setDragOverPresetName(name); }}
-                          onDragLeave={() => setDragOverPresetName(null)}
-                          onDrop={(e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            setDragOverPresetName(null);
-                            const from = dragRef.current;
-                            dragRef.current = null;
-                            if (!from || from.type !== 'preset' || from.id === name) return;
-                            const entries = Object.entries(localPresets);
-                            const fromIdx = entries.findIndex(([k]) => k === from!.id);
-                            const toIdx = entries.findIndex(([k]) => k === name);
-                            if (fromIdx < 0 || toIdx < 0) return;
-                            const [moved] = entries.splice(fromIdx, 1);
-                            entries.splice(toIdx, 0, moved);
-                            const ordered: Record<string, any> = {};
-                            entries.forEach(([k, v]) => { ordered[k] = v; });
-                            setLocalPresets(ordered);
-                            setPresetsDirty(true);
-                          }}
                           className="shrink-0 cursor-grab active:cursor-grabbing"
                         >
                           <GripVertical size={12} className="opacity-30 hover:opacity-60 pointer-events-none" style={{ color: uiTheme.textMuted }} />
@@ -399,8 +404,65 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
 
           {/* Right Panel */}
           <div className="flex-1 flex flex-col min-w-0">
-            {leftTab === 'speakers' && editingSpeaker ? (
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+            {leftTab === 'speakers' && editingSpeaker ? (() => {
+                const isLeft = (editingSpeaker.side || 'left') === 'left';
+                const s = editingSpeaker.style;
+                const PREVIEW_SCALE = 0.45;
+                const AVATAR_DEFAULT = 80;
+                const NAME_DEFAULT = 22;
+                const FONT_DEFAULT = 30;
+                const PADX_DEFAULT = 20;
+                const PADY_DEFAULT = 12;
+                const RADIUS_DEFAULT = 28;
+                const BUBBLE_GAP_DEFAULT = 16;
+                const NAME_MARGIN_DEFAULT = 4;
+                const BORDER_DEFAULT = 0;
+
+                const fontFamily = s?.fontFamily || 'system-ui';
+                const fz = Math.max(10, (s?.fontSize ?? FONT_DEFAULT) * PREVIEW_SCALE);
+                const fw = s?.fontWeight || 'normal';
+                const py = (s?.paddingY ?? PADY_DEFAULT) * PREVIEW_SCALE;
+                const px = (s?.paddingX ?? PADX_DEFAULT) * PREVIEW_SCALE;
+                const br = (s?.borderRadius ?? RADIUS_DEFAULT) * PREVIEW_SCALE;
+                const sharp = Math.max(1.5, br * 0.15);
+                const bw = (s?.borderWidth ?? BORDER_DEFAULT) * PREVIEW_SCALE;
+                const bco = s?.borderColor || '#ffffff';
+                const bop = s?.borderOpacity ?? 1;
+                const bg = s?.bgColor || '#2563eb';
+                const op = s?.opacity ?? 0.9;
+                const tc = s?.textColor || '#fff';
+                const ss = s?.shadowSize ?? 0;
+                const shadow = ss > 0 ? `0 ${Math.round(ss * 0.45)}px ${ss}px rgba(15, 23, 42, 0.24)` : 'none';
+                const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
+                const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
+                const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
+                const nameMarginPx = Math.round(NAME_MARGIN_DEFAULT * PREVIEW_SCALE);
+                
+                const nameColor = s?.nameColor || '#fff';
+                const nameFontFamily = s?.nameFontFamily || fontFamily;
+                const nameFontWeight = s?.nameFontWeight || '700';
+                const nameText = editingSpeaker.name || 'Speaker';
+                
+                const avatarEl = <img src={editingSpeaker.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} />;
+                
+                const bubbleEl = (
+                  <div style={{ width: 'fit-content', maxWidth: '100%' }}>
+                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1.2, marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right' }}>{nameText}</div> : null}
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
+                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
+                    </div>
+                  </div>
+                );
+                
+                return (
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
+                  <div className="flex items-start" style={{ flexDirection: isLeft ? 'row' : 'row-reverse', gap: `${bubbleGapPx}px` }}>
+                    {avatarEl}
+                    {bubbleEl}
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
                 <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.title')}</span>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.name') || 'Name'}</span><input type="text" value={editingSpeaker.name || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, name: e.target.value }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} /></div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
@@ -422,7 +484,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         const presetData = speakerPresets?.[val];
                         if (!presetData) return s;
                         return { ...s, preset: val, avatar: presetData.avatar || s.avatar, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } };
-                      });
+                      }, true);
                     }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
                       <option value="">{t('speakers.applyPreset') || 'Apply preset'}</option>
                       {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
@@ -434,8 +496,66 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 </div>
                 {renderEditorFields(editingSpeaker.style, (k, v) => updateStyle(editingSpeakerId!, k, v))}
               </div>
-            ) : leftTab === 'presets' && editingPreset ? (
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                </div>
+            ); })() : leftTab === 'presets' && editingPreset ? (() => {
+                const isLeft = (editingPreset.side || 'left') === 'left';
+                const s = editingPreset.style;
+                const PREVIEW_SCALE = 0.45;
+                const AVATAR_DEFAULT = 80;
+                const NAME_DEFAULT = 22;
+                const FONT_DEFAULT = 30;
+                const PADX_DEFAULT = 20;
+                const PADY_DEFAULT = 12;
+                const RADIUS_DEFAULT = 28;
+                const BUBBLE_GAP_DEFAULT = 16;
+                const NAME_MARGIN_DEFAULT = 4;
+                const BORDER_DEFAULT = 0;
+
+                const fontFamily = s?.fontFamily || 'system-ui';
+                const fz = Math.max(10, (s?.fontSize ?? FONT_DEFAULT) * PREVIEW_SCALE);
+                const fw = s?.fontWeight || 'normal';
+                const py = (s?.paddingY ?? PADY_DEFAULT) * PREVIEW_SCALE;
+                const px = (s?.paddingX ?? PADX_DEFAULT) * PREVIEW_SCALE;
+                const br = (s?.borderRadius ?? RADIUS_DEFAULT) * PREVIEW_SCALE;
+                const sharp = Math.max(1.5, br * 0.15);
+                const bw = (s?.borderWidth ?? BORDER_DEFAULT) * PREVIEW_SCALE;
+                const bco = s?.borderColor || '#ffffff';
+                const bop = s?.borderOpacity ?? 1;
+                const bg = s?.bgColor || '#2563eb';
+                const op = s?.opacity ?? 0.9;
+                const tc = s?.textColor || '#fff';
+                const ss = s?.shadowSize ?? 0;
+                const shadow = ss > 0 ? `0 ${Math.round(ss * 0.45)}px ${ss}px rgba(15, 23, 42, 0.24)` : 'none';
+                const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
+                const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
+                const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
+                const nameMarginPx = Math.round(NAME_MARGIN_DEFAULT * PREVIEW_SCALE);
+                
+                const nameColor = s?.nameColor || '#fff';
+                const nameFontFamily = s?.nameFontFamily || fontFamily;
+                const nameFontWeight = s?.nameFontWeight || '700';
+                const nameText = editingPresetName || 'Preset';
+                
+                const avatarEl = <img src={editingPreset.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full border object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, borderColor: s?.avatarBorderColor || uiTheme.border, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }} />;
+                
+                const bubbleEl = (
+                  <div style={{ width: 'fit-content', maxWidth: '100%' }}>
+                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1.2, marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right' }}>{nameText}</div> : null}
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
+                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
+                    </div>
+                  </div>
+                );
+                
+                return (
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
+                  <div className="flex items-start" style={{ flexDirection: isLeft ? 'row' : 'row-reverse', gap: `${bubbleGapPx}px` }}>
+                    {avatarEl}
+                    {bubbleEl}
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
                 <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">预设配置</span>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
                     <input type="text" value={editingPresetName || ''} onChange={(e) => {
@@ -460,16 +580,17 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }}
                       />
-                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetStyle(editingPresetName!, 'avatar', e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
                     </div>
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
-                    <select value={editingPreset.side || 'left'} onChange={(e) => updatePresetStyle(editingPresetName!, 'side', e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
+                    <select value={editingPreset.side || 'left'} onChange={(e) => updatePresetField(editingPresetName!, 'side', e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
                 </div>
                 {renderEditorFields(editingPreset.style, (k, v) => updatePresetStyle(editingPresetName!, k, v))}
               </div>
-            ) : (
+                </div>
+            ); })() : (
               <div className="flex-1 flex items-center justify-center text-sm opacity-50">{t('speakers.applyPreset') || 'Select a speaker to edit'}</div>
             )}
             <div className="px-4 py-3 border-t flex justify-end" style={{ borderColor: uiTheme.border }}>
