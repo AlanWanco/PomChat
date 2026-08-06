@@ -175,8 +175,24 @@ export function SettingsPanel({
       }
     }
     if (/^[a-zA-Z]:[\\/]/.test(path)) return toFsPreviewPath(path);
+    if (path.startsWith('\\\\')) return toFsPreviewPath(path);
     if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return toFsPreviewPath(path);
-    return path.startsWith('/') ? path : `/${path}`;
+    if (path.startsWith('/')) return path;
+    if (!projectPath || projectPath === 'web-demo') return `/${path}`;
+    try {
+      const normalizedBasePath = projectPath.replace(/\\/g, '/');
+      const baseSegments = normalizedBasePath.split('/');
+      baseSegments.pop();
+      path.replace(/\\/g, '/').split('/').forEach((segment) => {
+        if (!segment || segment === '.') return;
+        if (segment === '..') {
+          if (baseSegments.length > 1 || !/^[a-zA-Z]:$/.test(baseSegments[0] || '')) baseSegments.pop();
+          return;
+        }
+        baseSegments.push(segment);
+      });
+      return toFsPreviewPath(baseSegments.join('/'));
+    } catch { return `/${path}`; }
   };
   const loadAssetNaturalSize = (path: string) => new Promise<{ width: number; height: number } | null>((resolve) => {
     const previewSrc = resolveAssetSrc ? (resolveAssetSrc(path) || path) : (resolveLocalPreviewPath(path) || path);

@@ -7796,6 +7796,7 @@ const [previewScale, setPreviewScale] = useState(1);
         speakers={config.speakers || {}}
         fontPresets={fontPresets}
         speakerPresets={presets}
+        projectPath={projectPath}
         onSpeakerPresetsChange={setPresets}
         onSave={(nextSpeakers) => {
           pushHistorySnapshot();

@@ -13,6 +13,7 @@ interface StyleManagerModalProps {
   speakers: Record<string, SpeakerConfig>;
   fontPresets?: Record<string, FontPreset>;
   speakerPresets?: Record<string, any>;
+  projectPath?: string;
   onSave: (speakers: Record<string, SpeakerConfig>) => void;
   onSpeakerPresetsChange?: (presets: Record<string, any>) => void;
   onClose: () => void;
@@ -33,7 +34,7 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
 
 const SYSTEM_FONTS = ['system-ui', 'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans'];
 
-export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, onSave, onSpeakerPresetsChange, onClose }: StyleManagerModalProps) {
+export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, projectPath, onSave, onSpeakerPresetsChange, onClose }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
@@ -161,22 +162,64 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     return null;
   };
 
+  const toFsPreviewPath = (localPath: string) => {
+    const normalized = localPath.replace(/\\/g, '/');
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `/@fs/${drive}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `/@fs//${host}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    const segments = normalized.split('/');
+    return `/@fs${segments.map((s, i) => (i === 0 ? s : `/${encodeURIComponent(s)}`)).join('')}`;
+  };
+
+  const resolveAssetPathAgainstProject = (value: string | undefined, baseProjectFilePath: string | null | undefined): string | undefined => {
+    if (!value) return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) return trimmed;
+    if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\') || (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/'))) return trimmed;
+    if (!baseProjectFilePath || baseProjectFilePath === 'web-demo') return trimmed;
+    try {
+      const normalizedBasePath = baseProjectFilePath.replace(/\\/g, '/');
+      const baseSegments = normalizedBasePath.split('/');
+      baseSegments.pop();
+      trimmed.replace(/\\/g, '/').split('/').forEach((segment) => {
+        if (!segment || segment === '.') return;
+        if (segment === '..') {
+          if (baseSegments.length > 1 || !/^[a-zA-Z]:$/.test(baseSegments[0] || '')) baseSegments.pop();
+          return;
+        }
+        baseSegments.push(segment);
+      });
+      return baseSegments.join('/');
+    } catch { return trimmed; }
+  };
+
   const resolveLocalPreviewPath = (path: string | undefined): string | undefined => {
     if (!path) return path;
     const trimmed = path.trim();
     if (!trimmed) return undefined;
-    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://')) return trimmed;
-    const normalized = trimmed.replace(/\\/g, '/');
-    if (/^[a-zA-Z]:\//.test(normalized)) {
-      const [drive, ...segments] = normalized.split('/');
-      return `file:///${drive}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+    if (trimmed.startsWith('file://')) {
+      try {
+        const url = new URL(trimmed);
+        const host = url.host ? `//${url.host}` : '';
+        return `/@fs${host}${url.pathname}`;
+      } catch {
+        return toFsPreviewPath(trimmed.replace(/^file:\/\/?/, '/'));
+      }
     }
-    if (normalized.startsWith('//')) {
-      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
-      return `file://${host}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
-    }
-    const segments = normalized.split('/');
-    return `file://${segments.map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')}`;
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) return toFsPreviewPath(trimmed);
+    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) return toFsPreviewPath(trimmed);
+    if (trimmed.startsWith('/')) return trimmed;
+    const resolved = resolveAssetPathAgainstProject(trimmed, projectPath);
+    if (resolved && resolved !== trimmed) return toFsPreviewPath(resolved);
+    return `/${trimmed}`;
   };
 
   const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined) => {
