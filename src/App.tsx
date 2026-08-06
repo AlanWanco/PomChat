@@ -5927,7 +5927,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const timer = window.setTimeout(() => {
       void handleSaveProject({ silent: true, source: 'autosave' });
-    }, 700);
+    }, 2000);
 
     return () => window.clearTimeout(timer);
   }, [autoSaveProject, handleSaveProject, isProjectDirty, projectChangeTick, projectPath]);

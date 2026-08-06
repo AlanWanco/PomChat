@@ -1154,8 +1154,8 @@ export function SettingsPanel({
          >
            {t('tab.project')}
          </button>
-         <button 
-            className={`flex-1 py-2 font-medium transition-colors text-sm relative group ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
+         <div 
+            className={`flex-1 py-2 font-medium transition-colors text-sm relative group cursor-pointer select-none ${activeTab === 'speakers' ? 'border-b-2' : ''}`}
             style={activeTab === 'speakers' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
             onClick={() => setActiveTab('speakers')}
           >
@@ -1180,8 +1180,8 @@ export function SettingsPanel({
                 {t('tab.annotation')}
               </button>
             </div>
-         </button>
-          <button 
+         </div>
+           <button 
             className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'assets' ? 'border-b-2' : ''}`}
             style={activeTab === 'assets' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
             onClick={() => setActiveTab('assets')}
