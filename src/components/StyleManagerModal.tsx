@@ -46,6 +46,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [speakersDirty, setSpeakersDirty] = useState(false);
   const [presetsDirty, setPresetsDirty] = useState(false);
   const dragRef = useRef<{ id: string; type: 'speaker' | 'preset' } | null>(null);
+  const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
+  const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -268,18 +270,25 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                   {Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation').map(([id, speaker]) => (
                     <div key={id} onClick={() => { setEditingSpeakerId(id); setSelectedIds(new Set([id])); }}
-                      className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs"
-                      style={{ backgroundColor: editingSpeakerId === id ? `${themeColor}14` : 'transparent', borderColor: uiTheme.border, color: editingSpeakerId === id ? uiTheme.text : uiTheme.textMuted }}>
+                      className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs transition-all"
+                      style={{
+                        backgroundColor: editingSpeakerId === id ? `${themeColor}14` : dragOverSpeakerId === id ? `${secondaryThemeColor}14` : 'transparent',
+                        borderColor: dragOverSpeakerId === id ? secondaryThemeColor : uiTheme.border,
+                        color: editingSpeakerId === id ? uiTheme.text : uiTheme.textMuted,
+                        borderTop: dragOverSpeakerId === id ? `2px solid ${secondaryThemeColor}` : undefined,
+                      }}>
                       <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
                       <span className="truncate flex-1">{speaker.name || id}</span>
                       <div
                         draggable
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id, type: 'speaker' }; e.stopPropagation(); }}
-                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); }}
-                        onDrop={(e) => {
-                          e.preventDefault(); e.stopPropagation();
-                          const from = dragRef.current;
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); setDragOverSpeakerId(id); }}
+                      onDragLeave={() => setDragOverSpeakerId(null)}
+                      onDrop={(e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        setDragOverSpeakerId(null);
+                        const from = dragRef.current;
                           dragRef.current = null;
                           if (!from || from.type !== 'speaker' || from.id === id) return;
                           const entries = Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation');
@@ -335,17 +344,24 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   {Object.keys(localPresets).length > 0 ? (
                     Object.entries(localPresets).map(([name, preset]) => (
                       <div key={name} onClick={() => { setEditingPresetName(name); setSelectedPresetIds(new Set([name])); }}
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs"
-                        style={{ backgroundColor: editingPresetName === name ? `${themeColor}14` : 'transparent', borderColor: uiTheme.border, color: editingPresetName === name ? uiTheme.text : uiTheme.textMuted }}>
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b text-xs transition-all"
+                        style={{
+                          backgroundColor: editingPresetName === name ? `${themeColor}14` : dragOverPresetName === name ? `${secondaryThemeColor}14` : 'transparent',
+                          borderColor: dragOverPresetName === name ? secondaryThemeColor : uiTheme.border,
+                          color: editingPresetName === name ? uiTheme.text : uiTheme.textMuted,
+                          borderTop: dragOverPresetName === name ? `2px solid ${secondaryThemeColor}` : undefined,
+                        }}>
                         <input type="checkbox" checked={selectedPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => togglePresetSelect(name)} style={{ accentColor: secondaryThemeColor }} />
                         <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: preset?.style?.bgColor || '#888' }} />
                         <span className="truncate flex-1">{name}</span>
                         <div
                           draggable
                           onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id: name, type: 'preset' }; e.stopPropagation(); }}
-                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); }}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); setDragOverPresetName(name); }}
+                          onDragLeave={() => setDragOverPresetName(null)}
                           onDrop={(e) => {
                             e.preventDefault(); e.stopPropagation();
+                            setDragOverPresetName(null);
                             const from = dragRef.current;
                             dragRef.current = null;
                             if (!from || from.type !== 'preset' || from.id === name) return;
