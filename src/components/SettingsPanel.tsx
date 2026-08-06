@@ -162,21 +162,39 @@ export function SettingsPanel({
     return `/@fs${segments.map((segment, index) => (index === 0 ? segment : `/${encodeURIComponent(segment)}`)).join('')}`;
   };
 
+  const toFilePreviewPath = (localPath: string) => {
+    const normalized = localPath.replace(/\\/g, '/');
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `file:///${drive}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `file://${host}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    const segments = normalized.split('/');
+    return `file://${segments.map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')}`;
+  };
+
   const resolveLocalPreviewPath = (path: string | undefined) => {
     if (!path) return path;
+    const useFilePreviewPath = typeof window !== 'undefined' && Boolean((window as any).electron);
+    const resolveAbs = (p: string) => useFilePreviewPath ? toFilePreviewPath(p) : toFsPreviewPath(p);
     if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
     if (path.startsWith('file://')) {
       try {
         const url = new URL(path);
         const host = url.host ? `//${url.host}` : '';
-        return `/@fs${host}${url.pathname}`;
+        const pathname = decodeURIComponent(url.pathname);
+        const normalizedPath = /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+        return resolveAbs(`${host}${normalizedPath}`);
       } catch {
-        return toFsPreviewPath(path.replace(/^file:\/\/?/, '/'));
+        return resolveAbs(path.replace(/^file:\/\/?/, '/'));
       }
     }
-    if (/^[a-zA-Z]:[\\/]/.test(path)) return toFsPreviewPath(path);
-    if (path.startsWith('\\\\')) return toFsPreviewPath(path);
-    if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return toFsPreviewPath(path);
+    if (/^www\./i.test(path)) return `https://${path}`;
+    if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\')) return resolveAbs(path);
+    if (path.startsWith('/') && !path.startsWith('/projects/') && !path.startsWith('/assets/')) return resolveAbs(path);
     if (path.startsWith('/')) return path;
     if (!projectPath || projectPath === 'web-demo') return `/${path}`;
     try {
@@ -191,7 +209,7 @@ export function SettingsPanel({
         }
         baseSegments.push(segment);
       });
-      return toFsPreviewPath(baseSegments.join('/'));
+      return resolveAbs(baseSegments.join('/'));
     } catch { return `/${path}`; }
   };
   const loadAssetNaturalSize = (path: string) => new Promise<{ width: number; height: number } | null>((resolve) => {

@@ -200,25 +200,44 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     } catch { return trimmed; }
   };
 
+  const toFilePreviewPath = (localPath: string) => {
+    const normalized = localPath.replace(/\\/g, '/');
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+      const [drive, ...segments] = normalized.split('/');
+      return `file:///${drive}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    if (normalized.startsWith('//')) {
+      const [host, ...segments] = normalized.replace(/^\/\//, '').split('/');
+      return `file://${host}/${segments.map((s) => encodeURIComponent(s)).join('/')}`;
+    }
+    const segments = normalized.split('/');
+    return `file://${segments.map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')}`;
+  };
+
   const resolveLocalPreviewPath = (path: string | undefined): string | undefined => {
     if (!path) return path;
     const trimmed = path.trim();
     if (!trimmed) return undefined;
+    const useFilePreviewPath = typeof window !== 'undefined' && Boolean((window as any).electron);
+    const resolveAbs = (p: string) => useFilePreviewPath ? toFilePreviewPath(p) : toFsPreviewPath(p);
     if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
     if (trimmed.startsWith('file://')) {
       try {
         const url = new URL(trimmed);
         const host = url.host ? `//${url.host}` : '';
-        return `/@fs${host}${url.pathname}`;
+        const pathname = decodeURIComponent(url.pathname);
+        const normalizedPath = /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+        return resolveAbs(`${host}${normalizedPath}`);
       } catch {
-        return toFsPreviewPath(trimmed.replace(/^file:\/\/?/, '/'));
+        return resolveAbs(trimmed.replace(/^file:\/\/?/, '/'));
       }
     }
-    if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) return toFsPreviewPath(trimmed);
-    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) return toFsPreviewPath(trimmed);
+    if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) return resolveAbs(trimmed);
+    if (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/')) return resolveAbs(trimmed);
     if (trimmed.startsWith('/')) return trimmed;
     const resolved = resolveAssetPathAgainstProject(trimmed, projectPath);
-    if (resolved && resolved !== trimmed) return toFsPreviewPath(resolved);
+    if (resolved && resolved !== trimmed) return resolveAbs(resolved);
     return `/${trimmed}`;
   };
 
