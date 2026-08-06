@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, Copy, Save, X, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import type { SpeakerConfig, FontPreset } from '../remotion/types';
@@ -43,6 +43,9 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [localPresets, setLocalPresets] = useState<Record<string, any>>({});
   const [selectedPresetIds, setSelectedPresetIds] = useState<Set<string>>(new Set());
   const [editingPresetName, setEditingPresetName] = useState<string | null>(null);
+  const [speakersDirty, setSpeakersDirty] = useState(false);
+  const [presetsDirty, setPresetsDirty] = useState(false);
+  const dragRef = useRef<{ id: string; type: 'speaker' | 'preset' } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -52,8 +55,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       setLocalPresets(JSON.parse(JSON.stringify(speakerPresets || {})));
       setSelectedPresetIds(new Set());
       setEditingPresetName(null);
+      setSpeakersDirty(false);
+      setPresetsDirty(false);
     }
-  }, [isOpen, speakers, speakerPresets]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -66,32 +71,35 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setLocalSpeakers({ ...localSpeakers, [key]: { ...JSON.parse(JSON.stringify(DEFAULT_SPEAKER)), name: key } });
     setEditingSpeakerId(key);
     setSelectedIds(new Set([key]));
+    setSpeakersDirty(true);
   };
   const handleDelete = () => {
     if (selectedIds.size === 0) return; const next = { ...localSpeakers }; selectedIds.forEach((id) => delete next[id]);
     setLocalSpeakers(next); setSelectedIds(new Set()); if (editingSpeakerId && selectedIds.has(editingSpeakerId)) setEditingSpeakerId(null);
+    setSpeakersDirty(true);
   };
   const handleDuplicate = () => {
     if (selectedIds.size === 0) return; const next = { ...localSpeakers };
     selectedIds.forEach((id) => { let ck = `${id}_copy`; let c = 1; while (next[ck]) { c++; ck = `${id}_copy${c}`; } next[ck] = JSON.parse(JSON.stringify(localSpeakers[id])); if (next[ck].name) next[ck].name = `${next[ck].name} (copy)`; });
     setLocalSpeakers(next);
+    setSpeakersDirty(true);
   };
   const handlePresetDelete = () => {
-    if (selectedPresetIds.size === 0 || !onSpeakerPresetsChange) return;
+    if (selectedPresetIds.size === 0) return;
     const next = { ...localPresets }; selectedPresetIds.forEach((id) => delete next[id]);
-    onSpeakerPresetsChange(next);
     setLocalPresets(next);
     setSelectedPresetIds(new Set());
     if (editingPresetName && selectedPresetIds.has(editingPresetName)) setEditingPresetName(null);
+    setPresetsDirty(true);
   };
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
-  const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig) => setLocalSpeakers((p) => ({ ...p, [id]: u(p[id]) }));
-  const updateStyle = (id: string, k: string, v: any) => setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], style: { ...(p[id]?.style || {}), [k]: v } } }));
+  const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig) => { setLocalSpeakers((p) => ({ ...p, [id]: u(p[id]) })); setSpeakersDirty(true); };
+  const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
   const updatePresetStyle = (name: string, k: string, v: any) => {
     const next = { ...localPresets, [name]: { ...localPresets[name], style: { ...(localPresets[name]?.style || {}), [k]: v } } };
     setLocalPresets(next);
-    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+    setPresetsDirty(true);
   };
 
   const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined) => {
@@ -212,9 +220,12 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg, backdropFilter: 'blur(10px)' }} onClick={onClose}>
       <div className="flex flex-col w-full max-w-[45rem] max-h-[85vh] overflow-hidden rounded-[28px] border shadow-2xl"
-        style={{ ...{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties, background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
         onClick={(e) => e.stopPropagation()}
-      >
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragLeave={(e) => { e.stopPropagation(); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        style={{ ...{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties, background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}>
         {/* Banner Header */}
         <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
           <div>
@@ -262,11 +273,40 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
                       <span className="truncate flex-1">{speaker.name || id}</span>
+                      <div
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id, type: 'speaker' }; e.stopPropagation(); }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); }}
+                        onDrop={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          const from = dragRef.current;
+                          dragRef.current = null;
+                          if (!from || from.type !== 'speaker' || from.id === id) return;
+                          const entries = Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation');
+                          const fromIdx = entries.findIndex(([k]) => k === from.id);
+                          const toIdx = entries.findIndex(([k]) => k === id);
+                          if (fromIdx < 0 || toIdx < 0) return;
+                          const [moved] = entries.splice(fromIdx, 1);
+                          entries.splice(toIdx, 0, moved);
+                          const ordered: Record<string, SpeakerConfig> = {};
+                          entries.forEach(([k, v]) => { ordered[k] = v as SpeakerConfig; });
+                          Object.entries(localSpeakers).filter(([, s]) => s.type === 'annotation').forEach(([k, v]) => { ordered[k] = v as SpeakerConfig; });
+                          setLocalSpeakers(ordered);
+                          setSpeakersDirty(true);
+                        }}
+                        className="shrink-0 cursor-grab active:cursor-grabbing"
+                      >
+                        <GripVertical size={12} className="opacity-30 hover:opacity-60 pointer-events-none" style={{ color: uiTheme.textMuted }} />
+                      </div>
                     </div>
                   ))}
                 </div>
                 <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
-                  <button onClick={() => { onSave(localSpeakers); onClose(); }} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90" style={{ backgroundColor: secondaryThemeColor }}><Save size={14} /> {t('settings.save') || 'Save'}</button>
+                  <button onClick={() => { onSave(localSpeakers); setSpeakersDirty(false); onClose(); }} disabled={!speakersDirty}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all"
+                    style={{ backgroundColor: speakersDirty ? secondaryThemeColor : uiTheme.border, opacity: speakersDirty ? 1 : 0.5, cursor: speakersDirty ? 'pointer' : 'default' }}>
+                    <Save size={14} /> {t('settings.save') || 'Save'}
+                  </button>
                 </div>
               </>
             ) : (
@@ -279,7 +319,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     setLocalPresets(next);
                     setEditingPresetName(name);
                     setSelectedPresetIds(new Set([name]));
-                    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                    setPresetsDirty(true);
                   }} className="p-1.5 rounded-md hover:opacity-80" style={{ backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor }}><Plus size={14} /></button>
                 </div>
                 <div className="flex gap-1 px-3 py-2 border-b" style={{ borderColor: uiTheme.border }}>
@@ -288,7 +328,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     if (selectedPresetIds.size === 0) return; const next = { ...localPresets };
                     selectedPresetIds.forEach((name) => { let ck = `${name}_copy`; let c = 1; while (next[ck]) { c++; ck = `${name}_copy${c}`; } next[ck] = JSON.parse(JSON.stringify(localPresets[name])); if (next[ck].name) next[ck].name = `${next[ck].name} (copy)`; });
                     setLocalPresets(next);
-                    if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                    setPresetsDirty(true);
                   }} disabled={selectedPresetIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedPresetIds.size > 0 ? 1 : 0.4, backgroundColor: selectedPresetIds.size > 0 ? `${secondaryThemeColor}14` : 'transparent', color: selectedPresetIds.size > 0 ? secondaryThemeColor : uiTheme.textMuted }}><Copy size={12} /> {t('common.copy')}</button>
                 </div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -300,6 +340,30 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         <input type="checkbox" checked={selectedPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => togglePresetSelect(name)} style={{ accentColor: secondaryThemeColor }} />
                         <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: preset?.style?.bgColor || '#888' }} />
                         <span className="truncate flex-1">{name}</span>
+                        <div
+                          draggable
+                          onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id: name, type: 'preset' }; e.stopPropagation(); }}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.stopPropagation(); }}
+                          onDrop={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            const from = dragRef.current;
+                            dragRef.current = null;
+                            if (!from || from.type !== 'preset' || from.id === name) return;
+                            const entries = Object.entries(localPresets);
+                            const fromIdx = entries.findIndex(([k]) => k === from!.id);
+                            const toIdx = entries.findIndex(([k]) => k === name);
+                            if (fromIdx < 0 || toIdx < 0) return;
+                            const [moved] = entries.splice(fromIdx, 1);
+                            entries.splice(toIdx, 0, moved);
+                            const ordered: Record<string, any> = {};
+                            entries.forEach(([k, v]) => { ordered[k] = v; });
+                            setLocalPresets(ordered);
+                            setPresetsDirty(true);
+                          }}
+                          className="shrink-0 cursor-grab active:cursor-grabbing"
+                        >
+                          <GripVertical size={12} className="opacity-30 hover:opacity-60 pointer-events-none" style={{ color: uiTheme.textMuted }} />
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -307,7 +371,11 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   )}
                 </div>
                 <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
-                  <button onClick={() => { if (onSpeakerPresetsChange) onSpeakerPresetsChange(localPresets); }} className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90" style={{ backgroundColor: secondaryThemeColor }}><Save size={14} /> {t('settings.save') || 'Save'}</button>
+                  <button onClick={() => { if (onSpeakerPresetsChange) { onSpeakerPresetsChange(localPresets); setPresetsDirty(false); } }} disabled={!presetsDirty}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all"
+                    style={{ backgroundColor: presetsDirty ? secondaryThemeColor : uiTheme.border, opacity: presetsDirty ? 1 : 0.5, cursor: presetsDirty ? 'pointer' : 'default' }}>
+                    <Save size={14} /> {t('settings.save') || 'Save'}
+                  </button>
                 </div>
               </>
             )}
@@ -357,12 +425,14 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     <input type="text" value={editingPresetName || ''} onChange={(e) => {
                       const newName = e.target.value;
                       if (newName && newName !== editingPresetName) {
-                        const next = { ...localPresets };
-                        next[newName] = next[editingPresetName!];
-                        delete next[editingPresetName!];
-                        setLocalPresets(next);
+                        const ordered: Record<string, any> = {};
+                        for (const [k, v] of Object.entries(localPresets)) {
+                          if (k === editingPresetName) ordered[newName] = v;
+                          else ordered[k] = v;
+                        }
+                        setLocalPresets(ordered);
                         setEditingPresetName(newName);
-                        if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+                        setPresetsDirty(true);
                       }
                     }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
                   </div>
