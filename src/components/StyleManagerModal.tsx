@@ -651,6 +651,16 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0, undefined, undefined, disabled)}</div>
         </div>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64, undefined, disabled)}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer" style={{ opacity: disabled ? 0.5 : undefined }}>
+            <input type="checkbox" disabled={disabled} checked={style?.bubbleShadow !== false} onChange={(e) => updateFn('bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+            {t('speakers.bubbleShadow')}
+          </label>
+          <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer" style={{ opacity: disabled ? 0.5 : undefined }}>
+            <input type="checkbox" disabled={disabled} checked={style?.textShadow !== false} onChange={(e) => updateFn('textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+            {t('speakers.textShadow')}
+          </label>
+        </div>
       </>)}
     </>
     );
@@ -953,7 +963,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const op = s?.opacity ?? 0.9;
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
-                const shadow = formatBubbleShadow(ss);
+                const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
                 const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
                 const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
                 const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
@@ -1102,7 +1112,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const op = s?.opacity ?? 0.9;
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
-                const shadow = formatBubbleShadow(ss);
+                const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
                 const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
                 const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
                 const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
@@ -1200,7 +1210,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   const bg = rawBg.startsWith('#') ? rawBg : '#111827';
                   const op = s?.opacity ?? 0.9; const tc = s?.textColor || '#fff';
                   const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
-                  const shadow = formatBubbleShadow(ss);
+                  const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
                   const previewMaxWidth = Math.max(40, (s?.maxWidth ?? 720) * PREVIEW_SCALE);
                   return (
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
@@ -1263,7 +1273,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const op = s?.opacity ?? 0.9;
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
-                const shadow = formatBubbleShadow(ss);
+                const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
                 const previewMaxWidth = Math.max(40, (s?.maxWidth ?? 720) * PREVIEW_SCALE);
                 const textAlign = s?.annotationTextAlign || 'center';
                 
@@ -1342,6 +1352,16 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="grid grid-cols-2 gap-2">
                      <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('project.animationStyle')}</span>{renderSel((k, v) => updateStyle('ANNOTATION', k, v), 'animationStyle', s?.animationStyle || 'rise', ['none','fade','rise','pop','slide','blur'])}</div>
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'shadowSize', s?.shadowSize ?? 1, 0, 64)}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer">
+                      <input type="checkbox" checked={s?.bubbleShadow !== false} onChange={(e) => updateStyle('ANNOTATION', 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                      {t('speakers.bubbleShadow')}
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer">
+                      <input type="checkbox" checked={s?.textShadow !== false} onChange={(e) => updateStyle('ANNOTATION', 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                      {t('speakers.textShadow')}
+                    </label>
                   </div>
                 </>)}
                 {renderSection('气泡样式', 'bubble', <>

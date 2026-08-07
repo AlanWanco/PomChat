@@ -3191,6 +3191,16 @@ export function SettingsPanel({
                           {renderNumberInput(speaker.style?.shadowSize ?? 1, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                          </div>
                        </div>
+                       <div className="grid grid-cols-2 gap-2">
+                         <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
+                           <input type="checkbox" checked={speaker.style?.bubbleShadow !== false} onChange={(e) => updateSpeakerStyle(key, 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                           {t('speakers.bubbleShadow')}
+                         </label>
+                         <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
+                           <input type="checkbox" checked={speaker.style?.textShadow !== false} onChange={(e) => updateSpeakerStyle(key, 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                           {t('speakers.textShadow')}
+                         </label>
+                       </div>
                      </div>
                     </div>
 
@@ -3490,6 +3500,16 @@ export function SettingsPanel({
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                         {renderNumberInput(annotation.style?.shadowSize ?? 1, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
+                        <input type="checkbox" checked={annotation.style?.bubbleShadow !== false} onChange={(e) => updateSpeakerStyle('ANNOTATION', 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                        {t('speakers.bubbleShadow')}
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
+                        <input type="checkbox" checked={annotation.style?.textShadow !== false} onChange={(e) => updateSpeakerStyle('ANNOTATION', 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
+                        {t('speakers.textShadow')}
+                      </label>
                     </div>
                     </div>
 

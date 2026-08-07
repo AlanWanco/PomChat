@@ -84,6 +84,8 @@ export interface SpeakerStyle {
   annotationTextAlign?: 'left' | 'center' | 'right';
   annotationMarginX?: number;
   annotationFollowGlobalPadding?: boolean;
+  bubbleShadow?: boolean;
+  textShadow?: boolean;
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
 }
 

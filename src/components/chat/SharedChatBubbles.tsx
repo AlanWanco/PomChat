@@ -41,6 +41,8 @@ export interface SharedChatSpeakerStyle {
   annotationTextAlign?: 'left' | 'center' | 'right';
   annotationMarginX?: number;
   annotationFollowGlobalPadding?: boolean;
+  bubbleShadow?: boolean;
+  textShadow?: boolean;
   animationStyle?: 'none' | 'fade' | 'rise' | 'pop' | 'slide' | 'blur';
 }
 
@@ -1056,8 +1058,10 @@ export function ChatMessageBubble({
   const opacity = speaker.style?.opacity ?? 0.9;
   const hexBg = bgColor.startsWith('#') ? bgColor : '#ffffff';
   const finalBgColor = `${hexBg}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
-  const bubbleShadow = formatBubbleShadow(shadowSize);
-  const speakerBlockShadow = shadowSize > 0
+  const bubbleShadowEnabled = speaker.style?.bubbleShadow ?? true;
+  const textShadowEnabled = speaker.style?.textShadow ?? true;
+  const bubbleShadow = bubbleShadowEnabled ? formatBubbleShadow(shadowSize) : 'none';
+  const speakerBlockShadow = textShadowEnabled && shadowSize > 0
     ? `drop-shadow(0 ${Math.round(shadowSize * 0.2)}px ${Math.max(6, shadowSize * 0.55)}px rgba(15, 23, 42, 0.22))`
     : 'none';
   const shouldEnableBlockShadow = currentProgress >= 0.98 || (chatLayout?.animationStyle || 'rise') === 'none';
@@ -1338,6 +1342,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
     ? { opacity: 1, transform: undefined, filter: undefined }
     : getBubbleMotionState(annotationProgress, annotationAnimationStyle, speaker.side);
   const shadowSize = (speaker.style?.shadowSize ?? 1) * combinedScale;
+  const bubbleShadowEnabled = speaker.style?.bubbleShadow ?? true;
   const maxWidth = (speaker.style?.maxWidth ?? 720) * combinedScale;
   const inlineImageMaxWidthPx = Math.max(80, maxWidth - (speaker.style?.paddingX ?? 24) * combinedScale * 2);
   const annotationAlign = speaker.style?.annotationAlign ?? 'center';
@@ -1357,7 +1362,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       borderRadius: `${(speaker.style?.annotationBorderRadius ?? speaker.style?.borderRadius ?? 28) * combinedScale}px`,
       backgroundColor: finalBgColor,
       color: textColor,
-      boxShadow: formatBubbleShadow(shadowSize),
+      boxShadow: bubbleShadowEnabled ? formatBubbleShadow(shadowSize) : 'none',
       opacity: annotationMotion.opacity,
       transform: annotationMotion.transform,
       filter: annotationMotion.filter,
