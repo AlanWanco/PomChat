@@ -797,7 +797,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%' }}>
-                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1.2, marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStroke: nameStrokeWidth > 0 ? `${nameStrokeWidth}px ${nameStrokeColor}` : undefined }}>{nameText}</div> : null}
+                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
                       <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
                     </div>
@@ -908,7 +908,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%' }}>
-                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1.2, marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStroke: nameStrokeWidth > 0 ? `${nameStrokeWidth}px ${nameStrokeColor}` : undefined }}>{nameText}</div> : null}
+                    {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
                       <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
                     </div>
@@ -994,7 +994,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   return (
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as any, lineHeight: 1.35 }}>
                       {editingAnnotPresetName}
                     </div>
@@ -1024,7 +1024,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   }, () => {
                     setLocalAnnotationPresets((p) => {
                       const style = p[editingAnnotPresetName]?.style || {};
-                      const bg = style.bgColor || '#2563eb';
+                      const bg = style.bgColor || '#111827';
                       const tc = style.textColor || '#ffffff';
                       return { ...p, [editingAnnotPresetName]: { ...p[editingAnnotPresetName], style: { ...style, bgColor: tc, textColor: bg } } };
                     });
@@ -1059,7 +1059,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 return (
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as any, lineHeight: 1.35 }}>
                       {t('speakers.annotationPreview')}
                     </div>
