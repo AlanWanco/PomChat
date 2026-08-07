@@ -1343,6 +1343,10 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
     : getBubbleMotionState(annotationProgress, annotationAnimationStyle, speaker.side);
   const shadowSize = (speaker.style?.shadowSize ?? 1) * combinedScale;
   const bubbleShadowEnabled = speaker.style?.bubbleShadow ?? true;
+  const textShadowEnabled = speaker.style?.textShadow ?? true;
+  const annotationTextShadowFilter = textShadowEnabled && shadowSize > 0
+    ? `drop-shadow(0 ${Math.round(shadowSize * 0.2)}px ${Math.max(6, shadowSize * 0.55)}px rgba(15, 23, 42, 0.22))`
+    : undefined;
   const maxWidth = (speaker.style?.maxWidth ?? 720) * combinedScale;
   const inlineImageMaxWidthPx = Math.max(80, maxWidth - (speaker.style?.paddingX ?? 24) * combinedScale * 2);
   const annotationAlign = speaker.style?.annotationAlign ?? 'center';
@@ -1365,7 +1369,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
       boxShadow: bubbleShadowEnabled ? formatBubbleShadow(shadowSize) : 'none',
       opacity: annotationMotion.opacity,
       transform: annotationMotion.transform,
-      filter: annotationMotion.filter,
+      filter: [annotationMotion.filter, annotationTextShadowFilter].filter(Boolean).join(' ') || undefined,
       marginTop: speaker.style?.annotationPosition === 'top' ? `${(speaker.style?.margin ?? 12) * combinedScale}px` : undefined,
       marginBottom: (speaker.style?.annotationPosition ?? 'bottom') === 'bottom' ? `${(speaker.style?.margin ?? 12) * combinedScale}px` : undefined
     } as React.CSSProperties,

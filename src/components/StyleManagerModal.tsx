@@ -964,6 +964,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
                 const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
+                const textShadowFilter = (s?.textShadow !== false && ss > 0) ? `drop-shadow(0 ${Math.round(ss * 0.2)}px ${Math.max(6, ss * 0.55)}px rgba(15, 23, 42, 0.22))` : 'none';
                 const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
                 const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
                 const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
@@ -979,7 +980,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const avatarEl = <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} />;
                 
                 const bubbleEl = (
-                  <div style={{ width: 'fit-content', maxWidth: '100%' }}>
+                  <div style={{ width: 'fit-content', maxWidth: '100%', filter: textShadowFilter }}>
                     {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
                       <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
@@ -1113,6 +1114,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
                 const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
+                const textShadowFilter = (s?.textShadow !== false && ss > 0) ? `drop-shadow(0 ${Math.round(ss * 0.2)}px ${Math.max(6, ss * 0.55)}px rgba(15, 23, 42, 0.22))` : 'none';
                 const avSizePx = Math.round(AVATAR_DEFAULT * PREVIEW_SCALE);
                 const namePx = Math.round(NAME_DEFAULT * PREVIEW_SCALE);
                 const bubbleGapPx = Math.round(BUBBLE_GAP_DEFAULT * PREVIEW_SCALE);
@@ -1128,7 +1130,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const avatarEl = <img src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }} />;
                 
                 const bubbleEl = (
-                  <div style={{ width: 'fit-content', maxWidth: '100%' }}>
+                  <div style={{ width: 'fit-content', maxWidth: '100%', filter: textShadowFilter }}>
                     {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
                       <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
@@ -1211,12 +1213,13 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   const op = s?.opacity ?? 0.9; const tc = s?.textColor || '#fff';
                   const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
                   const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
+                  const textShadowFilter = (s?.textShadow !== false && ss > 0) ? `drop-shadow(0 ${Math.round(ss * 0.2)}px ${Math.max(6, ss * 0.55)}px rgba(15, 23, 42, 0.22))` : 'none';
                   const previewMaxWidth = Math.max(40, (s?.maxWidth ?? 720) * PREVIEW_SCALE);
                   return (
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
-                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as any, lineHeight: 1.35 }}>
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as any, lineHeight: 1.35 }}>
                       {editingAnnotPresetName}
                     </div>
                   </div>
@@ -1274,6 +1277,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const tc = s?.textColor || '#fff';
                 const ss = (s?.shadowSize ?? 1) * PREVIEW_SCALE;
                 const shadow = (s?.bubbleShadow !== false) ? formatBubbleShadow(ss) : 'none';
+                const textShadowFilter = (s?.textShadow !== false && ss > 0) ? `drop-shadow(0 ${Math.round(ss * 0.2)}px ${Math.max(6, ss * 0.55)}px rgba(15, 23, 42, 0.22))` : 'none';
                 const previewMaxWidth = Math.max(40, (s?.maxWidth ?? 720) * PREVIEW_SCALE);
                 const textAlign = s?.annotationTextAlign || 'center';
                 
@@ -1281,7 +1285,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
-                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as any, lineHeight: 1.35 }}>
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as any, lineHeight: 1.35 }}>
                       {t('speakers.annotationPreview')}
                     </div>
                   </div>
