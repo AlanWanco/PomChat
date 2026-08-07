@@ -113,6 +113,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [editingPresetName, setEditingPresetName] = useState<string | null>(null);
   const [speakersDirty, setSpeakersDirty] = useState(false);
   const [presetsDirty, setPresetsDirty] = useState(false);
+  const [presetSavePromptOpen, setPresetSavePromptOpen] = useState(false);
+  const [presetSaveDraft, setPresetSaveDraft] = useState('');
   const [localAnnotationPresets, setLocalAnnotationPresets] = useState<Record<string, any>>({});
   const [editingAnnotPresetName, setEditingAnnotPresetName] = useState<string | null>(null);
   const [selectedAnnotPresetIds, setSelectedAnnotPresetIds] = useState<Set<string>>(new Set());
@@ -182,6 +184,16 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setSelectedPresetIds(new Set());
     if (editingPresetName && selectedPresetIds.has(editingPresetName)) setEditingPresetName(null);
     setPresetsDirty(true);
+  };
+  const handleSaveSpeakerAsPreset = () => {
+    const speaker = editingSpeaker;
+    if (!speaker) return;
+    const name = presetSaveDraft.trim() || `${speaker.name || editingSpeakerId || 'speaker'} preset`;
+    const next = { ...localPresets, [name]: { style: JSON.parse(JSON.stringify(speaker.style || {})), avatar: speaker.avatar || '', side: speaker.side || 'left' } };
+    setLocalPresets(next);
+    setPresetsDirty(true);
+    setPresetSavePromptOpen(false);
+    setPresetSaveDraft('');
   };
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
@@ -450,6 +462,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const sectionStyle = { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg };
 
   const toggleSection = (key: string) => setCollapsedSections((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const isExternalFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
   const CollapsibleSection = ({ title, sectionKey, children }: { title: React.ReactNode; sectionKey: string; children: React.ReactNode }) => {
     const collapsed = collapsedSections.has(sectionKey);
     return (
@@ -526,10 +539,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg, backdropFilter: 'blur(10px)' }} onClick={onClose}>
       <div className="flex flex-col w-full max-w-[45rem] max-h-[85vh] overflow-hidden rounded-[28px] border shadow-2xl"
         onClick={(e) => e.stopPropagation()}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onDragLeave={(e) => { e.stopPropagation(); }}
-        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.stopPropagation(); } }}
+        onDragEnter={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.stopPropagation(); } }}
+        onDragLeave={(e) => { if (!isExternalFileDrag(e)) e.stopPropagation(); }}
+        onDrop={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.stopPropagation(); } }}
         style={{ ...{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties, background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}>
         {/* Banner Header */}
         <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
@@ -577,9 +590,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
                   {Object.entries(localSpeakers).filter(([, s]) => s.type !== 'annotation').map(([id, speaker]) => (
                     <div key={id} onClick={() => { setEditingSpeakerId(id); setSelectedIds(new Set([id])); }}
-                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverSpeakerId(id); }}
+                      onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverSpeakerId(id); } }}
                       onDragLeave={() => setDragOverSpeakerId(null)}
                       onDrop={(e) => {
+                        if (isExternalFileDrag(e)) return;
                         e.preventDefault(); e.stopPropagation();
                         setDragOverSpeakerId(null);
                         const from = dragRef.current;
@@ -644,9 +658,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   {Object.keys(localPresets).length > 0 ? (
                     Object.entries(localPresets).map(([name, preset]) => (
                       <div key={name} onClick={() => { setEditingPresetName(name); setSelectedPresetIds(new Set([name])); }}
-                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverPresetName(name); }}
+                        onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverPresetName(name); } }}
                         onDragLeave={() => setDragOverPresetName(null)}
                         onDrop={(e) => {
+                          if (isExternalFileDrag(e)) return;
                           e.preventDefault(); e.stopPropagation();
                           setDragOverPresetName(null);
                           const from = dragRef.current;
@@ -726,9 +741,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   {annotPresetEntries.length > 0 ? (
                     annotPresetEntries.map(([name, preset]) => (
                       <div key={name} onClick={() => { setEditingAnnotPresetName(name); setSelectedAnnotPresetIds(new Set([name])); }}
-                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverPresetName(name); }}
+                        onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverPresetName(name); } }}
                         onDragLeave={() => setDragOverPresetName(null)}
                         onDrop={(e) => {
+                          if (isExternalFileDrag(e)) return;
                           e.preventDefault(); e.stopPropagation();
                           setDragOverPresetName(null);
                           const from = dragRef.current;
@@ -840,7 +856,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 );
                 
                 return (
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ overflowAnchor: 'none' }}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div className="flex items-start" style={{ flexDirection: isLeft ? 'row' : 'row-reverse', gap: `${bubbleGapPx}px` }}>
                     {avatarEl}
@@ -882,6 +898,22 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
+                  <button type="button" onClick={() => { setPresetSavePromptOpen(!presetSavePromptOpen); setPresetSaveDraft(`${editingSpeaker?.name || editingSpeakerId || 'speaker'} preset`); }}
+                    className="w-full text-xs px-2 py-1.5 rounded border transition-all duration-300"
+                    style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}>
+                    {t('speakers.savePreset') || '保存为预设'}
+                  </button>
+                  {presetSavePromptOpen && (
+                    <div className="space-y-1.5">
+                      <input type="text" value={presetSaveDraft} onChange={(e) => setPresetSaveDraft(e.target.value)}
+                        placeholder={t('speakers.presetName') || '输入预设名称'} autoFocus
+                        className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleSaveSpeakerAsPreset} className="flex-1 text-xs px-2 py-1 rounded font-medium text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('common.confirm') || '确认'}</button>
+                        <button type="button" onClick={() => setPresetSavePromptOpen(false)} className="flex-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.cancel') || '取消'}</button>
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
                     <select value={editingSpeaker.side || 'left'} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, side: e.target.value as 'left' | 'right' }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
@@ -951,7 +983,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 );
                 
                 return (
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ overflowAnchor: 'none' }}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div className="flex items-start" style={{ flexDirection: isLeft ? 'row' : 'row-reverse', gap: `${bubbleGapPx}px` }}>
                     {avatarEl}
@@ -1027,7 +1059,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   const shadow = formatBubbleShadow(ss);
                   const previewMaxWidth = Math.max(40, (s?.maxWidth ?? 720) * PREVIEW_SCALE);
                   return (
-              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
+              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as any, lineHeight: 1.35 }}>
@@ -1092,7 +1124,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const textAlign = s?.annotationTextAlign || 'center';
                 
                 return (
-              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
+              <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as any, lineHeight: 1.35 }}>
