@@ -1370,7 +1370,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
               <div className="flex-1 flex items-center justify-center text-sm opacity-50">{t('speakers.applyPreset') || 'Select a speaker to edit'}</div>
             )}
             <div className="px-4 py-3 border-t flex items-center justify-between gap-2" style={{ borderColor: uiTheme.border }}>
-              {typeof window !== 'undefined' && (window as any).electron && (
+              {leftTab === 'presets' && typeof window !== 'undefined' && (window as any).electron && (
                 <button onClick={() => void handlePersistAllPresetAvatars()} className="px-3 py-2 rounded-xl text-xs transition-all duration-300"
                   style={{ border: `1px solid ${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
                   title={t('preset.persistAvatarHint') || '把所有预设头像保存到本机 avatar 文件夹（绝对路径）并自动保存'}>
