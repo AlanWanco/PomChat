@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen } from 'lucide-react';
+import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen, ChevronDown } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { formatFontFamilyValue } from '../fontPresets';
@@ -106,6 +106,11 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const dragRef = useRef<{ id: string; type: 'speaker' | 'preset' | 'annotPreset' } | null>(null);
   const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
   const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setCollapsedSections(new Set(['basic', 'typography', 'name', 'colors', 'border', 'layout', 'position', 'animation', 'bubble']));
+  }, [leftTab, editingSpeakerId, editingPresetName, editingAnnotPresetName]);
 
   useEffect(() => {
     if (isOpen) {
@@ -428,19 +433,33 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const modalBg = isDarkMode ? 'rgba(2, 6, 23, 0.72)' : 'rgba(15, 23, 42, 0.48)';
   const sectionStyle = { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg };
 
+  const toggleSection = (key: string) => setCollapsedSections((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const CollapsibleSection = ({ title, sectionKey, children }: { title: React.ReactNode; sectionKey: string; children: React.ReactNode }) => {
+    const collapsed = collapsedSections.has(sectionKey);
+    return (
+      <div className="rounded-xl border overflow-hidden" style={sectionStyle}>
+        <div className="flex items-center justify-between gap-2 px-3 py-2 cursor-pointer select-none border-b" style={{ borderColor: uiTheme.border }} onClick={() => toggleSection(sectionKey)}>
+          <span className="text-xs font-semibold opacity-80">{title}</span>
+          <ChevronDown size={14} className={`transition-transform duration-150 shrink-0 ${collapsed ? '' : 'rotate-180'}`} style={{ color: uiTheme.textMuted }} />
+        </div>
+        {!collapsed && <div className="p-3 space-y-2">{children}</div>}
+      </div>
+    );
+  };
+
   const renderEditorFields = (style: any, updateFn: (k: string, v: any) => void, swapBgText?: () => void) => {
     const isAnnotationStyle = Boolean(style?.annotationStyle);
     return (
     <>
-      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.typography')}</span>
+      <CollapsibleSection title={t('speakers.typography')} sectionKey="typography">
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.font')}</span>{renderFontField(updateFn, style?.fontFamily)}</div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontSize')}</span>{renderNum(updateFn, 'fontSize', style?.fontSize, 8)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontWeight')}</span>{renderSel(updateFn, 'fontWeight', style?.fontWeight, ['normal','bold','bolder','lighter','100','300','500','700','900'])}</div>
         </div>
-      </div>
+      </CollapsibleSection>
       {!isAnnotationStyle && (
-      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.name')}</span>
+      <CollapsibleSection title={t('speakers.name')} sectionKey="name">
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFont')}</span>{renderFontField(updateFn, style?.nameFontFamily)}</div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameColor')}</span>{renderColor(updateFn, 'nameColor', style?.nameColor)}</div>
@@ -450,18 +469,18 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeColor')}</span>{renderColor(updateFn, 'nameStrokeColor', style?.nameStrokeColor)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeWidth')}</span>{renderNum(updateFn, 'nameStrokeWidth', style?.nameStrokeWidth, 0, 12)}</div>
         </div>
-      </div>
+      </CollapsibleSection>
       )}
-      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.colors')}</span>
+      <CollapsibleSection title={t('speakers.colors')} sectionKey="colors">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor(updateFn, 'bgColor', style?.bgColor)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor(updateFn, 'textColor', style?.textColor)}</div>
         </div>
         <button onClick={swapBgText ? () => swapBgText() : () => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('speakers.swapBgText') || 'Swap'}</button>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05)}</div>
-      </div>
+      </CollapsibleSection>
       {!isAnnotationStyle && (
-      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.border')}</span>
+      <CollapsibleSection title={t('speakers.border')} sectionKey="border">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderColor')}</span>{renderColor(updateFn, 'avatarBorderColor', style?.avatarBorderColor)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderWidth')}</span>{renderNum(updateFn, 'avatarBorderWidth', style?.avatarBorderWidth ?? 4, 0, 10)}</div>
@@ -474,15 +493,15 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderRadius')}</span>{renderNum(updateFn, 'borderRadius', style?.borderRadius, 0, 64)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderOpacity')}</span>{renderRange(updateFn, 'borderOpacity', style?.borderOpacity, 0, 1, 0.05)}</div>
         </div>
-      </div>
+      </CollapsibleSection>
       )}
-      <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.layout')}</span>
+      <CollapsibleSection title={t('speakers.layout')} sectionKey="layout">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingX')}</span>{renderNum(updateFn, 'paddingX', style?.paddingX, 0)}</div>
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0)}</div>
         </div>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64)}</div>
-      </div>
+      </CollapsibleSection>
     </>
     );
   };
@@ -813,7 +832,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   </div>
                 </div>
                 <div className="p-4 space-y-3">
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.title')}</span>
+                <CollapsibleSection title={t('speakers.title')} sectionKey="basic">
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.name') || 'Name'}</span><input type="text" value={editingSpeaker.name || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, name: e.target.value }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} /></div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
@@ -850,7 +869,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
                     <select value={editingSpeaker.side || 'left'} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, side: e.target.value as 'left' | 'right' }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
-                </div>
+                </CollapsibleSection>
                 {renderEditorFields(editingSpeaker.style, (k, v) => updateStyle(editingSpeakerId!, k, v), () => {
                   setLocalSpeakers((p) => {
                     const s = p[editingSpeakerId!]?.style || {};
@@ -924,7 +943,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   </div>
                 </div>
                 <div className="p-4 space-y-3">
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">预设配置</span>
+                <CollapsibleSection title="预设配置" sectionKey="basic">
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
                     <input type="text" value={editingPresetName || ''} onChange={(e) => {
                       const newName = e.target.value;
@@ -961,7 +980,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
                     <select value={editingPreset.side || 'left'} onChange={(e) => updatePresetField(editingPresetName!, 'side', e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
-                </div>
+                </CollapsibleSection>
                 {renderEditorFields(editingPreset.style, (k, v) => updatePresetStyle(editingPresetName!, k, v), () => {
                   setLocalPresets((p) => {
                     const s = p[editingPresetName!]?.style || {};
@@ -1081,7 +1100,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     </select>
                   </div>
                 )}
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">位置与对齐</span>
+                <CollapsibleSection title="位置与对齐" sectionKey="position">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <span className="text-[0.625rem] opacity-70">{t('annotation.position')}</span>
@@ -1116,21 +1135,21 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       </button>
                     </div>
                   </div>
-                </div>
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('speakers.typography')}</span>
+                </CollapsibleSection>
+                <CollapsibleSection title={t('speakers.typography')} sectionKey="typography">
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.font')}</span>{renderFontField((k, v) => updateStyle('ANNOTATION', k, v), s?.fontFamily)}</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontSize')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'fontSize', s?.fontSize ?? 24)}</div>
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontWeight')}</span>{renderSel((k, v) => updateStyle('ANNOTATION', k, v), 'fontWeight', s?.fontWeight || 'normal', ['normal','bold','bolder','lighter','100','300','500','700','900'])}</div>
                   </div>
-                </div>
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">{t('project.animationStyle')}</span>
+                </CollapsibleSection>
+                <CollapsibleSection title={t('project.animationStyle')} sectionKey="animation">
                   <div className="grid grid-cols-2 gap-2">
                      <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('project.animationStyle')}</span>{renderSel((k, v) => updateStyle('ANNOTATION', k, v), 'animationStyle', s?.animationStyle || 'rise', ['none','fade','rise','pop','slide','blur'])}</div>
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'shadowSize', s?.shadowSize ?? 1, 0, 64)}</div>
                   </div>
-                </div>
-                <div className="p-3 rounded-xl border space-y-2" style={sectionStyle}><span className="text-xs font-semibold opacity-80">气泡样式</span>
+                </CollapsibleSection>
+                <CollapsibleSection title="气泡样式" sectionKey="bubble">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'bgColor', s?.bgColor)}</div>
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'textColor', s?.textColor)}</div>
@@ -1148,7 +1167,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange((k, v) => updateStyle('ANNOTATION', k, v), 'opacity', s?.opacity ?? 0.9, 0, 1, 0.05)}</div>
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('annotation.maxWidth')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'maxWidth', s?.maxWidth ?? 720)}</div>
-                </div>
+                </CollapsibleSection>
               </div>
               </div>
               );
