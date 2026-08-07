@@ -605,7 +605,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         borderTop: dragOverSpeakerId === id ? `2px solid ${secondaryThemeColor}` : undefined,
                       }}>
                       <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
-                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: speaker.style?.bgColor || '#888' }} />
+                      <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: speaker.style?.textColor || '#fff', borderColor: speaker.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
                       <span className="truncate flex-1">{speaker.name || id}</span>
                       <div
                         draggable
@@ -671,7 +671,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           borderTop: dragOverPresetName === name ? `2px solid ${secondaryThemeColor}` : undefined,
                         }}>
                         <input type="checkbox" checked={selectedPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => togglePresetSelect(name)} style={{ accentColor: secondaryThemeColor }} />
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: preset?.style?.bgColor || '#888' }} />
+                        <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: preset?.style?.textColor || '#fff', borderColor: preset?.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
                         <span className="truncate flex-1">{name}</span>
                         <div
                           draggable
@@ -698,7 +698,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="px-3 py-2 text-[0.625rem] opacity-50 uppercase">当前注释样式</div>
                   <div className="flex items-center gap-2 px-3 py-2 cursor-pointer text-xs" onClick={() => setEditingAnnotPresetName(null)}
                     style={{ backgroundColor: `${themeColor}14`, color: uiTheme.text }}>
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: annotationSpeaker?.style?.bgColor || '#111827' }} />
+                    <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: annotationSpeaker?.style?.textColor || '#fff', borderColor: annotationSpeaker?.style?.bgColor || '#111827', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
                     <span className="truncate flex-1">{annotName}</span>
                   </div>
                   <div className="border-t" style={{ borderColor: uiTheme.border }} />
@@ -753,7 +753,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           borderTop: dragOverPresetName === name ? `2px solid ${secondaryThemeColor}` : undefined,
                         }}>
                         <input type="checkbox" checked={selectedAnnotPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => { const n = new Set(selectedAnnotPresetIds); n.has(name) ? n.delete(name) : n.add(name); setSelectedAnnotPresetIds(n); }} style={{ accentColor: secondaryThemeColor }} />
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: preset?.style?.bgColor || '#888' }} />
+                        <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: preset?.style?.textColor || '#fff', borderColor: preset?.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
                         <span className="truncate flex-1">{name}</span>
                         <div
                           draggable
