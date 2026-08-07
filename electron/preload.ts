@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electron', {
   cacheRemoteAsset: (assetUrl: string) => ipcRenderer.invoke('cache-remote-asset', assetUrl),
   saveClipboardImageToCache: (payload: { bytes: number[]; contentType?: string; preferredName?: string }) => ipcRenderer.invoke('save-clipboard-image-to-cache', payload),
   importProjectAsset: (payload: { projectFilePath: string; sourcePath: string; preferredName?: string }) => ipcRenderer.invoke('import-project-asset', payload),
+  persistPresetAvatar: (payload: { value: string; projectFilePath?: string | null; preferredName?: string }) => ipcRenderer.invoke('persist-preset-avatar', payload),
   saveClipboardImageToProjectAssets: (payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => ipcRenderer.invoke('save-clipboard-image-to-project-assets', payload),
   showSaveDialog: (options: any) => ipcRenderer.invoke('show-save-dialog', options),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),

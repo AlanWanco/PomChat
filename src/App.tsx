@@ -1883,6 +1883,11 @@ const [previewScale, setPreviewScale] = useState(1);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showStyleManager, setShowStyleManager] = useState(false);
+  const [styleManagerPresetTarget, setStyleManagerPresetTarget] = useState<string | null>(null);
+  const openStyleManagerAtPreset = useCallback((presetName: string) => {
+    setStyleManagerPresetTarget(presetName);
+    setShowStyleManager(true);
+  }, []);
   const rememberRecentProject = useCallback((path: string | null | undefined) => {
     if (!path) return;
     setRecentProject(path);
@@ -3776,6 +3781,7 @@ const [previewScale, setPreviewScale] = useState(1);
     pushResource({ id: 'background.image', label: t('project.backgroundMedia'), value: configToInspect.background?.image || '', kind: /^https?:\/\//i.test(configToInspect.background?.image || '') ? 'url' : 'file' });
 
     Object.entries(configToInspect.speakers || {}).forEach(([speakerKey, speaker]: [string, any]) => {
+      if (speaker?.lockPreset === true) return;
       pushResource({
         id: `speakers.${speakerKey}.avatar`,
         label: `${speaker?.name || speakerKey} / ${t('speakers.avatar')}`,
@@ -3996,11 +4002,26 @@ const [previewScale, setPreviewScale] = useState(1);
     setProjectResourceActionBusy('local-copy');
     try {
       const workingConfig = getCurrentConfigWithUi();
-      const resources = collectProjectResources(workingConfig);
       const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
       const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
-      const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
       let nextConfig = workingConfig;
+      let unlockedCount = 0;
+      const nextSpeakers = { ...(workingConfig.speakers || {}) };
+      Object.entries(nextSpeakers).forEach(([spkId, spk]: [string, any]) => {
+        if (spk?.lockPreset !== true || !spk?.avatar) return;
+        const resolved = getResolvedProjectAssetPath(spk.avatar, projectPath);
+        if (!resolved || !looksLikeLocalFsPath(resolved)) return;
+        if (isPathInsideDirectory(resolved, remoteCacheDir)) return;
+        if (isPathInsideDirectory(resolved, projectAssetsDir)) return;
+        nextSpeakers[spkId] = { ...spk, lockPreset: false, preset: '' };
+        unlockedCount += 1;
+      });
+      if (unlockedCount > 0) {
+        pushHistorySnapshot();
+        nextConfig = { ...nextConfig, speakers: nextSpeakers };
+      }
+      const resources = collectProjectResources(nextConfig);
+      const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
       let changed = 0;
       const changedItems: string[] = [];
 
@@ -4024,12 +4045,15 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }
 
+      if (unlockedCount > 0) {
+        changedItems.push(t('resource.unlockPresetCount', { count: unlockedCount }));
+      }
       if (changed > 0) {
         await applyProjectResourceMigrationResult(nextConfig, 'global.copyLocalAssetsDone');
         setProjectResourceActionReport({ title: t('global.resourceActionChanged', { count: changed }), items: changedItems });
       } else {
         showToast(t('global.copyLocalAssetsNoop'));
-        setProjectResourceActionReport({ title: t('global.resourceActionNoChanges'), items: [] });
+        setProjectResourceActionReport({ title: unlockedCount > 0 ? t('resource.unlockPresetCount', { count: unlockedCount }) : t('global.resourceActionNoChanges'), items: changedItems });
       }
     } catch (error: any) {
       showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
@@ -4037,7 +4061,7 @@ const [previewScale, setPreviewScale] = useState(1);
     } finally {
       setProjectResourceActionBusy(null);
     }
-  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
+  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, pushHistorySnapshot, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
 
   const handleRefreshRemoteAssetCache = useCallback(async () => {
     if (projectResourceActionBusy) {
@@ -6445,6 +6469,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}
+                onOpenPresetInStyleManager={openStyleManagerAtPreset}
                 resolveAssetSrc={resolvePath}
                 projectPath={projectPath}
                 onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
@@ -6670,6 +6695,7 @@ const [previewScale, setPreviewScale] = useState(1);
                    activeTab={activeTab}
                    setActiveTab={setActiveTab}
                    onSelectImage={handleSelectImage}
+                onOpenPresetInStyleManager={openStyleManagerAtPreset}
                    onSeek={handleSeek}
                    currentTime={previewRenderTime}
                    activeInsertImageId={activeInsertImageId}
@@ -6874,6 +6900,7 @@ const [previewScale, setPreviewScale] = useState(1);
                    activeTab={activeTab}
                   setActiveTab={setActiveTab}
                    onSelectImage={handleSelectImage}
+                onOpenPresetInStyleManager={openStyleManagerAtPreset}
                    resolveAssetSrc={resolvePath}
                    projectPath={projectPath}
                    onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
@@ -6926,7 +6953,7 @@ const [previewScale, setPreviewScale] = useState(1);
               {previewFontFaceCss ? <style>{previewFontFaceCss}</style> : null}
               
               {/* Fallback color layer if no background image */}
-              <div className="absolute inset-0 z-0" style={{ backgroundColor: isDarkMode ? '#111111' : '#ffffff', borderColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.12)' }} />
+              <div className="absolute inset-0 z-0" style={{ backgroundColor: '#1f2937', borderColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.12)' }} />
 
               {/* Background Image Wrapper */}
               {config.background?.image && (
@@ -7469,6 +7496,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 onSelectImage={handleSelectImage}
+                onOpenPresetInStyleManager={openStyleManagerAtPreset}
                 onSeek={handleSeek}
                 currentTime={previewRenderTime}
                 activeInsertImageId={activeInsertImageId}
@@ -7637,6 +7665,7 @@ const [previewScale, setPreviewScale] = useState(1);
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             onSelectImage={handleSelectImage}
+                onOpenPresetInStyleManager={openStyleManagerAtPreset}
             showSubtitleTab
             compactHeader
             hideHeader
@@ -7800,6 +7829,7 @@ const [previewScale, setPreviewScale] = useState(1);
         annotationPresets={annotationPresets}
         projectPath={projectPath}
         projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+        initialPresetName={styleManagerPresetTarget}
         onSelectImage={handleSelectImage}
         onSpeakerPresetsChange={setPresets}
         onAnnotationPresetsChange={setAnnotationPresets}
@@ -7808,7 +7838,7 @@ const [previewScale, setPreviewScale] = useState(1);
           setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
           showToast(t('speakers.presetSaved', { name: '' }));
         }}
-        onClose={() => setShowStyleManager(false)}
+        onClose={() => { setShowStyleManager(false); setStyleManagerPresetTarget(null); }}
       />
 
       {projectResourceCheckModal}

@@ -57,6 +57,12 @@ function getExportLogDir() {
   return dir;
 }
 
+function getPresetAvatarDir() {
+  const dir = path.join(os.homedir(), '.config', 'pomchat', 'avatar');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 function collectMediaFiles(config: any) {
   const speakerAvatars = Object.entries(config?.speakers || {})
     .map(([speakerId, speaker]: [string, any]) => ({ speakerId, path: speaker?.avatar || '' }))
@@ -504,6 +510,72 @@ function saveImageBufferToProjectAssets(projectFilePath: string, buffer: Buffer,
     storedPath: toProjectRelativePath(projectFilePath, outputPath),
     absolutePath: outputPath,
   };
+}
+
+async function persistAvatarToPresetDir(projectFilePath: string | null | undefined, value: string, preferredName?: string | null) {
+  const avatarDir = getPresetAvatarDir();
+  const trimmed = (value || '').trim();
+  if (!trimmed) {
+    throw new Error('Empty avatar value');
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const url = new URL(trimmed);
+    const response = await fetch(trimmed, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 PomChat/1.0',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Referer': `${url.origin}/`
+      },
+      redirect: 'follow'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch avatar: ${response.status} ${response.statusText}`);
+    }
+    const contentType = response.headers.get('content-type');
+    const urlExt = path.extname(url.pathname || '').toLowerCase();
+    const extension = guessExtensionFromContentType(contentType) || urlExt || '.png';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const outputPath = createUniqueAvatarPath(avatarDir, preferredName, extension);
+    fs.writeFileSync(outputPath, buffer);
+    return outputPath;
+  }
+
+  const resolved = projectFilePath
+    ? resolveProjectResourcePath(projectFilePath, trimmed)
+    : (path.isAbsolute(trimmed) || trimmed.startsWith('\\\\') ? trimmed : resolveAppFilePath(trimmed));
+  if (!resolved || !fs.existsSync(resolved)) {
+    throw new Error('Avatar file does not exist');
+  }
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    throw new Error('Avatar path is not a file');
+  }
+  const normalized = path.resolve(resolved);
+  const normalizedAvatarDir = path.resolve(avatarDir);
+  if (normalized.startsWith(`${normalizedAvatarDir}${path.sep}`) || normalized === normalizedAvatarDir) {
+    return normalized;
+  }
+  const extension = path.extname(normalized).toLowerCase() || '.png';
+  const outputPath = createUniqueAvatarPath(avatarDir, preferredName, extension);
+  fs.copyFileSync(normalized, outputPath);
+  return outputPath;
+}
+
+function createUniqueAvatarPath(avatarDir: string, preferredName: string | null | undefined, fallbackExtension: string) {
+  const rawName = (preferredName || '').trim();
+  const parsed = rawName ? path.parse(rawName) : null;
+  const extension = (parsed?.ext || fallbackExtension || '.png').toLowerCase();
+  const baseName = sanitizeFileStem(parsed?.name || 'avatar');
+  let attempt = 0;
+  while (true) {
+    const fileName = attempt === 0 ? `${baseName}${extension}` : `${baseName}-${attempt + 1}${extension}`;
+    const outputPath = path.join(avatarDir, fileName);
+    if (!fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+    attempt += 1;
+  }
 }
 
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
@@ -1196,6 +1268,13 @@ ipcMain.handle('import-project-asset', async (_event, payload: { projectFilePath
   }
 
   return importFileToProjectAssets(payload.projectFilePath, payload.sourcePath, payload.preferredName);
+});
+
+ipcMain.handle('persist-preset-avatar', async (_event, payload: { value: string; projectFilePath?: string | null; preferredName?: string }) => {
+  if (!payload?.value) {
+    return null;
+  }
+  return await persistAvatarToPresetDir(payload.projectFilePath ?? null, payload.value, payload.preferredName);
 });
 
 ipcMain.handle('read-binary-file', async (_event, payload: string | { filePath: string; projectFilePath?: string | null }) => {

@@ -17,6 +17,7 @@ interface Window {
     cacheRemoteAsset: (assetUrl: string) => Promise<string | null>;
     saveClipboardImageToCache: (payload: { bytes: number[]; contentType?: string; preferredName?: string }) => Promise<string | null>;
     importProjectAsset: (payload: { projectFilePath: string; sourcePath: string; preferredName?: string }) => Promise<{ storedPath: string; absolutePath: string } | null>;
+    persistPresetAvatar: (payload: { value: string; projectFilePath?: string | null; preferredName?: string }) => Promise<string | null>;
     saveClipboardImageToProjectAssets: (payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => Promise<{ storedPath: string; absolutePath: string } | null>;
     showSaveDialog: (options: any) => Promise<any>;
     showItemInFolder: (filePath: string) => Promise<boolean>;

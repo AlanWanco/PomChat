@@ -3,6 +3,7 @@ import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen, Chevro
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { formatFontFamilyValue } from '../fontPresets';
+import { Tooltip } from './ui/Tooltip';
 import type { SpeakerConfig, FontPreset } from '../remotion/types';
 
 const FONT_OPTIONS = [
@@ -100,6 +101,7 @@ interface StyleManagerModalProps {
   annotationPresets?: Record<string, any>;
   projectPath?: string;
   projectAssetsCacheEnabled?: boolean;
+  initialPresetName?: string | null;
   onSelectImage?: () => Promise<string | null>;
   onSave: (speakers: Record<string, SpeakerConfig>) => void;
   onSpeakerPresetsChange?: (presets: Record<string, any>) => void;
@@ -120,7 +122,7 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
   },
 };
 
-export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectAssetsCacheEnabled, onSelectImage, onSave, onSpeakerPresetsChange, onAnnotationPresetsChange, onClose }: StyleManagerModalProps) {
+export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onSpeakerPresetsChange, onAnnotationPresetsChange, onClose }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
@@ -142,6 +144,13 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
   const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsedSections());
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = window.setTimeout(() => setToastMsg(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toastMsg]);
 
   useEffect(() => {
     try {
@@ -163,8 +172,14 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       setSelectedAnnotPresetIds(new Set());
       setEditingAnnotPresetName(null);
       setAnnotPresetsDirty(false);
+      const target = initialPresetName;
+      if (target) {
+        setLeftTab('presets');
+        setEditingPresetName(target);
+        setSelectedPresetIds(new Set([target]));
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialPresetName]);
 
   if (!isOpen) return null;
 
@@ -202,7 +217,19 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setLocalPresets(next);
     setSelectedPresetIds(new Set());
     if (editingPresetName && selectedPresetIds.has(editingPresetName)) setEditingPresetName(null);
+    setLocalSpeakers((p) => {
+      let changed = false;
+      const spkNext = { ...p };
+      Object.entries(p).forEach(([id, spk]) => {
+        if (spk.preset && selectedPresetIds.has(spk.preset)) {
+          spkNext[id] = { ...spk, preset: '', lockPreset: false };
+          changed = true;
+        }
+      });
+      return changed ? spkNext : p;
+    });
     setPresetsDirty(true);
+    setSpeakersDirty(true);
   };
   const handleSaveSpeakerAsPreset = () => {
     const speaker = editingSpeaker;
@@ -214,6 +241,63 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setPresetSavePromptOpen(false);
     setPresetSaveDraft('');
   };
+  const jumpToPreset = () => {
+    const name = editingSpeaker?.preset;
+    if (!name) return;
+    setLeftTab('presets');
+    setEditingPresetName(name);
+    setSelectedPresetIds(new Set([name]));
+  };
+  const handlePersistAllPresetAvatars = async () => {
+    const electron = (window as any).electron;
+    if (!electron) {
+      setToastMsg(t('preset.persistDesktopOnly') || '仅桌面端支持持久化头像');
+      return;
+    }
+    const entries = Object.entries(localPresets);
+    if (entries.length === 0) {
+      setToastMsg(t('preset.persistNoPresets') || '暂无预设');
+      return;
+    }
+    const next = { ...localPresets };
+    let changedCount = 0;
+    let failedCount = 0;
+    for (const [name, preset] of entries) {
+      const avatar = preset?.avatar;
+      if (!avatar || !avatar.trim()) continue;
+      try {
+        const result = await electron.persistPresetAvatar({ value: avatar, projectFilePath: projectPath || null, preferredName: preset?.name || name });
+        if (result && result !== avatar) {
+          next[name] = { ...preset, avatar: result };
+          changedCount += 1;
+        }
+      } catch {
+        failedCount += 1;
+      }
+    }
+    if (changedCount > 0) {
+      let nextSpeakers = localSpeakers;
+      let speakersChanged = false;
+      const spkNext = { ...localSpeakers };
+      Object.entries(localSpeakers).forEach(([id, spk]) => {
+        if (spk?.lockPreset !== true || !spk?.preset) return;
+        const payload = normalizePresetPayload(next[spk.preset]);
+        if (!payload) return;
+        spkNext[id] = { ...spk, avatar: payload.avatar || spk.avatar, side: payload.side || spk.side, style: { ...(spk.style || {}), ...(payload.style || {}) } };
+        speakersChanged = true;
+      });
+      if (speakersChanged) nextSpeakers = spkNext;
+      setLocalPresets(next);
+      setLocalSpeakers(nextSpeakers);
+      if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
+      if (onSave) onSave(nextSpeakers);
+      setPresetsDirty(false);
+      setSpeakersDirty(false);
+      setToastMsg(t('preset.persistAllDone', { count: changedCount }) + (failedCount > 0 ? ` / ${t('preset.persistFailed') || '持久化失败'} ${failedCount}` : ''));
+    } else {
+      setToastMsg(t('preset.persistNoChanges') || '预设头像均已持久化，无需处理');
+    }
+  };
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
   const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig, keepPreset?: boolean) => { setLocalSpeakers((p) => { const updated = u(p[id]); return { ...p, [id]: keepPreset ? updated : { ...updated, preset: '' } }; }); setSpeakersDirty(true); };
@@ -222,11 +306,34 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     const next = { ...localPresets, [name]: { ...localPresets[name], style: { ...(localPresets[name]?.style || {}), [k]: v } } };
     setLocalPresets(next);
     setPresetsDirty(true);
+    propagatePresetToLockedSpeakers(name, next[name]);
   };
   const updatePresetField = (name: string, k: string, v: any) => {
     const next = { ...localPresets, [name]: { ...localPresets[name], [k]: v } };
     setLocalPresets(next);
     setPresetsDirty(true);
+    propagatePresetToLockedSpeakers(name, next[name]);
+  };
+  const propagatePresetToLockedSpeakers = (name: string, preset: any) => {
+    if (!name || !preset) return;
+    const payload = normalizePresetPayload(preset);
+    let changed = false;
+    const spkNext = { ...localSpeakers };
+    Object.entries(localSpeakers).forEach(([id, spk]) => {
+      if (spk.preset === name && spk.lockPreset === true) {
+        spkNext[id] = {
+          ...spk,
+          avatar: payload.avatar || spk.avatar,
+          side: payload.side || spk.side,
+          style: { ...(spk.style || {}), ...(payload.style || {}) },
+        };
+        changed = true;
+      }
+    });
+    if (changed) {
+      setLocalSpeakers(spkNext);
+      setSpeakersDirty(true);
+    }
   };
 
   const normalizePresetPayload = (preset: any) => {
@@ -387,7 +494,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     return `/${trimmed}`;
   };
 
-  const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined) => {
+  const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined, disabled?: boolean) => {
     const presetEntries = Object.entries(fontPresets || {});
     const fontPresetOptions = presetEntries.map(([id_, p]) => ({
       label: `${t('fontPresets.optionPrefix')} ${p.name}`,
@@ -397,8 +504,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     const combinedFontOptions = [...fontPresetOptions, ...FONT_OPTIONS];
     const isKnownValue = combinedFontOptions.some((f) => f.value === (value || ''));
     return (
-      <div className="space-y-1.5">
-        <select value={isKnownValue ? value : ''} onChange={(e) => { if (e.target.value) updateFn('fontFamily', e.target.value); }}
+      <div className="space-y-1.5" style={{ opacity: disabled ? 0.5 : 1 }}>
+        <select disabled={disabled} value={isKnownValue ? value : ''} onChange={(e) => { if (e.target.value) updateFn('fontFamily', e.target.value); }}
           className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
           <option value="">{t('speakers.fontPreset')}</option>
           {fontPresetOptions.length > 0 && (
@@ -410,15 +517,15 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
             {FONT_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </optgroup>
         </select>
-        <input type="text" placeholder={t('speakers.fontPlaceholder')} value={value || ''} onChange={(e) => updateFn('fontFamily', e.target.value)}
+        <input type="text" disabled={disabled} placeholder={t('speakers.fontPlaceholder')} value={value || ''} onChange={(e) => updateFn('fontFamily', e.target.value)}
           title={t('speakers.fontTitle')} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
         <div className="text-[0.625rem] opacity-55 leading-relaxed" title={t('speakers.fontHelpTitle')}>{t('speakers.fontHelp')}</div>
       </div>
     );
   };
-  const renderColor = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined) => (
-    <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
-      <input type="color" value={value || '#000000'} onChange={(e) => {
+  const renderColor = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, disabled?: boolean) => (
+    <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle, opacity: disabled ? 0.5 : 1 }}>
+      <input type="color" disabled={disabled} value={value || '#000000'} onChange={(e) => {
         const nextHex = e.target.value.toUpperCase();
         if (/^#([0-9A-Fa-f]{8})$/.test(value || '')) {
           updateFn(key, `${nextHex}${value!.slice(7).toUpperCase()}`);
@@ -428,13 +535,13 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       }}
         className="w-7 h-7 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0 shadow-sm"
         style={{ WebkitAppearance: 'none' } as React.CSSProperties} />
-      <input type="text" value={(value || '').toUpperCase()} onChange={(e) => updateFn(key, e.target.value)}
+      <input type="text" disabled={disabled} value={(value || '').toUpperCase()} onChange={(e) => updateFn(key, e.target.value)}
         onBlur={(e) => { const v = e.target.value.trim(); if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(v)) updateFn(key, v.toUpperCase()); }}
         placeholder="#RRGGBB / #RRGGBBAA" className={`w-full rounded border px-2 py-1 text-[0.6875rem] font-mono focus:outline-none ${ic}`}
         style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
     </div>
   );
-  const renderNum = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min?: number, max?: number, step?: number) => {
+  const renderNum = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min?: number, max?: number, step?: number, disabled?: boolean) => {
     const s = step || 1;
     const safeVal = Number.isFinite(value ?? 0) ? (value ?? 0) : 0;
     const getPrecision = (targetStep: number) => {
@@ -455,24 +562,24 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       updateFn(key, next);
     };
     return (
-      <div className="relative">
-        <WheelGuardNumberInput type="number" min={min} max={max} step={s} value={safeVal}
+      <div className="relative" style={{ opacity: disabled ? 0.5 : 1 }}>
+        <WheelGuardNumberInput type="number" disabled={disabled} min={min} max={max} step={s} value={safeVal}
           onWheelStep={(direction) => applyDelta(direction === 'up' ? s : -s)}
           onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) updateFn(key, roundByStep(n)); }}
           className={`w-full border rounded px-2 py-1 text-xs focus:outline-none pr-8 ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
         <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-px">
-          <button type="button" onClick={() => applyDelta(s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▲</button>
-          <button type="button" onClick={() => applyDelta(-s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▼</button>
+          <button type="button" disabled={disabled} onClick={() => applyDelta(s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▲</button>
+          <button type="button" disabled={disabled} onClick={() => applyDelta(-s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▼</button>
         </div>
       </div>
     );
   };
-  const renderRange = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min: number, max: number, step: number) => (
-    <div className="flex items-center gap-2"><input type="range" min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
+  const renderRange = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min: number, max: number, step: number, disabled?: boolean) => (
+    <div className="flex items-center gap-2" style={{ opacity: disabled ? 0.5 : 1 }}><input type="range" disabled={disabled} min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
   );
-  const renderSel = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, opts: string[]) => (
-    <select value={value || ''} onChange={(e) => updateFn(key, e.target.value)}
-      className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
+  const renderSel = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, opts: string[], disabled?: boolean) => (
+    <select disabled={disabled} value={value || ''} onChange={(e) => updateFn(key, e.target.value)}
+      className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text, opacity: disabled ? 0.5 : 1 }}>
       {opts.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   );
@@ -482,60 +589,68 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
 
   const toggleSection = (key: string) => setCollapsedSections((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isExternalFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+  const isRelativePathLike = (value?: string) => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return false;
+    if (/^https?:\/\//i.test(trimmed) || /^www\./i.test(trimmed)) return false;
+    if (trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('file://') || trimmed.startsWith('/@fs/')) return false;
+    if (trimmed.startsWith('\\\\') || /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('/')) return false;
+    return true;
+  };
   const renderSection = (title: React.ReactNode, sectionKey: string, children: React.ReactNode) => (
     <CollapsibleSection title={title} collapsed={collapsedSections.has(sectionKey)} onToggle={() => toggleSection(sectionKey)} sectionStyle={sectionStyle} chevronColor={uiTheme.textMuted}>{children}</CollapsibleSection>
   );
 
-  const renderEditorFields = (style: any, updateFn: (k: string, v: any) => void, swapBgText?: () => void) => {
+  const renderEditorFields = (style: any, updateFn: (k: string, v: any) => void, swapBgText?: () => void, disabled?: boolean) => {
     const isAnnotationStyle = Boolean(style?.annotationStyle);
     return (
     <>
       {renderSection(t('speakers.typography'), 'typography', <>
-        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.font')}</span>{renderFontField(updateFn, style?.fontFamily)}</div>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.font')}</span>{renderFontField(updateFn, style?.fontFamily, disabled)}</div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontSize')}</span>{renderNum(updateFn, 'fontSize', style?.fontSize, 8)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontWeight')}</span>{renderSel(updateFn, 'fontWeight', style?.fontWeight, ['normal','bold','bolder','lighter','100','300','500','700','900'])}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontSize')}</span>{renderNum(updateFn, 'fontSize', style?.fontSize, 8, undefined, undefined, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.fontWeight')}</span>{renderSel(updateFn, 'fontWeight', style?.fontWeight, ['normal','bold','bolder','lighter','100','300','500','700','900'], disabled)}</div>
         </div>
       </>)}
       {!isAnnotationStyle && renderSection(t('speakers.name'), 'name', <>
-        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFont')}</span>{renderFontField(updateFn, style?.nameFontFamily)}</div>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFont')}</span>{renderFontField(updateFn, style?.nameFontFamily, disabled)}</div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameColor')}</span>{renderColor(updateFn, 'nameColor', style?.nameColor)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFontWeight')}</span>{renderSel(updateFn, 'nameFontWeight', style?.nameFontWeight, ['normal','bold','bolder','lighter','100','300','500','700','900'])}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameColor')}</span>{renderColor(updateFn, 'nameColor', style?.nameColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameFontWeight')}</span>{renderSel(updateFn, 'nameFontWeight', style?.nameFontWeight, ['normal','bold','bolder','lighter','100','300','500','700','900'], disabled)}</div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeColor')}</span>{renderColor(updateFn, 'nameStrokeColor', style?.nameStrokeColor)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeWidth')}</span>{renderNum(updateFn, 'nameStrokeWidth', style?.nameStrokeWidth, 0, 12)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeColor')}</span>{renderColor(updateFn, 'nameStrokeColor', style?.nameStrokeColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.nameStrokeWidth')}</span>{renderNum(updateFn, 'nameStrokeWidth', style?.nameStrokeWidth, 0, 12, undefined, disabled)}</div>
         </div>
       </>)}
       {renderSection(t('speakers.colors'), 'colors', <>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor(updateFn, 'bgColor', style?.bgColor)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor(updateFn, 'textColor', style?.textColor)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor(updateFn, 'bgColor', style?.bgColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor(updateFn, 'textColor', style?.textColor, disabled)}</div>
         </div>
-        <button onClick={swapBgText ? () => swapBgText() : () => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('speakers.swapBgText') || 'Swap'}</button>
-        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05)}</div>
+        <button disabled={disabled} onClick={swapBgText ? () => swapBgText() : () => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text, opacity: disabled ? 0.5 : 1 }}>{t('speakers.swapBgText') || 'Swap'}</button>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05, disabled)}</div>
       </>)}
       {!isAnnotationStyle && renderSection(t('speakers.border'), 'border', <>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderColor')}</span>{renderColor(updateFn, 'avatarBorderColor', style?.avatarBorderColor)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderWidth')}</span>{renderNum(updateFn, 'avatarBorderWidth', style?.avatarBorderWidth ?? 4, 0, 10)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderColor')}</span>{renderColor(updateFn, 'avatarBorderColor', style?.avatarBorderColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatarBorderWidth')}</span>{renderNum(updateFn, 'avatarBorderWidth', style?.avatarBorderWidth ?? 4, 0, 10, undefined, disabled)}</div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderColor')}</span>{renderColor(updateFn, 'borderColor', style?.borderColor)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderWidth')}</span>{renderNum(updateFn, 'borderWidth', style?.borderWidth, 0, 10)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderColor')}</span>{renderColor(updateFn, 'borderColor', style?.borderColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderWidth')}</span>{renderNum(updateFn, 'borderWidth', style?.borderWidth, 0, 10, undefined, disabled)}</div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderRadius')}</span>{renderNum(updateFn, 'borderRadius', style?.borderRadius, 0, 64)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderOpacity')}</span>{renderRange(updateFn, 'borderOpacity', style?.borderOpacity, 0, 1, 0.05)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderRadius')}</span>{renderNum(updateFn, 'borderRadius', style?.borderRadius, 0, 64, undefined, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.borderOpacity')}</span>{renderRange(updateFn, 'borderOpacity', style?.borderOpacity, 0, 1, 0.05, disabled)}</div>
         </div>
       </>)}
       {renderSection(t('speakers.layout'), 'layout', <>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingX')}</span>{renderNum(updateFn, 'paddingX', style?.paddingX, 0)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingX')}</span>{renderNum(updateFn, 'paddingX', style?.paddingX, 0, undefined, undefined, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0, undefined, undefined, disabled)}</div>
         </div>
-        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64)}</div>
+        <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64, undefined, disabled)}</div>
       </>)}
     </>
     );
@@ -810,6 +925,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
           <div className="flex-1 flex flex-col min-w-0">
             {leftTab === 'speakers' && editingSpeaker ? (() => {
                 const isLeft = (editingSpeaker.side || 'left') === 'left';
+                const locked = editingSpeaker.lockPreset === true;
                 const s = editingSpeaker.style;
                 const PREVIEW_SCALE = 0.63;
                 const AVATAR_DEFAULT = 80;
@@ -871,7 +987,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 </div>
                 <div className="p-4 space-y-3">
                 {renderSection(t('speakers.title'), 'basic', <>
-                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.name') || 'Name'}</span><input type="text" value={editingSpeaker.name || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, name: e.target.value }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} /></div>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.name') || 'Name'}</span><input type="text" value={editingSpeaker.name || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, name: e.target.value }), locked)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} /></div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
                       <img
@@ -880,35 +996,57 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`; }}
                       />
-                      <input type="text" value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }), true)}
+                      <input type="text" disabled={locked} value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }), true)}
                         onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path }), true))}
-                        className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
+                        className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text, opacity: locked ? 0.5 : 1 }}
                         title={t('project.quickPasteFilePathTip') || '支持右键粘贴文件路径；若剪贴板里是图片，也会自动保存到缓存并填入路径。'} />
-                      <button onClick={async () => { const path = await handleBrowseFile(); if (path) updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path }), true); }}
-                        className="shrink-0 p-1.5 rounded-md hover:brightness-90" style={{ backgroundColor: `${secondaryThemeColor}18`, color: uiTheme.textMuted }} title={t('project.selectLocalImage') || '选择本地文件'}>
+                      <button disabled={locked} onClick={async () => { const path = await handleBrowseFile(); if (path) updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path }), true); }}
+                        className="shrink-0 p-1.5 rounded-md hover:brightness-90" style={{ backgroundColor: `${secondaryThemeColor}18`, color: uiTheme.textMuted, opacity: locked ? 0.5 : 1 }} title={t('project.selectLocalImage') || '选择本地文件'}>
                         <FolderOpen size={14} />
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设</span>
-                    <select value={editingSpeaker.preset || ''} onChange={(e) => {
-                      const val = e.target.value;
-                      updateSpeaker(editingSpeakerId!, (s) => {
-                        if (!val) return { ...s, preset: '' };
-                        const presetData = normalizePresetPayload(speakerPresets?.[val]);
-                        if (!presetData) return s;
-                        return { ...s, preset: val, avatar: presetData.avatar || s.avatar, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } };
-                      }, true);
-                    }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
-                      <option value="">{editingSpeaker.preset ? (t('speakers.custom') || 'Custom') : (t('speakers.applyPreset') || 'Apply preset')}</option>
-                      {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select value={editingSpeaker.preset || ''} onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          const presetData = normalizePresetPayload(speakerPresets?.[val]);
+                          if (isRelativePathLike(presetData?.avatar)) {
+                            setToastMsg(t('preset.avatarRelativeWarning') || '该预设头像为相对路径，可能在其他项目失效；可在预设管理器中「持久化预设头像到 avatar 文件夹」');
+                          }
+                        }
+                        updateSpeaker(editingSpeakerId!, (s) => {
+                          if (!val) return { ...s, preset: '', lockPreset: false };
+                          const presetData = normalizePresetPayload(speakerPresets?.[val]);
+                          if (!presetData) return s;
+                          return { ...s, preset: val, avatar: presetData.avatar || s.avatar, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } };
+                        }, true);
+                      }} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
+                        <option value="">{editingSpeaker.preset ? (t('speakers.custom') || 'Custom') : (t('speakers.applyPreset') || 'Apply preset')}</option>
+                        {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <Tooltip content={t('speakers.lockPresetHint') || '锁定预设：开启后样式只能通过预设修改，此处除名称与预设外均不可编辑'} placement="top" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                        <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none" style={{ opacity: editingSpeaker.preset ? 1 : 0.45 }}>
+                          <input type="checkbox" disabled={!editingSpeaker.preset} checked={locked} onChange={() => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, lockPreset: !(s.lockPreset === true) }), true)} className="w-3.5 h-3.5" style={{ accentColor: secondaryThemeColor }} />
+                          <span className="text-[0.625rem] whitespace-nowrap">{t('speakers.lockPreset') || '锁定预设'}</span>
+                        </label>
+                      </Tooltip>
+                    </div>
                   </div>
-                  <button type="button" onClick={() => { setPresetSavePromptOpen(!presetSavePromptOpen); setPresetSaveDraft(`${editingSpeaker?.name || editingSpeakerId || 'speaker'} preset`); }}
-                    className="w-full text-xs px-2 py-1.5 rounded border transition-all duration-300"
-                    style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}>
-                    {t('speakers.savePreset') || '保存为预设'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setPresetSavePromptOpen(!presetSavePromptOpen); setPresetSaveDraft(`${editingSpeaker?.name || editingSpeakerId || 'speaker'} preset`); }}
+                      className="flex-1 text-xs px-2 py-1.5 rounded border transition-all duration-300"
+                      style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}>
+                      {t('speakers.savePreset') || '保存为预设'}
+                    </button>
+                    <button type="button" disabled={!editingSpeaker.preset} onClick={jumpToPreset}
+                      className="flex-1 text-xs px-2 py-1.5 rounded border transition-all duration-300"
+                      style={{ borderColor: `${secondaryThemeColor}55`, color: editingSpeaker.preset ? secondaryThemeColor : uiTheme.textMuted, backgroundColor: `${secondaryThemeColor}12`, opacity: editingSpeaker.preset ? 1 : 0.45, cursor: editingSpeaker.preset ? 'pointer' : 'default' }}
+                      title={t('speakers.jumpToPreset') || '跳转到该预设的设置'}>
+                      {t('speakers.jumpToPreset') || '跳转到预设设置'}
+                    </button>
+                  </div>
                   {presetSavePromptOpen && (
                     <div className="space-y-1.5">
                       <input type="text" value={presetSaveDraft} onChange={(e) => setPresetSaveDraft(e.target.value)}
@@ -921,7 +1059,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     </div>
                   )}
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.side') || 'Side'}</span>
-                    <select value={editingSpeaker.side || 'left'} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, side: e.target.value as 'left' | 'right' }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
+                    <select disabled={locked} value={editingSpeaker.side || 'left'} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, side: e.target.value as 'left' | 'right' }))} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text, opacity: locked ? 0.5 : 1 }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
                 </>)}
                 {renderEditorFields(editingSpeaker.style, (k, v) => updateStyle(editingSpeakerId!, k, v), () => {
@@ -932,7 +1070,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     return { ...p, [editingSpeakerId!]: { ...p[editingSpeakerId!], preset: '', style: { ...s, bgColor: tc, textColor: bg } } };
                   });
                   setSpeakersDirty(true);
-                })}
+                }, locked)}
               </div>
                 </div>
             ); })(            ) : leftTab === 'presets' && editingPreset ? (() => {
@@ -1147,6 +1285,9 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       if (!val) { updateSpeaker('ANNOTATION', (s) => ({ ...s, preset: '' })); return; }
                       const presetData = normalizePresetPayload(localAnnotationPresets[val]);
                       if (!presetData) return;
+                      if (isRelativePathLike(presetData?.avatar)) {
+                        setToastMsg(t('preset.avatarRelativeWarning') || '该预设头像为相对路径，可能在其他项目失效；可在预设管理器中「持久化预设头像到 avatar 文件夹」');
+                      }
                       updateSpeaker('ANNOTATION', (s) => ({ ...s, preset: val, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } }), true);
                     }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
                       <option value="">{annot?.preset ? (t('speakers.custom') || 'Custom') : (t('speakers.applyPreset') || 'Apply preset')}</option>
@@ -1228,12 +1369,24 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
             })() : (
               <div className="flex-1 flex items-center justify-center text-sm opacity-50">{t('speakers.applyPreset') || 'Select a speaker to edit'}</div>
             )}
-            <div className="px-4 py-3 border-t flex justify-end" style={{ borderColor: uiTheme.border }}>
+            <div className="px-4 py-3 border-t flex items-center justify-between gap-2" style={{ borderColor: uiTheme.border }}>
+              {typeof window !== 'undefined' && (window as any).electron && (
+                <button onClick={() => void handlePersistAllPresetAvatars()} className="px-3 py-2 rounded-xl text-xs transition-all duration-300"
+                  style={{ border: `1px solid ${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+                  title={t('preset.persistAvatarHint') || '把所有预设头像保存到本机 avatar 文件夹（绝对路径）并自动保存'}>
+                  {t('preset.persistAvatar') || '持久化全部预设头像'}
+                </button>
+              )}
               <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.cancel')}</button>
             </div>
           </div>
         </div>
       </div>
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 rounded-lg border text-sm shadow-2xl animate-fade-in" style={{ backgroundColor: isDarkMode ? 'rgba(17,24,39,0.94)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}44`, color: uiTheme.text, backdropFilter: 'blur(12px)' }}>
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

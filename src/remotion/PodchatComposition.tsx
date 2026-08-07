@@ -348,7 +348,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     .filter((slide) => slide.layer === 'overlay')
     .sort((a, b) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0));
 
-  const baseBackgroundColor = props.transparentBackground ? 'rgba(0,0,0,0)' : '#111111';
+  const baseBackgroundColor = props.transparentBackground ? 'rgba(0,0,0,0)' : '#1f2937';
   const fontFaceCss = buildFontFaceCss(props.fontPresets);
 
   return (
@@ -434,10 +434,6 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
               })}
         </AbsoluteFill>
       ))}
-      {!props.transparentBackground && (
-        <AbsoluteFill style={{ backgroundColor: props.background?.image ? 'rgba(0,0,0,0.06)' : '#111111' }} />
-      )}
-
       {props.audioPath ? (
         <Sequence from={0}>
           <Audio src={props.audioPath} startFrom={Math.max(0, Math.round(props.exportRange.start * fps))} />

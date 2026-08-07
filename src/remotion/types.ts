@@ -94,6 +94,7 @@ export interface SpeakerConfig {
   type?: 'speaker' | 'annotation';
   theme?: 'dark' | 'light';
   preset?: string;
+  lockPreset?: boolean;
   style?: SpeakerStyle;
 }
 
