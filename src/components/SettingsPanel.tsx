@@ -693,7 +693,7 @@ export function SettingsPanel({
         name: `${t('speakers.add')} ${newId}`, 
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${newId}`, 
         side: "left", 
-        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", nameStrokeWidth: 0, nameStrokeColor: "#000000", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal', trackIndex: 1, trackPaddingLeft: 5, trackPaddingRight: 5 }
+        style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", nameStrokeWidth: 0, nameStrokeColor: "#000000", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", avatarBorderWidth: 4, borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal', trackIndex: 1, trackPaddingLeft: 5, trackPaddingRight: 5 }
       } 
     };
     updateConfig('speakers', newSpeakers);
@@ -2749,8 +2749,8 @@ export function SettingsPanel({
                           src={resolveLocalPreviewPath(speaker.avatar)} 
                           alt="avatar" 
                           referrerPolicy="no-referrer"
-                          className="w-8 h-8 rounded-full border shadow-sm object-cover shrink-0"
-                          style={{ backgroundColor: uiTheme.panelBgSubtle, borderColor: speaker.style?.avatarBorderColor || uiTheme.border }}
+                          className="w-8 h-8 rounded-full shadow-sm object-cover shrink-0"
+                          style={{ backgroundColor: uiTheme.panelBgSubtle, border: `${speaker.style?.avatarBorderWidth ?? 4}px solid ${speaker.style?.avatarBorderColor || '#fff'}` }}
                           onError={(e) => {
                             e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${speaker.name}`;
                           }}
@@ -3137,14 +3137,26 @@ export function SettingsPanel({
                     <div ref={registerSettingsSection('speaker-border')} className="space-y-2">
                       <span className="text-xs font-semibold flex items-center gap-1 opacity-80"><Box size={12} /> {t('speakers.border')}</span>
 
-                      <div className="space-y-1 mb-2">
-                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.avatarBorderColor')}</span>
-                        {renderColorInput(speaker.style?.avatarBorderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'avatarBorderColor', value))}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.avatarBorderColor')}</span>
+                          {renderColorInput(speaker.style?.avatarBorderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'avatarBorderColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.avatarBorderWidth') || '头像描边粗细'}</span>
+                          {renderNumberInput(speaker.style?.avatarBorderWidth ?? 4, (value) => updateSpeakerStyle(key, 'avatarBorderWidth', value), { min: 0, max: 10, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                        </div>
                       </div>
-                       
-                      <div className="space-y-1 mb-2">
-                        <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.borderColor')}</span>
-                        {renderColorInput(speaker.style?.borderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'borderColor', value))}
+
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider font-mono">{t('speakers.borderColor')}</span>
+                          {renderColorInput(speaker.style?.borderColor || '#FFFFFF', (value) => updateSpeakerStyle(key, 'borderColor', value))}
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderWidth')}</span>
+                          {renderNumberInput(speaker.style?.borderWidth ?? 0, (value) => updateSpeakerStyle(key, 'borderWidth', value), { min: 0, max: 10, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2">

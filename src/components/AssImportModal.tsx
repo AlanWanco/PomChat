@@ -455,7 +455,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         assStyleName: '',
         assStyleNames: [],
         style: {
-          bgColor: "#2563eb", textColor: "#ffffff", nameColor: '#ffffff', borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, animationStyle: 'rise', animationDuration: 0.2, fontFamily: "system-ui", fontSize: 30, fontWeight: "normal"
+          bgColor: "#2563eb", textColor: "#ffffff", nameColor: '#ffffff', borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", avatarBorderWidth: 4, borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, animationStyle: 'rise', animationDuration: 0.2, fontFamily: "system-ui", fontSize: 30, fontWeight: "normal"
         }
       };
     }

@@ -19,6 +19,7 @@ export interface SharedChatSpeakerStyle {
   opacity?: number;
   borderWidth?: number;
   avatarBorderColor?: string;
+  avatarBorderWidth?: number;
   borderColor?: string;
   borderOpacity?: number;
   margin?: number;
@@ -991,6 +992,10 @@ export function ChatMessageBubble({
   const textColor = speaker.style?.textColor || fallbackText;
   const borderColor = speaker.style?.borderColor || '#ffffff';
   const borderOpacity = speaker.style?.borderOpacity ?? 1;
+  const avatarBorderColor = speaker.style?.avatarBorderColor || '#ffffff';
+  const avatarBorderWidth = speaker.style?.avatarBorderWidth != null
+    ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * combinedScale)
+    : snapPx(Math.max(2, Math.round(4 * combinedScale)));
 
   // Compact mode corner logic (Telegram-style):
   // - The corner closest to the avatar (top-left for isLeft, top-right for !isLeft) is sharp when
@@ -1153,7 +1158,8 @@ export function ChatMessageBubble({
                       borderRadius: '999px',
                       objectFit: 'cover',
                       boxShadow: bubbleShadow,
-                      overflow: 'hidden'
+                      overflow: 'hidden',
+                      border: avatarBorderWidth > 0 ? `${avatarBorderWidth}px solid ${avatarBorderColor}` : undefined
                     }
                   })}
                 </div>
@@ -1170,7 +1176,8 @@ export function ChatMessageBubble({
                 borderRadius: '999px',
                 objectFit: 'cover',
                 boxShadow: bubbleShadow,
-                overflow: 'hidden'
+                overflow: 'hidden',
+                border: avatarBorderWidth > 0 ? `${avatarBorderWidth}px solid ${avatarBorderColor}` : undefined
               }
             }) : (
               <div style={{ width: `${avatarPx}px`, minWidth: `${avatarPx}px`, flexShrink: 0 }} />

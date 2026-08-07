@@ -61,6 +61,7 @@ export interface SpeakerStyle {
   opacity?: number;
   borderWidth?: number;
   avatarBorderColor?: string;
+  avatarBorderWidth?: number;
   borderColor?: string;
   borderOpacity?: number;
   margin?: number;

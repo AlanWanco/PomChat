@@ -153,6 +153,7 @@ const DEFAULT_BUBBLE_STYLE = {
   opacity: 0.9,
   borderWidth: 0,
   avatarBorderColor: '#ffffff',
+  avatarBorderWidth: 4,
   borderColor: '#ffffff',
   borderOpacity: 1,
   margin: 14,
@@ -7084,7 +7085,7 @@ const [previewScale, setPreviewScale] = useState(1);
                                         renderAvatar={({ src, alt, style }) => {
                                           const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
                                           const combinedScale = Math.max(0.1, 1) * bubbleScale;
-                                          const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                                          const borderWidth = speaker.style?.avatarBorderWidth != null ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * combinedScale) : Math.max(2, Math.round(4 * combinedScale));
                                           const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
                                           return <img src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={{ ...style, pointerEvents: 'none', boxSizing: 'border-box', border: `${borderWidth}px solid ${borderColor}`, backgroundColor: borderColor }} />;
                                         }}
@@ -7142,10 +7143,10 @@ const [previewScale, setPreviewScale] = useState(1);
                                     style={style}
                                   />
                                 )}
-                                renderAvatar={({ src, alt, style }) => {
-                                  const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
-                                  const combinedScale = Math.max(0.1, 1) * bubbleScale;
-                                  const borderWidth = Math.max(2, Math.round(4 * combinedScale));
+                                 renderAvatar={({ src, alt, style }) => {
+                                   const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
+                                   const combinedScale = Math.max(0.1, 1) * bubbleScale;
+                                   const borderWidth = speaker.style?.avatarBorderWidth != null ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * combinedScale) : Math.max(2, Math.round(4 * combinedScale));
                                   const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
                                   return (
                                     <img
@@ -7796,8 +7797,12 @@ const [previewScale, setPreviewScale] = useState(1);
         speakers={config.speakers || {}}
         fontPresets={fontPresets}
         speakerPresets={presets}
+        annotationPresets={annotationPresets}
         projectPath={projectPath}
+        projectAssetsCacheEnabled={projectAssetsCacheEnabled}
+        onSelectImage={handleSelectImage}
         onSpeakerPresetsChange={setPresets}
+        onAnnotationPresetsChange={setAnnotationPresets}
         onSave={(nextSpeakers) => {
           pushHistorySnapshot();
           setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
