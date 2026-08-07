@@ -107,10 +107,14 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
   const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const hasOpenedOnce = useRef(false);
 
   useEffect(() => {
-    setCollapsedSections(new Set(['basic', 'typography', 'name', 'colors', 'border', 'layout', 'position', 'animation', 'bubble']));
-  }, [leftTab, editingSpeakerId, editingPresetName, editingAnnotPresetName]);
+    if (isOpen && !hasOpenedOnce.current) {
+      hasOpenedOnce.current = true;
+      setCollapsedSections(new Set(['basic', 'typography', 'name', 'colors', 'border', 'layout', 'position', 'animation', 'bubble']));
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
