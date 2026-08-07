@@ -55,6 +55,20 @@ const formatBubbleShadow = (shadowSize: number) => {
   return `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)`;
 };
 
+const COLLAPSED_SECTIONS_STORAGE_KEY = 'pomchat.styleManagerCollapsed';
+const DEFAULT_COLLAPSED_SECTIONS = ['basic', 'typography', 'name', 'colors', 'border', 'layout', 'position', 'animation', 'bubble'];
+
+const loadCollapsedSections = (): Set<string> => {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(COLLAPSED_SECTIONS_STORAGE_KEY) : null;
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch { /* ignore */ }
+  return new Set(DEFAULT_COLLAPSED_SECTIONS);
+};
+
 interface StyleManagerModalProps {
   isOpen: boolean;
   language: Language;
@@ -106,15 +120,13 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const dragRef = useRef<{ id: string; type: 'speaker' | 'preset' | 'annotPreset' } | null>(null);
   const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
   const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const hasOpenedOnce = useRef(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsedSections());
 
   useEffect(() => {
-    if (isOpen && !hasOpenedOnce.current) {
-      hasOpenedOnce.current = true;
-      setCollapsedSections(new Set(['basic', 'typography', 'name', 'colors', 'border', 'layout', 'position', 'animation', 'bubble']));
-    }
-  }, [isOpen]);
+    try {
+      localStorage.setItem(COLLAPSED_SECTIONS_STORAGE_KEY, JSON.stringify(Array.from(collapsedSections)));
+    } catch { /* ignore */ }
+  }, [collapsedSections]);
 
   useEffect(() => {
     if (isOpen) {
