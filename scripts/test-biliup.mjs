@@ -26,6 +26,7 @@ try {
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));
 
   assert.equal(newBiliupTemplate().tid, 5);
+  assert.equal(newBiliupTemplate().submit, 'app');
   const template = { ...newBiliupTemplate(), id: 'one', name: 'Test', title: '固定标题', tag: 'one,two' };
   const help = '--title --tid --tag --copyright --limit --desc --source --line --submit --no-reprint --cover';
   assert.equal(validateBiliupTemplate(template), null);
@@ -55,8 +56,9 @@ try {
   assert.equal(validateBiliupSchedule(String(now + BILIUP_SCHEDULE_MIN_LEAD_SECONDS - 1), now), 'schedule');
   assert.equal(validateBiliupSchedule(String(now + BILIUP_SCHEDULE_MAX_AHEAD_SECONDS + 1), now), 'schedule');
   assert.throws(() => buildBiliupUploadArgs({ ...template, dtime: '1000000000' }, file, 'cookies.json', help), /schedule/);
-  assert.deepEqual(normalizeBiliupPreferences(null), { directory: '', selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [] });
-  const normalized = normalizeBiliupPreferences({ directory: '/app', selectedTemplateId: 'one', templates: [{ ...template, secret: 'not-a-setting' }] });
+  assert.deepEqual(normalizeBiliupPreferences(null), { directory: '', autoUpload: false, selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [] });
+  const normalized = normalizeBiliupPreferences({ directory: '/app', autoUpload: true, selectedTemplateId: 'one', templates: [{ ...template, secret: 'not-a-setting' }] });
+  assert.equal(normalized.autoUpload, true);
   assert.equal(normalized.templates.length, 1);
   assert(!('secret' in normalized.templates[0]));
   assert.deepEqual(normalized.accounts, [{ id: 'default', name: 'Default account', directory: '/app' }]);

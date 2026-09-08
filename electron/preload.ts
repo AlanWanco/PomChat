@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('biliup-load'),
     save: (preferences: unknown) => ipcRenderer.invoke('biliup-save', preferences),
     check: (directory: string) => ipcRenderer.invoke('biliup-check', directory),
+    testLines: () => ipcRenderer.invoke('biliup-test-lines'),
     login: (directory: string, method: 'qr' | 'sms') => ipcRenderer.invoke('biliup-login', directory, method),
     attachCaptchaView: (webContentsId: number) => ipcRenderer.invoke('biliup-attach-captcha', webContentsId),
     dismissCaptchaView: () => ipcRenderer.invoke('biliup-dismiss-captcha'),

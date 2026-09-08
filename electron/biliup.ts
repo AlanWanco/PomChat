@@ -8,7 +8,7 @@ import os from 'node:os';
 import type { IPty } from 'node-pty';
 import {
   idleBiliupState, normalizeBiliupPreferences, validateBiliupTemplate,
-  type BiliupState, type BiliupCheck, type BiliupPreferences, type BiliupUploadRequest,
+  type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
 import { buildBiliupUploadArgs, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
 
@@ -243,6 +243,33 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       await renewCookie(info);
       return verifyCookie(info.cookie);
     }
+  }
+
+  async function testLines(): Promise<BiliupLineTestResult[]> {
+    if (active || checking) fail('busy');
+    checking = true;
+    try {
+      const probeResponse = await fetch('https://member.bilibili.com/preupload?r=probe', { redirect: 'error', signal: AbortSignal.timeout(15000) });
+      if (!probeResponse.ok) fail('network');
+      const payload = await probeResponse.json() as { lines?: Array<{ query?: unknown; probe_url?: unknown }> };
+      const lines = Array.isArray(payload.lines) ? payload.lines : fail('network');
+      if (lines.length === 0) fail('network');
+      return await Promise.all(lines.map(async (line) => {
+        const probeUrl = typeof line.probe_url === 'string' ? line.probe_url : '';
+        const url = probeUrl.startsWith('//') ? `https:${probeUrl}` : probeUrl;
+        const query = typeof line.query === 'string' ? line.query : '';
+        const name = new URLSearchParams(query).get('upcdn') || (() => { try { return new URL(url).hostname; } catch { return 'unknown'; } })();
+        if (!url) return { name, ok: false, error: 'network' as const };
+        const startedAt = Date.now();
+        try {
+          const response = await fetch(url, { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10000) });
+          return { name, ok: response.ok, status: response.status, elapsedMs: Date.now() - startedAt, ...(response.ok ? {} : { error: 'network' as const }) };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '';
+          return { name, ok: false, elapsedMs: Date.now() - startedAt, error: /certificate|tls|ssl|cert/i.test(message) ? 'tls' as const : 'network' as const };
+        }
+      }));
+    } finally { checking = false; }
   }
 
   async function check(directory: string): Promise<BiliupCheck> {
@@ -624,6 +651,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     } finally { saving = false; }
   }, 'settings');
   handle('check', check, 'binary');
+  handle('test-lines', testLines, 'network');
   handle('login', login, 'login');
   handle('upload', upload, 'upload');
   handle('attach-captcha', (guestWebContentsId: number) => {

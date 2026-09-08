@@ -4,7 +4,7 @@ import {
   emptyBiliupPreferences, idleBiliupState, validateBiliupSchedule, validateBiliupTemplate,
   type BiliupPreferences, type BiliupState, type BiliupResult, type BiliupUploadPlan,
 } from '../biliup';
-import { type Language } from '../i18n';
+import { translate, type Language } from '../i18n';
 import { BiliupModal } from './BiliupModal';
 
 export function unwrapBiliup<T>(result: BiliupResult<T>): T {
@@ -38,8 +38,9 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(emptyBiliupPreferences);
   const [state, setState] = useState(idleBiliupState);
   const [loaded, setLoaded] = useState(false);
-  const [autoUpload, setAutoUpload] = useState(false);
+  const [autoUpload, setAutoUploadState] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [focusUpload, setFocusUpload] = useState(false);
   const [error, setError] = useState('');
   const [appearance, setAppearance] = useState<Appearance>({ language: 'zh-CN', isDarkMode: false, themeColor: '#9ca4b8', secondaryThemeColor: '#ed7e96' });
   const selected = preferences.templates.find((t) => t.id === preferences.selectedTemplateId);
@@ -51,7 +52,7 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     let receivedState = false;
     const api = window.electron.biliup;
     const unsubscribe = api.onState((next) => { receivedState = true; if (alive) setState(next); });
-    void api.load().then(unwrapBiliup).then((next) => { if (alive) { setPreferences(next); setLoaded(true); } })
+    void api.load().then(unwrapBiliup).then((next) => { if (alive) { setPreferences(next); setAutoUploadState(next.autoUpload); setLoaded(true); } })
       .catch(() => { if (alive) setError('settings'); });
     void api.state().then(unwrapBiliup).then((next) => { if (alive && !receivedState) setState(next); })
       .catch(() => { if (alive) setError('input'); });
@@ -60,10 +61,21 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
 
   const save = useCallback(async (next: BiliupPreferences) => {
     if (!window.electron || !loaded) throw new Error('settings');
-    setPreferences(unwrapBiliup(await window.electron.biliup.save(next)));
-    setAutoUpload(false);
+    const normalized = unwrapBiliup(await window.electron.biliup.save(next));
+    setPreferences(normalized);
+    setAutoUploadState(normalized.autoUpload);
     setError('');
   }, [loaded]);
+  const setAutoUpload = useCallback((enabled: boolean) => {
+    const nextEnabled = enabled && canAutoUpload;
+    const previousEnabled = preferences.autoUpload;
+    setAutoUploadState(nextEnabled);
+    if (!window.electron || !loaded) return;
+    void save({ ...preferences, autoUpload: nextEnabled }).catch((failure) => {
+      setAutoUploadState(previousEnabled);
+      setError(failure instanceof Error ? failure.message : 'settings');
+    });
+  }, [canAutoUpload, loaded, preferences, save]);
 
   const prepare = async (format: string): Promise<BiliupUploadPlan | null> => {
     if (!autoUpload) return null;
@@ -75,9 +87,13 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     return { directory: preferences.directory, template: { ...selected } };
   };
   const upload = async (plan: BiliupUploadPlan, filePath: string) => {
+    setFocusUpload(true);
     setIsOpen(true);
     setError('');
-    try { unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath })); }
+    try {
+      unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath }));
+      void window.electron.showNotification({ title: 'PomChat', body: translate(appearance.language, 'biliup.uploadSuccess') }).catch(() => {});
+    }
     catch (failure) {
       const code = failure instanceof Error ? failure.message : 'upload';
       setError(code);
@@ -86,10 +102,10 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
   };
   const value: BiliupContextValue = {
     preferences, state, loaded, autoUpload, error, canAutoUpload, save, prepare, upload, setError, setAppearance,
-    open: () => setIsOpen(true), setAutoUpload: (enabled) => setAutoUpload(enabled && canAutoUpload),
+    open: () => { setFocusUpload(false); setIsOpen(true); }, setAutoUpload,
   };
   return <BiliupContext.Provider value={value}>
     {children}
-    {isOpen && <BiliupModal {...appearance} onClose={() => setIsOpen(false)} />}
+    {isOpen && <BiliupModal {...appearance} focusUpload={focusUpload} onClose={() => { setIsOpen(false); setFocusUpload(false); }} />}
   </BiliupContext.Provider>;
 }
