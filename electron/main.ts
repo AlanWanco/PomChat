@@ -807,7 +807,53 @@ function compareVersions(a: string, b: string) {
   return 0;
 }
 
+// Keep OS open requests until React has hydrated and subscribed to the bridge.
+let projectOpenListenerReady = false;
+const pendingProjectOpenPaths: string[] = [];
+
+function flushProjectOpenRequests() {
+  if (!projectOpenListenerReady || !win || win.isDestroyed()) return;
+  for (const filePath of pendingProjectOpenPaths.splice(0)) {
+    win.webContents.send('project-open-requested', filePath);
+  }
+}
+
+function enqueueProjectOpen(filePath: string, workingDirectory = process.cwd()) {
+  if (!filePath || filePath.startsWith('-') || !/\.pomchat$/i.test(filePath)) return;
+  const resolvedPath = path.resolve(workingDirectory, filePath);
+  if (!pendingProjectOpenPaths.includes(resolvedPath)) pendingProjectOpenPaths.push(resolvedPath);
+  flushProjectOpenRequests();
+}
+
+function focusProjectWindow() {
+  if (!app.isReady()) return;
+  if (!win || win.isDestroyed()) createWindow();
+  if (win?.isMinimized()) win.restore();
+  win?.show();
+  win?.focus();
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  // macOS delivers Finder requests here, sometimes before app.ready.
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    enqueueProjectOpen(filePath);
+    focusProjectWindow();
+  });
+  app.on('second-instance', (_event, argv, workingDirectory) => {
+    for (const argument of argv.slice(1)) enqueueProjectOpen(argument, workingDirectory);
+    focusProjectWindow();
+  });
+  if (process.platform !== 'darwin') {
+    for (const argument of process.argv.slice(app.isPackaged ? 1 : 2)) enqueueProjectOpen(argument);
+  }
+}
+
 function createWindow() {
+  projectOpenListenerReady = false;
   allowWindowClose = false;
   pendingWindowCloseRequest = false;
   win = new BrowserWindow({
@@ -825,6 +871,10 @@ function createWindow() {
   if (process.platform !== 'darwin') {
     win.setMenuBarVisibility(false);
   }
+
+  win.webContents.on('did-start-loading', () => {
+    projectOpenListenerReady = false;
+  });
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
@@ -872,6 +922,7 @@ function createWindow() {
   });
 
   win.on('closed', () => {
+    projectOpenListenerReady = false;
     win = null;
     allowWindowClose = false;
     pendingWindowCloseRequest = false;
@@ -892,6 +943,7 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   try {
     const configPath = getConfigFilePath();
     if (fs.existsSync(configPath)) {
@@ -905,10 +957,15 @@ app.whenReady().then(async () => {
     console.error('Failed to apply proxy on startup:', error);
   }
 
-  createWindow();
+  if (!win || win.isDestroyed()) createWindow();
 });
 
 // IPC Handlers
+ipcMain.handle('project-open-listener-ready', (event, ready: boolean) => {
+  if (event.sender !== win?.webContents) return;
+  projectOpenListenerReady = ready === true;
+  flushProjectOpenRequests();
+});
 ipcMain.handle('ping', () => 'pong');
 
 ipcMain.handle('confirm-app-close', () => {

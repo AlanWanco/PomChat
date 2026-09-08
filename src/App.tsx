@@ -2528,6 +2528,11 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [isDarkMode, themeColorState]);
 
   // Load config from Electron config file on startup (only once)
+  const [electronConfigReady, setElectronConfigReady] = useState(false);
+  const [externalProjectPaths, setExternalProjectPaths] = useState<string[]>([]);
+  const [openingExternalProject, setOpeningExternalProject] = useState(false);
+  const [resolvingUnsavedProject, setResolvingUnsavedProject] = useState(false);
+  const externalProjectBusyRef = useRef(false);
   const hasLoadedElectronConfigRef = useRef(false);
   useEffect(() => {
     if (hasLoadedElectronConfigRef.current || !window.electron) return;
@@ -2545,11 +2550,26 @@ const [previewScale, setPreviewScale] = useState(1);
         console.error('Failed to load config from Electron:', error);
       } finally {
         hasHydratedElectronConfigRef.current = true;
+        setElectronConfigReady(true);
       }
     };
     
     loadElectronConfig();
   }, []);
+
+  useEffect(() => {
+    if (!window.electron || !electronConfigReady) return;
+    const bridge = window.electron;
+    const unsubscribe = bridge.onProjectOpenRequested((filePath) => {
+      if (typeof filePath !== 'string' || !/\.pomchat$/i.test(filePath)) return;
+      setExternalProjectPaths((paths) => paths.includes(filePath) ? paths : [...paths, filePath]);
+    });
+    void bridge.setProjectOpenListenerReady(true).catch(console.error);
+    return () => {
+      unsubscribe();
+      void bridge.setProjectOpenListenerReady(false).catch(console.error);
+    };
+  }, [electronConfigReady]);
 
   // Save config changes to Electron file (debounced to prevent too frequent saves)
   useEffect(() => {
@@ -5507,6 +5527,26 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   };
 
+  useEffect(() => {
+    if (!electronConfigReady || !externalProjectPaths.length || openingExternalProject
+      || externalProjectBusyRef.current || resolvingUnsavedProject || unsavedProjectDialog || projectResourceCheckDialog) return;
+
+    const filePath = externalProjectPaths[0];
+    externalProjectBusyRef.current = true;
+    setOpeningExternalProject(true);
+    setExternalProjectPaths((paths) => paths.slice(1));
+    void runWithUnsavedProjectGuard(() => loadProjectFromPath(filePath))
+      .catch((error) => {
+        console.error('Failed to open associated project:', error);
+        showToast(t('dialog.errorLoadFailed'));
+      })
+      .finally(() => {
+        externalProjectBusyRef.current = false;
+        setOpeningExternalProject(false);
+      });
+  }, [electronConfigReady, externalProjectPaths, openingExternalProject, resolvingUnsavedProject, unsavedProjectDialog,
+    projectResourceCheckDialog, runWithUnsavedProjectGuard, loadProjectFromPath, showToast, t]);
+
   const handleOpenProjectNow = async () => {
     if (!window.electron) {
       webProjectInputRef.current?.click();
@@ -5898,26 +5938,32 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleConfirmUnsavedProject = useCallback(async () => {
     const pendingAction = pendingUnsavedProjectActionRef.current;
     setUnsavedProjectDialog(null);
+    setResolvingUnsavedProject(true);
     pendingUnsavedProjectActionRef.current = null;
-    const saved = await handleSaveProject({ silent: true, source: 'guard' });
-    if (!saved || isProjectDirtyRef.current) {
-      if (window.electron && pendingElectronAppCloseRef.current) {
-        pendingElectronAppCloseRef.current = false;
-        await window.electron.cancelAppClose();
+    try {
+      const saved = await handleSaveProject({ silent: true, source: 'guard' });
+      if (!saved || isProjectDirtyRef.current) {
+        if (window.electron && pendingElectronAppCloseRef.current) {
+          pendingElectronAppCloseRef.current = false;
+          await window.electron.cancelAppClose();
+        }
+        return;
       }
-      return;
-    }
-    if (pendingAction) {
-      await pendingAction();
+      if (pendingAction) await pendingAction();
+    } finally {
+      setResolvingUnsavedProject(false);
     }
   }, [handleSaveProject]);
 
   const handleDiscardUnsavedProject = useCallback(async () => {
     const pendingAction = pendingUnsavedProjectActionRef.current;
     setUnsavedProjectDialog(null);
+    setResolvingUnsavedProject(true);
     pendingUnsavedProjectActionRef.current = null;
-    if (pendingAction) {
-      await pendingAction();
+    try {
+      if (pendingAction) await pendingAction();
+    } finally {
+      setResolvingUnsavedProject(false);
     }
   }, []);
 

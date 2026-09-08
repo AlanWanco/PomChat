@@ -43,6 +43,8 @@ interface Window {
     checkForUpdates: () => Promise<{ ok: boolean; latestVersion?: string; currentVersion?: string; htmlUrl?: string; publishedAt?: string; hasUpdate?: boolean; error?: string }>;
     confirmAppClose: () => Promise<boolean>;
     cancelAppClose: () => Promise<boolean>;
+    setProjectOpenListenerReady: (ready: boolean) => Promise<void>;
+    onProjectOpenRequested: (callback: (filePath: string) => void) => () => void;
     onAppCloseRequested: (callback: () => void) => () => void;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
     showNotification: (payload: { title: string; body: string }) => Promise<boolean>;

@@ -51,6 +51,15 @@
     "appId": "com.alanwanco.pomchat",
     "productName": "PomChat",
     "asar": false,
+    "fileAssociations": [
+      {
+        "ext": "pomchat",
+        "name": "PomChat Project",
+        "description": "PomChat project file",
+        "role": "Editor",
+        "mimeType": "application/x-pomchat"
+      }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"

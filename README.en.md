@@ -100,6 +100,14 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 
 ## Project Files and Local Config
 
+### Open `.pomchat` projects by double-clicking
+
+- The Windows installer registers the `.pomchat` file association. On macOS, install PomChat in Applications to open projects from Finder.
+- Opening a project launches the app or brings its existing window forward. Switching projects still uses the save, discard, or cancel flow for unsaved changes.
+- Rebuild and install the app for the association to take effect. If another app is the default, select PomChat using **Open with**.
+- Windows portable ZIP builds do not register associations automatically; Linux requires desktop integration. The web edition does not support OS file associations.
+- Only `.pomchat` is associated; the default application for generic `.json` files is unchanged.
+
 PomChat Studio uses two kinds of data:
 
 - **Project config**: audio path, subtitle path, speaker styles, layout, background, export options, and other project-related settings

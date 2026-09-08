@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('electron', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   confirmAppClose: () => ipcRenderer.invoke('confirm-app-close'),
   cancelAppClose: () => ipcRenderer.invoke('cancel-app-close'),
+  setProjectOpenListenerReady: (ready: boolean) => ipcRenderer.invoke('project-open-listener-ready', ready),
+  onProjectOpenRequested: (callback: (filePath: string) => void) => {
+    const listener = (_event: any, filePath: string) => callback(filePath);
+    ipcRenderer.on('project-open-requested', listener);
+    return () => ipcRenderer.removeListener('project-open-requested', listener);
+  },
   onAppCloseRequested: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('app-close-requested', listener);
