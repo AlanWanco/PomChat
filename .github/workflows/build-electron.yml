@@ -14,23 +14,23 @@ jobs:
         include:
           - name: macos-arm64
             runner: macos-14
-            build_args: --mac zip dmg --arm64
+            build_args: --mac dir --arm64
             artifact_glob: release/**
           - name: windows-x64
             runner: windows-latest
-            build_args: --win nsis zip --x64
+            build_args: --win dir --x64
             artifact_glob: release/**
           - name: windows-arm64
             runner: windows-latest
-            build_args: --win nsis zip --arm64
+            build_args: --win dir --arm64
             artifact_glob: release/**
           - name: linux-x64
             runner: ubuntu-24.04
-            build_args: --linux AppImage tar.gz --x64
+            build_args: --linux dir --x64
             artifact_glob: release/**
           - name: linux-arm64
             runner: ubuntu-24.04
-            build_args: --linux AppImage tar.gz --arm64
+            build_args: --linux dir --arm64
             artifact_glob: release/**
 
     runs-on: ${{ matrix.runner }}
@@ -61,9 +61,9 @@ jobs:
       - name: Package Electron app
         run: npx electron-builder ${{ matrix.build_args }} --publish never
 
-      - name: Upload artifacts
+      - name: Upload unpacked artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
+          name: ${{ matrix.name }}-unpacked
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
