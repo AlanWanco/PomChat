@@ -27,8 +27,6 @@ interface Appearance { language: Language; isDarkMode: boolean; themeColor: stri
 
 const BILIUP_PROJECT_URL = 'https://github.com/biliup/biliup-rs';
 
-type ClipboardFileWithPath = File & { path?: string };
-
 function normalizeLocalPath(value: string) {
   const path = value.trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
   if (!path.toLowerCase().startsWith('file://')) return path;
@@ -45,6 +43,15 @@ function normalizeLocalPath(value: string) {
 function isVideoPath(value: string) {
   const path = normalizeLocalPath(value);
   return !/^(?:https?|blob|data):/i.test(path) && isBiliupVideoPath(path);
+}
+
+function extractClipboardVideoPath(event: ClipboardEvent<HTMLInputElement>) {
+  const fileItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file');
+  const file = fileItem?.getAsFile();
+  const directPath = file && window.electron ? window.electron.getDroppedFilePath(file) : '';
+  if (directPath && isVideoPath(directPath)) return directPath;
+  const textPath = normalizeLocalPath(event.clipboardData?.getData('text/plain')?.trim() || '');
+  return isVideoPath(textPath) ? textPath : '';
 }
 
 function padDatePart(value: number) {
@@ -439,15 +446,13 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     }
   });
   const handleUploadPathPaste = (event: ClipboardEvent<HTMLInputElement>) => {
-    const clipboardFile = Array.from(event.clipboardData.files)[0]
-      || Array.from(event.clipboardData.items).find((item) => item.kind === 'file')?.getAsFile();
-    const filePath = clipboardFile ? (clipboardFile as ClipboardFileWithPath).path || '' : '';
-    const uriPath = event.clipboardData.getData('text/uri-list').split(/\r?\n/).find((value) => value && !value.startsWith('#')) || '';
-    const textPath = event.clipboardData.getData('text/plain');
-    const path = normalizeLocalPath(filePath || uriPath || textPath);
-    if (!clipboardFile && !uriPath && !textPath.trim()) return;
+    const clipboardItems = Array.from(event.clipboardData?.items || []);
+    const hasFile = clipboardItems.some((item) => item.kind === 'file');
+    const text = event.clipboardData?.getData('text/plain')?.trim() || '';
+    if (!hasFile && !text) return;
     event.preventDefault();
-    if (!isVideoPath(path)) {
+    const path = extractClipboardVideoPath(event);
+    if (!path) {
       setUploadFilePath('');
       setUploadFileError(t('biliup.videoInvalid'));
       return;
