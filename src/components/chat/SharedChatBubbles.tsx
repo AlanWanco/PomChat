@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React from 'react';
+import { withCjkFontFallback } from '../../fontPresets';
 
 export interface SharedChatItem {
   key: string;
@@ -296,7 +297,7 @@ function SvgStrokeText({
         lineHeight: 1,
         textAlign: align,
         whiteSpace: 'nowrap',
-        fontFamily,
+        fontFamily: withCjkFontFallback(fontFamily),
         fontSize: `${fontSize}px`,
         fontWeight,
         color,
@@ -821,7 +822,7 @@ const buildInlineTextStyle = (style: AssInlineStyleState, fontScale: number): Re
 
   return {
     color: style.color ? applyAlphaToColor(style.color, style.alpha) : undefined,
-    fontFamily: style.fontFamily,
+    fontFamily: style.fontFamily ? withCjkFontFallback(style.fontFamily) : undefined,
     fontSize: typeof style.fontSize === 'number' && Number.isFinite(style.fontSize) ? `${style.fontSize * fontScale}px` : undefined,
     fontWeight: style.bold,
     fontStyle: style.italic ? 'italic' : undefined,
@@ -869,8 +870,10 @@ const renderMarkdownTokens = ({
           : `${baseFontSize}px`;
       return <span key={key} style={{ ...inheritedTextStyle, fontSize: cssSize }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontSize: cssSize } })}</span>;
     }
-    case 'font':
-      return <span key={key} style={{ ...inheritedTextStyle, fontFamily: token.font || undefined }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontFamily: token.font || undefined } })}</span>;
+    case 'font': {
+      const tokenFontFamily = token.font ? withCjkFontFallback(token.font) : undefined;
+      return <span key={key} style={{ ...inheritedTextStyle, fontFamily: tokenFontFamily }}>{renderMarkdownTokens({ tokens: token.children, textColor, baseFontSize, renderInlineImage, keyPrefix: key, inheritedTextStyle: { ...inheritedTextStyle, fontFamily: tokenFontFamily } })}</span>;
+    }
     case 'image':
       return renderInlineImage({ src: token.src, alt: token.alt, key });
     default:
@@ -1245,7 +1248,7 @@ export function ChatMessageBubble({
                 overflow: 'hidden',
                 isolation: 'isolate',
                 backgroundColor: finalBgColor,
-                fontFamily: speaker.style?.fontFamily || 'system-ui',
+                fontFamily: withCjkFontFallback(speaker.style?.fontFamily || 'system-ui'),
                 fontSize: `${fontSize}px`,
                 fontWeight: speaker.style?.fontWeight || 'normal',
                 backgroundClip: 'padding-box',
@@ -1375,7 +1378,7 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
     } as React.CSSProperties,
     contentStyle: {
       padding: `${(speaker.style?.paddingY ?? 12) * combinedScale}px ${(speaker.style?.paddingX ?? 24) * combinedScale}px`,
-      fontFamily: speaker.style?.fontFamily || 'system-ui',
+      fontFamily: withCjkFontFallback(speaker.style?.fontFamily || 'system-ui'),
       fontSize: `${(speaker.style?.fontSize ?? 24) * combinedScale}px`,
       fontWeight: speaker.style?.fontWeight || 'normal',
       lineHeight: 0,

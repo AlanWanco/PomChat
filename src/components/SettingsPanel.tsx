@@ -16,7 +16,7 @@ const FONT_OPTIONS = [
   { label: 'Helvetica Neue', value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
   { label: 'Arial', value: 'Arial, sans-serif' },
   { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Times New Roman', value: '"Times New Roman", Times, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif' },
   { label: 'JetBrains Mono', value: '"JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
   { label: 'Monospace UI', value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }
 ];

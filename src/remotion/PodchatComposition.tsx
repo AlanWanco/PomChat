@@ -4,7 +4,7 @@ import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
-import { buildFontFaceCss } from '../fontPresets';
+import { buildFontFaceCss, withCjkFontFallback } from '../fontPresets';
 
 const MESSAGE_FALLBACK_COUNT = 32;
 
@@ -114,7 +114,7 @@ const renderSlideText = ({
           transformOrigin: '50% 50%',
           opacity: (slide.opacity ?? 1) * motionState.opacity,
           filter: `blur(${blur}px) brightness(${brightness})`,
-          fontFamily: slide.fontFamily || 'system-ui',
+          fontFamily: withCjkFontFallback(slide.fontFamily || 'system-ui'),
           fontSize: `${fontSize}px`,
           fontWeight: slide.fontWeight || '700',
           lineHeight: 1.15,
@@ -134,7 +134,7 @@ const renderSlideText = ({
               y={getLineY(index)}
               textAnchor={textAlign === 'left' ? 'start' : textAlign === 'right' ? 'end' : 'middle'}
               dominantBaseline="hanging"
-              fontFamily={slide.fontFamily || 'system-ui'}
+              fontFamily={withCjkFontFallback(slide.fontFamily || 'system-ui')}
               fontSize={fontSize}
               fontWeight={slide.fontWeight || '700'}
               fill={slide.textColor || '#FFFFFF'}

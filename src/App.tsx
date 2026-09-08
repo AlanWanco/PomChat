@@ -16,11 +16,12 @@ import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
 import { createThemeTokens, rgba } from './theme';
-import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId, formatFontFamilyValue, replaceFontPresetFamilyReferences, type FontPresetMap } from './fontPresets';
+import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId, formatFontFamilyValue, replaceFontPresetFamilyReferences, withCjkFontFallback, type FontPresetMap } from './fontPresets';
 import { Camera, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { Tooltip } from './components/ui/Tooltip';
 import type { BackgroundSlideItem } from './remotion/types';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
+import { buildAssContent } from './assExport';
 import './App.css';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
@@ -838,7 +839,7 @@ function PreviewTextAsset({
                 y={getLineY(index)}
                 textAnchor={textAlign === 'left' ? 'start' : textAlign === 'right' ? 'end' : 'middle'}
                 dominantBaseline="hanging"
-                fontFamily={slide.fontFamily || 'system-ui'}
+                fontFamily={withCjkFontFallback(slide.fontFamily || 'system-ui')}
                 fontSize={fontSize}
                 fontWeight={slide.fontWeight || '700'}
                 fill={slide.textColor || '#FFFFFF'}
@@ -3526,6 +3527,54 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron || !targetPath) return;
     await window.electron.showItemInFolder(targetPath);
   }, [exportOutputPath, lastExportOutputPath]);
+
+  const exportAss = async () => {
+    const assContent = buildAssContent({
+      subtitles,
+      speakers: config.speakers || {},
+      dimensions: config.dimensions,
+      title: config.projectTitle || t('app.untitled'),
+    });
+    const defaultFilename = `${sanitizeExportFileStem(config.projectTitle || t('app.untitled') || 'pomchat')}.ass`;
+
+    if (!window.electron) {
+      try {
+        const blob = new Blob([assContent], { type: 'text/x-ass;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.href = url;
+        downloadAnchorNode.download = defaultFilename;
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+        URL.revokeObjectURL(url);
+        showToast(t('app.assExported'));
+      } catch (error) {
+        console.error('Failed to export ASS subtitle:', error);
+        showToast(t('dialog.errorExportAssFailed'));
+      }
+      return;
+    }
+
+    try {
+      const result = await window.electron.showSaveDialog({
+        title: t('menu.exportAss'),
+        defaultPath: config.assPath && /\\.ass$/i.test(config.assPath) ? config.assPath : defaultFilename,
+        filters: [{ name: t('dialog.filterAss'), extensions: ['ass'] }],
+      });
+
+      if (result.canceled || !result.filePath) return;
+      const targetPath = /\\.ass$/i.test(result.filePath) ? result.filePath : `${result.filePath}.ass`;
+      const saved = await window.electron.writeFile(targetPath, assContent);
+      if (!saved) {
+        throw new Error('The ASS file could not be written');
+      }
+      showToast(t('app.assExported'));
+    } catch (error: any) {
+      console.error('Failed to export ASS subtitle:', error);
+      showToast(`${t('dialog.errorExportAssFailed')}: ${error?.message || error}`);
+    }
+  };
 
   const exportConfig = () => {
     const finalConfig = getProjectConfig();
@@ -6562,6 +6611,7 @@ const [previewScale, setPreviewScale] = useState(1);
           }
           void handleOpenExportModal();
         }}
+        onExportAss={() => void exportAss()}
         onExportConfig={exportConfig}
         onOpenAbout={() => setShowAboutModal(true)}
         onOpenStyleManager={() => setShowStyleManager(true)}

@@ -134,15 +134,92 @@ const resolveLocalMediaPath = (value) => {
   return path.isAbsolute(resolved) ? resolved : null;
 };
 
+const isRegularFile = (filePath) => {
+  try {
+    return Boolean(filePath) && fs.statSync(filePath).isFile();
+  } catch (_error) {
+    return false;
+  }
+};
+
+const getRemotionCompositorRoots = () => {
+  const appRoot = process.env.APP_ROOT || process.cwd();
+  const roots = [
+    path.join(appRoot, 'node_modules', '@remotion'),
+    path.join(__dirname, '..', 'node_modules', '@remotion'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'app', 'node_modules', '@remotion') : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@remotion') : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar', 'node_modules', '@remotion') : null,
+  ].filter(Boolean);
+
+  return [...new Set(roots)];
+};
+
 const resolveFfmpegBinary = (binariesDirectory) => {
   const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const appRoot = process.env.APP_ROOT || process.cwd();
+  const candidatePaths = [];
+
   if (binariesDirectory) {
-    const bundled = path.join(binariesDirectory, ffmpegName);
-    if (fs.existsSync(bundled)) {
-      return bundled;
+    candidatePaths.push(path.join(binariesDirectory, ffmpegName));
+  }
+
+  const preferredCompositorNames = [
+    `compositor-${process.platform}-${process.arch}`,
+    `compositor-${process.platform}-${process.arch}-msvc`,
+    `compositor-${process.platform}-${process.arch}-gnu`,
+    `compositor-${process.platform}-${process.arch}-musl`,
+  ];
+
+  for (const compositorRoot of getRemotionCompositorRoots()) {
+    for (const compositorName of preferredCompositorNames) {
+      candidatePaths.push(path.join(compositorRoot, compositorName, ffmpegName));
+    }
+
+    try {
+      for (const entry of fs.readdirSync(compositorRoot)) {
+        if (entry.startsWith(`compositor-${process.platform}-${process.arch}`)) {
+          candidatePaths.push(path.join(compositorRoot, entry, ffmpegName));
+        }
+      }
+    } catch (_error) {
+      // The optional platform-specific Remotion package may not be installed.
     }
   }
-  return ffmpegName;
+
+  // Also support a manually bundled binary next to the worker in development
+  // builds and in unpacked Electron packages.
+  candidatePaths.push(
+    path.join(__dirname, ffmpegName),
+    path.join(appRoot, ffmpegName),
+    path.join(appRoot, 'electron', ffmpegName),
+    process.resourcesPath ? path.join(process.resourcesPath, 'app', 'electron', ffmpegName) : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'electron', ffmpegName) : null,
+    path.join(process.cwd(), ffmpegName),
+  );
+
+  // Finally resolve a system-installed FFmpeg to an absolute path instead of
+  // relying on execFileSync() to use the worker's current working directory.
+  for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+    if (directory) {
+      candidatePaths.push(path.join(directory, ffmpegName));
+    }
+  }
+
+  const uniqueCandidates = [...new Set(
+    candidatePaths
+      .filter(Boolean)
+      .map((candidate) => path.resolve(candidate)),
+  )];
+  const resolvedPath = uniqueCandidates.find(isRegularFile);
+
+  if (resolvedPath) {
+    return resolvedPath;
+  }
+
+  throw new Error(
+    `FFmpeg executable not found. Searched: ${uniqueCandidates.join('; ')}`,
+  );
 };
 
 const muxAudioIntoMp4 = ({

@@ -11,6 +11,34 @@ export type FontPresetMap = Record<string, FontPreset>;
 
 export const FONT_FILE_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'];
 
+const CJK_FONT_FALLBACKS = [
+  '"Microsoft YaHei"',
+  '"Microsoft JhengHei"',
+  '"PingFang SC"',
+  '"Noto Sans CJK SC"',
+  '"Noto Sans SC"',
+  '"SimSun"',
+  'sans-serif',
+];
+const TRAILING_GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'emoji', 'math', 'fangsong']);
+
+export const withCjkFontFallback = (fontFamily?: string) => {
+  const base = (fontFamily || 'system-ui').trim() || 'system-ui';
+  if (/^(inherit|initial|unset|revert)$/i.test(base)) {
+    return base;
+  }
+
+  const families = base.split(',').map((family) => family.trim()).filter(Boolean);
+  const normalizedBase = base.toLowerCase();
+  const additions = CJK_FONT_FALLBACKS.filter((fallback) => !normalizedBase.includes(fallback.toLowerCase()));
+  const genericIndex = families.findIndex((family, index) => index > 0 && TRAILING_GENERIC_FONT_FAMILIES.has(family.toLowerCase()));
+  if (genericIndex >= 0) {
+    families.splice(genericIndex, 0, ...additions);
+    return families.join(', ');
+  }
+  return [...families, ...additions].join(', ');
+};
+
 export const isSupportedFontFile = (value: string) => {
   const path = value.trim().replace(/^['"]|['"]$/g, '');
   return FONT_FILE_EXTENSIONS.some((extension) => path.toLowerCase().endsWith(`.${extension}`));

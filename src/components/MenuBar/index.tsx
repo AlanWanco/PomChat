@@ -31,6 +31,7 @@ interface MenuBarProps {
   canRedo: boolean;
   onCloseProject: () => void;
   onExportVideo: () => void;
+  onExportAss: () => void;
   onExportConfig: () => void;
   onOpenAbout: () => void;
   onOpenStyleManager: () => void;
@@ -63,6 +64,7 @@ export function MenuBar({
   canRedo,
   onCloseProject,
   onExportVideo,
+  onExportAss,
   onExportConfig,
   onOpenAbout,
   onOpenStyleManager
@@ -289,8 +291,11 @@ export function MenuBar({
           </button>
           
           {activeMenu === 'export' && (
-            <div className="absolute top-full left-0 mt-1 w-48 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
-              <button onClick={() => executeAction(onExportConfig)} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass}`}>
+            <div className="absolute top-full left-0 mt-1 w-52 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+              <button onClick={() => executeAction(onExportAss)} disabled={!projectPath} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <Subtitles size={14} /> {t('menu.exportAss')}
+              </button>
+              <button onClick={() => executeAction(onExportConfig)} disabled={!projectPath} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <Download size={14} /> {t('menu.exportConfig')}
               </button>
               <button onClick={() => executeAction(onExportVideo)} disabled={isWebMode} title={isWebMode ? t('welcome.webMode') : undefined} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors ${hoverClass} ${isWebMode ? 'opacity-50 cursor-not-allowed' : ''}`} style={{ color: secondaryThemeColor }} onMouseEnter={(e) => { if (!isWebMode) e.currentTarget.style.backgroundColor = uiTheme.hoverBg; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>

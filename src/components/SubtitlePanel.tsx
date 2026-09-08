@@ -4,11 +4,13 @@ import { createPortal } from 'react-dom';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
+import { withCjkFontFallback } from '../fontPresets';
+import type { SharedChatSpeaker } from './chat/SharedChatBubbles';
 import { Tooltip } from './ui/Tooltip';
 
 interface SubtitlePanelProps {
   subtitles: SubtitleItem[];
-  speakers: Record<string, { name?: string; type?: string }>;
+  speakers: Record<string, SharedChatSpeaker>;
   currentTime: number;
   isDarkMode: boolean;
   language: Language;
@@ -31,10 +33,39 @@ interface SubtitlePanelProps {
   showToast?: (message: string) => void;
 }
 
+const colorWithOpacity = (value: string, opacity: number) => {
+  if (/^#[0-9a-f]{3,6}$/i.test(value)) {
+    return rgba(value, Math.min(1, Math.max(0, opacity)));
+  }
+  return value;
+};
+
+const getSpeakerIndicatorStyle = (speaker: SharedChatSpeaker | undefined) => {
+  const style = speaker?.style || {};
+  const backgroundColor = style.bgColor || (speaker?.type === 'annotation' ? '#111827' : '#2563eb');
+  const borderColor = style.borderColor || '#ffffff';
+  const backgroundOpacity = 0.4;
+  const borderOpacity = speaker?.type === 'annotation' ? 0.333 : 0.45;
+  const shadowSize = Math.max(0, Number(style.shadowSize ?? 1));
+
+  return {
+    backgroundColor: colorWithOpacity(backgroundColor, backgroundOpacity),
+    color: style.textColor || '#ffffff',
+    border: `1px solid ${colorWithOpacity(borderColor, borderOpacity)}`,
+    borderRadius: `${Math.max(3, Number(style.borderRadius ?? 28))}px`,
+    boxShadow: style.bubbleShadow === false || shadowSize <= 0
+      ? 'none'
+      : `0 ${Math.round(shadowSize * 0.35)}px ${shadowSize}px rgba(15, 23, 42, 0.24)`,
+    fontFamily: withCjkFontFallback(style.fontFamily || 'system-ui'),
+    fontWeight: style.fontWeight || 'normal',
+  };
+};
+
 export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, language, themeColor, secondaryThemeColor, onSeek, onUpdateSubtitle, onDuplicateSubtitle, onDeleteSubtitle, onBulkDeleteSubtitles, onBulkUpdateSpeaker, onBulkUpdateVisibility, onCreateBubbleSnapshot, editingSub, setEditingSub, compactMode, onCompactModeChange, projectPath = null, projectAssetsCacheEnabled = false, showToast }: SubtitlePanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
+  const [focusedSubtitleId, setFocusedSubtitleId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{ start: string; end: string; text: string; speakerId: string; visible: boolean }>({ start: '', end: '', text: '', speakerId: '', visible: true });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
@@ -310,8 +341,22 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
   };
 
+  const focusSubtitle = (sub: SubtitleItem) => {
+    setFocusedSubtitleId(sub.id);
+    onSeek(sub.start);
+  };
+
+  const changeSubtitleSpeaker = (sub: SubtitleItem, speakerId: string) => {
+    if (!speakerId || speakerId === sub.speakerId) {
+      return;
+    }
+    setFocusedSubtitleId(sub.id);
+    onUpdateSubtitle(sub.id, { speakerId });
+  };
+
   const startInlineEdit = (sub: SubtitleItem, e: React.MouseEvent) => {
     e.stopPropagation();
+    setFocusedSubtitleId(sub.id);
     setInlineEditingId(sub.id);
     setEditForm({ start: sub.start.toFixed(2), end: sub.end.toFixed(2), text: sub.text, speakerId: sub.speakerId, visible: sub.visible !== false });
   };
@@ -330,6 +375,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const openEditModal = (sub: SubtitleItem) => {
     setContextMenu(null);
+    setFocusedSubtitleId(sub.id);
     setEditModalSubtitleId(sub.id);
     setModalEditForm({
       start: sub.start.toFixed(2),
@@ -342,6 +388,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const openSpeakerModal = (sub: SubtitleItem) => {
     setContextMenu(null);
+    setFocusedSubtitleId(sub.id);
     setSpeakerModalSubtitleId(sub.id);
     setModalSpeakerId(sub.speakerId);
   };
@@ -795,14 +842,17 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 <div style={{ transform: `translateY(${compactVisibleStart * COMPACT_ROW_HEIGHT}px)` }}>
                   {compactVisibleRows.map((sub) => {
                     const isActive = currentTime >= sub.start && currentTime <= sub.end;
+                    const isFocused = focusedSubtitleId === sub.id || (focusedSubtitleId === null && activeSubId === sub.id);
+                    const isSelected = selectedSubtitleIdSet.has(sub.id);
                     const isSearchMatched = currentSearchMatchId === sub.id;
                     const subtitleIndex = subtitleIndexMap.get(sub.id) ?? 0;
+                    const speaker = speakers[sub.speakerId];
                     return (
                       <div
                         key={`compact-${sub.id}`}
                         role="button"
                         tabIndex={0}
-                        onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : onSeek(sub.start)}
+                        onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : focusSubtitle(sub)}
                         onContextMenu={(event) => openSubtitleContextMenu(sub, event)}
                         onKeyDown={(event) => {
                           if (event.key !== 'Enter' && event.key !== ' ') {
@@ -813,19 +863,22 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                             toggleSelectedSubtitle(sub.id, event.shiftKey);
                             return;
                           }
-                          onSeek(sub.start);
+                          focusSubtitle(sub);
                         }}
                         className="w-full text-left px-2 py-1 text-xs border-b transition-colors flex items-center gap-2 cursor-pointer"
                         style={{
                           height: `${COMPACT_ROW_HEIGHT}px`,
-                          borderColor: `${secondaryThemeColor}22`,
-                          backgroundColor: isActive
-                            ? `${secondaryThemeColor}${isDarkMode ? '20' : '12'}`
-                            : isSearchMatched
-                              ? `${secondaryThemeColor}${isDarkMode ? '16' : '0E'}`
-                              : selectedSubtitleIdSet.has(sub.id)
+                          backgroundColor: isFocused
+                            ? `${secondaryThemeColor}${isDarkMode ? '42' : '24'}`
+                            : isSelected
+                              ? `${secondaryThemeColor}${isDarkMode ? '2C' : '1C'}`
+                              : isActive
                                 ? `${secondaryThemeColor}${isDarkMode ? '20' : '12'}`
-                                : 'transparent',
+                                : isSearchMatched
+                                  ? `${secondaryThemeColor}${isDarkMode ? '16' : '0E'}`
+                                  : 'transparent',
+                          borderColor: isFocused ? `${secondaryThemeColor}AA` : `${secondaryThemeColor}22`,
+                          boxShadow: isFocused ? `0 0 0 1px ${secondaryThemeColor}55, 0 4px 14px ${secondaryThemeColor}24` : undefined,
                           color: uiTheme.text
                         }}
                       >
@@ -847,9 +900,21 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           </span>
                         ) : null}
                         <span className="font-mono opacity-70 shrink-0">{formatTime(sub.start)}</span>
-                        <span className="px-1 rounded shrink-0" style={{ color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>
-                          {speakers[sub.speakerId]?.name || sub.actor || sub.style}
-                        </span>
+                        <select
+                          aria-label={t('subtitle.changeSpeaker')}
+                          value={sub.speakerId}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => changeSubtitleSpeaker(sub, event.target.value)}
+                          className="max-w-[8rem] px-1 rounded text-[0.625rem] shrink-0 focus:outline-none cursor-pointer"
+                          style={getSpeakerIndicatorStyle(speaker)}
+                        >
+                          {Object.entries(speakers).map(([speakerId, speakerOption]) => (
+                            <option key={speakerId} value={speakerId} style={{ backgroundColor: uiTheme.inputBg, color: uiTheme.text }}>
+                              {speakerOption.name || speakerId}
+                            </option>
+                          ))}
+                        </select>
                         <span className="truncate opacity-90">{sub.text}</span>
                       </div>
                     );
@@ -863,9 +928,12 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
         ) : (
           subtitles.map((sub) => {
             const isActive = currentTime >= sub.start && currentTime <= sub.end;
+            const isFocused = focusedSubtitleId === sub.id || (focusedSubtitleId === null && activeSubId === sub.id);
+            const isSelected = selectedSubtitleIdSet.has(sub.id);
             const isInlineEditing = inlineEditingId === sub.id;
             const isRegionEditing = editingSub?.id === sub.id;
             const subtitleIndex = subtitleIndexMap.get(sub.id) ?? 0;
+            const speaker = speakers[sub.speakerId];
 
             return (
               <div 
@@ -878,7 +946,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     toggleSelectedSubtitle(sub.id, e.shiftKey);
                     return;
                   }
-                  onSeek(sub.start);
+                  focusSubtitle(sub);
                 }}
                 onDoubleClick={(e) => {
                   if (!isInlineEditing && !multiSelectMode) startInlineEdit(sub, e);
@@ -888,7 +956,17 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                    isRegionEditing ? (isDarkMode ? 'bg-gray-800 border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.2)]' : 'bg-green-50 border-green-400 shadow-sm') :
                     (isActive ? `cursor-pointer` : `${hoverClass} cursor-pointer`)}
                 `}
-                style={isInlineEditing ? { borderColor: `${themeColor}88`, backgroundColor: `${themeColor}${isDarkMode ? '18' : '10'}` } : currentSearchMatchId === sub.id ? { borderColor: `${secondaryThemeColor}88`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '18' : '10'}`, boxShadow: `0 6px 18px ${secondaryThemeColor}18`, opacity: sub.visible === false ? 0.62 : 1 } : isActive ? { borderColor: `${themeColor}88`, backgroundColor: `${themeColor}${isDarkMode ? '22' : '14'}`, boxShadow: `0 6px 18px ${secondaryThemeColor}18`, opacity: sub.visible === false ? 0.62 : 1 } : { backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, opacity: sub.visible === false ? 0.62 : 1 }}
+                style={isInlineEditing
+                  ? { borderColor: `${themeColor}88`, backgroundColor: `${themeColor}${isDarkMode ? '18' : '10'}` }
+                  : isFocused
+                    ? { borderColor: `${secondaryThemeColor}CC`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '38' : '20'}`, boxShadow: `0 0 0 2px ${secondaryThemeColor}55, 0 8px 24px ${secondaryThemeColor}28`, opacity: sub.visible === false ? 0.72 : 1 }
+                    : isSelected
+                      ? { borderColor: `${secondaryThemeColor}88`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '2A' : '18'}`, boxShadow: `0 4px 16px ${secondaryThemeColor}1C`, opacity: sub.visible === false ? 0.72 : 1 }
+                      : currentSearchMatchId === sub.id
+                        ? { borderColor: `${secondaryThemeColor}88`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '18' : '10'}`, boxShadow: `0 6px 18px ${secondaryThemeColor}18`, opacity: sub.visible === false ? 0.62 : 1 }
+                        : isActive
+                          ? { borderColor: `${themeColor}88`, backgroundColor: `${themeColor}${isDarkMode ? '22' : '14'}`, boxShadow: `0 6px 18px ${secondaryThemeColor}18`, opacity: sub.visible === false ? 0.62 : 1 }
+                          : { backgroundColor: uiTheme.cardBg, borderColor: uiTheme.border, opacity: sub.visible === false ? 0.62 : 1 }}
               >
                 {!isInlineEditing && (
                   <>
@@ -986,12 +1064,21 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                       >
                         {subtitleIndex}
                       </span>
-                      <span
-                        className="px-1.5 py-0.5 rounded text-[0.625rem] self-start shrink-0 font-bold"
-                        style={speakers[sub.speakerId]?.type === 'annotation' ? { backgroundColor: `${isDarkMode ? '#9ca3af' : '#6b7280'}22`, color: isDarkMode ? '#d1d5db' : '#4b5563', border: `1px solid ${isDarkMode ? '#6b7280' : '#9ca3af'}55` } : { backgroundColor: `${secondaryThemeColor}${isDarkMode ? '22' : '18'}`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}33` }}
+                      <select
+                        aria-label={t('subtitle.changeSpeaker')}
+                        value={sub.speakerId}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => changeSubtitleSpeaker(sub, event.target.value)}
+                        className="px-1.5 py-0.5 rounded text-[0.625rem] self-start shrink-0 font-bold focus:outline-none cursor-pointer max-w-[12rem]"
+                        style={getSpeakerIndicatorStyle(speaker)}
                       >
-                        {speakers[sub.speakerId]?.name || sub.actor || sub.style}
-                      </span>
+                        {Object.entries(speakers).map(([speakerId, speakerOption]) => (
+                          <option key={speakerId} value={speakerId} style={{ backgroundColor: uiTheme.inputBg, color: uiTheme.text }}>
+                            {speakerOption.name || speakerId}
+                          </option>
+                        ))}
+                      </select>
                       <p className="leading-relaxed line-clamp-3 whitespace-pre-wrap">{sub.text}</p>
                     </div>
                   </>
