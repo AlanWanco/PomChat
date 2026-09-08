@@ -64,7 +64,24 @@ jobs:
         run: npm run prepare-remotion-offline
 
       - name: Package Electron app
-        run: npx electron-builder ${{ matrix.build_args }} --publish never
+        shell: bash
+        run: |
+          # Retry transient download/DNS failures only; keep real build errors visible.
+          for attempt in 1 2 3; do
+            log_file="${RUNNER_TEMP}/electron-builder-${attempt}.log"
+            if npx electron-builder ${{ matrix.build_args }} --publish never >"$log_file" 2>&1; then
+              cat "$log_file"
+              exit 0
+            else
+              status=$?
+            fi
+            cat "$log_file"
+            if [ "$attempt" -eq 3 ] || ! grep -Eq 'ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|socket hang up' "$log_file"; then
+              exit "$status"
+            fi
+            echo "::warning::Transient network failure; retrying packaging (attempt $((attempt + 1))/3)."
+            sleep $((attempt * 20))
+          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
