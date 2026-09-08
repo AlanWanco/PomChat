@@ -14,7 +14,7 @@ try {
     return import(pathToFileURL(outfile).href);
   };
   const { extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
-  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate } = await compile('src/biliup.ts', 'model');
+  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
   assert.equal(parseBiliupProgress(' 12.5% '), 12.5);
@@ -27,6 +27,10 @@ try {
   assert(!redactBiliupLine('token=privatevalue', ['privatevalue']).includes('privatevalue'));
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));
 
+  assert(isBiliupVideoPath('C:\\Videos\\clip.mp4'));
+  assert(isBiliupVideoPath('/tmp/clip.mkv'));
+  assert(isBiliupVideoPath('/tmp/clip.webm'));
+  assert(!isBiliupVideoPath('/tmp/clip.txt'));
   assert.equal(newBiliupTemplate().tid, 5);
   assert.equal(newBiliupTemplate().submit, 'app');
   const template = { ...newBiliupTemplate(), id: 'one', name: 'Test', title: '固定标题', tag: 'one,two' };

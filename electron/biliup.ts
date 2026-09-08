@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { IPty } from 'node-pty';
 import {
-  idleBiliupState, normalizeBiliupPreferences, validateBiliupTemplate,
+  idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
   type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
 import { buildBiliupUploadArgs, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
@@ -575,13 +575,13 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       checkJob(job);
       const auth = await verifyCookieWithRenew(info);
       checkJob(job);
-      if (!path.isAbsolute(request.filePath) || !/\.mp4$/i.test(request.filePath)) fail('file');
+      if (!path.isAbsolute(request.filePath) || !isBiliupVideoPath(request.filePath)) fail('file');
       const original = await fs.realpath(request.filePath);
       if (!(await fs.stat(original)).isFile() || (await fs.stat(original)).size === 0) fail('file');
       let file = original;
       if (Array.from(path.basename(original)).length > 80 || path.basename(original).length > 80) {
         job.temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'pomchat-biliup-'));
-        file = path.join(job.temporary, 'pomchat-video.mp4');
+        file = path.join(job.temporary, `pomchat-video${path.extname(original).toLowerCase()}`);
         try { await fs.link(original, file); }
         catch { await fs.copyFile(original, file); }
       }

@@ -4,9 +4,11 @@ import { CalendarDays, Clock3, FolderOpen, ImagePlus, Info, Trash2, X } from 'lu
 import {
   BILIUP_MAX_TAG_HISTORY,
   BILIUP_MAX_TAGS,
+  BILIUP_VIDEO_EXTENSIONS,
   BILIUP_SCHEDULE_MAX_AHEAD_SECONDS,
   BILIUP_SCHEDULE_MIN_LEAD_SECONDS,
   biliupLines,
+  isBiliupVideoPath,
   mergeBiliupTags,
   newBiliupTemplate,
   splitBiliupTags,
@@ -28,7 +30,7 @@ const BILIUP_PROJECT_URL = 'https://github.com/biliup/biliup-rs';
 type ClipboardFileWithPath = File & { path?: string };
 
 function normalizeLocalPath(value: string) {
-  const path = value.trim().replace(/^(?:['"])(.*)\1$/s, '$1').trim();
+  const path = value.trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
   if (!path.toLowerCase().startsWith('file://')) return path;
   try {
     const url = new URL(path);
@@ -40,9 +42,9 @@ function normalizeLocalPath(value: string) {
   }
 }
 
-function isMp4Path(value: string) {
+function isVideoPath(value: string) {
   const path = normalizeLocalPath(value);
-  return !/^(?:https?|blob|data):/i.test(path) && /\.mp4(?:[?#].*)?$/i.test(path);
+  return !/^(?:https?|blob|data):/i.test(path) && isBiliupVideoPath(path);
 }
 
 function padDatePart(value: number) {
@@ -73,10 +75,11 @@ interface BiliupDateTimePickerProps {
   placeholder: string;
   previousMonthLabel: string;
   nextMonthLabel: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }
 
-function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isDarkMode, themeColor, secondaryThemeColor, placeholder, previousMonthLabel, nextMonthLabel, onChange }: BiliupDateTimePickerProps) {
+function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isDarkMode, themeColor, secondaryThemeColor, placeholder, previousMonthLabel, nextMonthLabel, disabled = false, onChange }: BiliupDateTimePickerProps) {
   const theme = createThemeTokens(themeColor, isDarkMode);
   const pickerRef = useRef<HTMLDivElement>(null);
   const fallbackTimestamp = clampScheduleTimestamp(minTimestamp, minTimestamp, maxTimestamp);
@@ -129,7 +132,7 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
   }, [open]);
 
   return <div ref={pickerRef} className="relative min-w-0 flex-1">
-    <button type="button" className="flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors focus:outline-none focus:ring-0" style={inputStyle} onClick={() => { if (!open) setViewMonth(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)); setOpen((previous) => !previous); }} aria-haspopup="dialog" aria-expanded={open}>
+    <button type="button" disabled={disabled} className="flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors focus:outline-none focus:ring-0 disabled:opacity-50" style={inputStyle} onClick={() => { if (!open) setViewMonth(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)); setOpen((previous) => !previous); }} aria-haspopup="dialog" aria-expanded={open}>
       <CalendarDays size={17} style={{ color: secondaryThemeColor }} />
       <span className={value ? '' : 'opacity-60'}>{displayLabel}</span>
     </button>
@@ -146,20 +149,20 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
           const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
           const dayStart = Math.floor(date.getTime() / 1000);
           const dayEnd = dayStart + 24 * 60 * 60 - 1;
-          const disabled = dayEnd < minTimestamp || dayStart > maxTimestamp;
+          const dayDisabled = dayEnd < minTimestamp || dayStart > maxTimestamp;
           const selected = currentDate.getFullYear() === date.getFullYear() && currentDate.getMonth() === date.getMonth() && currentDate.getDate() === date.getDate();
           const today = new Date();
           const isToday = today.getFullYear() === date.getFullYear() && today.getMonth() === date.getMonth() && today.getDate() === date.getDate();
-          return <button key={day} type="button" className="h-9 rounded-lg text-xs font-medium transition-colors focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-25" disabled={disabled} onClick={() => selectDate(day)} style={selected ? { backgroundColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 5px 14px ${secondaryThemeColor}44` } : isToday ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` } : { color: theme.text }}>{day}</button>;
+          return <button key={day} type="button" className="h-9 rounded-lg text-xs font-medium transition-colors focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-25" disabled={disabled || dayDisabled} onClick={() => selectDate(day)} style={selected ? { backgroundColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 5px 14px ${secondaryThemeColor}44` } : isToday ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` } : { color: theme.text }}>{day}</button>;
         })}
       </div>
       <div className="mt-4 flex items-center gap-2 rounded-xl border p-2.5" style={{ backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, borderColor: `${secondaryThemeColor}33` }}>
         <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: secondaryThemeColor }}><Clock3 size={15} />{language === 'zh-CN' ? '时间' : 'Time'}</span>
-        <select aria-label={language === 'zh-CN' ? '小时' : 'Hour'} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0" style={inputStyle} value={currentDate.getHours()} onChange={(event) => selectTime(Number(event.target.value), currentDate.getMinutes())}>
+        <select aria-label={language === 'zh-CN' ? '小时' : 'Hour'} disabled={disabled} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50" style={inputStyle} value={currentDate.getHours()} onChange={(event) => selectTime(Number(event.target.value), currentDate.getMinutes())}>
           {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour} disabled={!canSelectTime(hour, currentDate.getMinutes())}>{padDatePart(hour)}</option>)}
         </select>
         <span className="text-sm opacity-60">:</span>
-        <select aria-label={language === 'zh-CN' ? '分钟' : 'Minute'} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0" style={inputStyle} value={currentDate.getMinutes()} onChange={(event) => selectTime(currentDate.getHours(), Number(event.target.value))}>
+        <select aria-label={language === 'zh-CN' ? '分钟' : 'Minute'} disabled={disabled} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50" style={inputStyle} value={currentDate.getMinutes()} onChange={(event) => selectTime(currentDate.getHours(), Number(event.target.value))}>
           {Array.from({ length: 60 }, (_, minute) => <option key={minute} value={minute} disabled={!canSelectTime(currentDate.getHours(), minute)}>{padDatePart(minute)}</option>)}
         </select>
       </div>
@@ -294,6 +297,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const uploadSectionRef = useRef<HTMLDivElement>(null);
   const captchaViewRef = useRef<HTMLWebViewElement>(null);
   const busy = working || state.busy;
+  const templateBusy = working || (state.busy && state.kind === 'login');
   const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' };
   const inputClass = 'w-full border rounded-md px-3 py-2 text-sm disabled:opacity-50 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
   const buttonClass = 'border rounded px-3 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40';
@@ -427,11 +431,11 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const removeTag = (tag: string) => set('tag', selectedTags.filter((item) => item.toLocaleLowerCase() !== tag.toLocaleLowerCase()).join(','));
   const chooseUploadFile = () => void perform(async () => {
     if (!window.electron) return;
-    const result = await window.electron.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'MP4', extensions: ['mp4'] }] });
+    const result = await window.electron.showOpenDialog({ properties: ['openFile'], filters: [{ name: t('biliup.videoFiles'), extensions: [...BILIUP_VIDEO_EXTENSIONS] }] });
     if (!result.canceled && result.filePaths?.[0]) {
       const path = result.filePaths[0];
       setUploadFilePath(path);
-      setUploadFileError(isMp4Path(path) ? '' : t('biliup.mp4Invalid'));
+      setUploadFileError(isVideoPath(path) ? '' : t('biliup.videoInvalid'));
     }
   });
   const handleUploadPathPaste = (event: ClipboardEvent<HTMLInputElement>) => {
@@ -443,16 +447,16 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     const path = normalizeLocalPath(filePath || uriPath || textPath);
     if (!clipboardFile && !uriPath && !textPath.trim()) return;
     event.preventDefault();
-    if (!isMp4Path(path)) {
+    if (!isVideoPath(path)) {
       setUploadFilePath('');
-      setUploadFileError(t('biliup.mp4Invalid'));
+      setUploadFileError(t('biliup.videoInvalid'));
       return;
     }
     setUploadFilePath(path);
     setUploadFileError('');
   };
   const uploadSelectedFile = () => void perform(async () => {
-    if (!savedTemplate || !isMp4Path(uploadFilePath)) return;
+    if (!savedTemplate || !isVideoPath(uploadFilePath)) return;
     if (!window.confirm(`${t('biliup.uploadConfirm')}\n${savedTemplate.name}`)) return;
     await biliup.upload({ directory: preferences.directory, template: { ...savedTemplate } }, uploadFilePath);
   });
@@ -504,14 +508,14 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
       </div>}
       <hr style={{ borderColor: theme.border }} />
       <div className="flex gap-2">
-        <select aria-label={t('biliup.templateSettings')} className={inputClass} style={surface} value={draft.id} disabled={busy} onChange={(event) => {
+        <select aria-label={t('biliup.templateSettings')} className={inputClass} style={surface} value={draft.id} disabled={templateBusy} onChange={(event) => {
           setSaved(false); setDraft({ ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) });
         }}>
           <option value="">{t('biliup.newTemplate')}</option>
           {preferences.templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
         <Tooltip content={t('biliup.delete')} placement="top" width={96} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text} className="inline-flex shrink-0">
-          <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="inline-flex h-9 w-9 items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={busy || !draft.id} onClick={() => void perform(async () => {
+          <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="inline-flex h-9 w-9 items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={templateBusy || !draft.id} onClick={() => void perform(async () => {
             if (!window.confirm(t('biliup.deleteConfirm'))) return;
             await biliup.save({ ...preferences, templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
             setDraft(newBiliupTemplate());
@@ -522,61 +526,61 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         {textFields.map((key) => {
           if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>
             <div className="flex min-w-0 gap-2">
-              <input className={`${inputClass} min-w-0 flex-1`} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
-              <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseCover}><ImagePlus size={14} />{t('biliup.chooseCover')}</button>
+              <input className={`${inputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
+              <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={chooseCover}><ImagePlus size={14} />{t('biliup.chooseCover')}</button>
             </div>
           </label>;
           if (key === 'tag') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><div className="flex items-center justify-between gap-2"><span>{t(`biliup.field.${key}`)}</span><span className="opacity-70">{t('biliup.tagCount', { count: selectedTags.length, max: BILIUP_MAX_TAGS })}</span></div>
             <div className="flex min-h-[2.75rem] flex-wrap items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors focus-within:border-current" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }}>
-              {selectedTags.map((tag) => <span key={tag.toLocaleLowerCase()} className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}44`, color: secondaryThemeColor }}><span className="max-w-[15rem] truncate">{tag}</span><button type="button" className="rounded-full p-0.5 transition-opacity hover:opacity-70 focus:outline-none focus:ring-0" aria-label={`${t('biliup.tagRemove')}: ${tag}`} disabled={busy} onClick={() => removeTag(tag)}><X size={12} /></button></span>)}
-              <input value={tagInput} disabled={busy || selectedTags.length >= BILIUP_MAX_TAGS} placeholder={selectedTags.length >= BILIUP_MAX_TAGS ? '' : t('biliup.tagPlaceholder')} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTagsFromInput(); } }} className="min-w-[10rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none placeholder:opacity-50" />
+              {selectedTags.map((tag) => <span key={tag.toLocaleLowerCase()} className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}44`, color: secondaryThemeColor }}><span className="max-w-[15rem] truncate">{tag}</span><button type="button" className="rounded-full p-0.5 transition-opacity hover:opacity-70 focus:outline-none focus:ring-0" aria-label={`${t('biliup.tagRemove')}: ${tag}`} disabled={templateBusy} onClick={() => removeTag(tag)}><X size={12} /></button></span>)}
+              <input value={tagInput} disabled={templateBusy || selectedTags.length >= BILIUP_MAX_TAGS} placeholder={selectedTags.length >= BILIUP_MAX_TAGS ? '' : t('biliup.tagPlaceholder')} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTagsFromInput(); } }} className="min-w-[10rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none placeholder:opacity-50" />
             </div>
             <p className="opacity-70">{t('biliup.tagHint')}</p>
-            <div className="space-y-1.5"><span className="block opacity-70">{t('biliup.tagHistory')}</span><div className="flex flex-wrap gap-1.5">{preferences.tagHistory.length > 0 ? preferences.tagHistory.map((tag) => { const selected = selectedTags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase()); return <button key={tag.toLocaleLowerCase()} type="button" className="rounded-full border px-2.5 py-1 text-xs transition-colors focus:outline-none focus:ring-0 disabled:opacity-40" disabled={busy} onClick={() => toggleHistoryTag(tag)} style={selected ? { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' } : { backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.textMuted }}>{tag}</button>; }) : <span className="opacity-50">—</span>}</div></div>
+            <div className="space-y-1.5"><span className="block opacity-70">{t('biliup.tagHistory')}</span><div className="flex flex-wrap gap-1.5">{preferences.tagHistory.length > 0 ? preferences.tagHistory.map((tag) => { const selected = selectedTags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase()); return <button key={tag.toLocaleLowerCase()} type="button" className="rounded-full border px-2.5 py-1 text-xs transition-colors focus:outline-none focus:ring-0 disabled:opacity-40" disabled={templateBusy} onClick={() => toggleHistoryTag(tag)} style={selected ? { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' } : { backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.textMuted }}>{tag}</button>; }) : <span className="opacity-50">—</span>}</div></div>
           </label>;
           return <label key={key} className="space-y-1 text-xs"><span>{t(`biliup.field.${key}`)}</span>
-            <input className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, event.target.value)} />
+            <input className={inputClass} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, event.target.value)} />
           </label>;
         })}
         <label className="text-xs space-y-1 sm:col-span-2"><span>{t('biliup.field.dtime')}</span>
           <div className="flex gap-2">
-            <BiliupDateTimePicker value={draft.dtime} minTimestamp={scheduleBounds.min} maxTimestamp={scheduleBounds.max} language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} placeholder={t('biliup.schedulePlaceholder')} previousMonthLabel={t('biliup.previousMonth')} nextMonthLabel={t('biliup.nextMonth')} onChange={(value) => set('dtime', value)} />
-            <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !draft.dtime} onClick={() => set('dtime', '')}>{t('biliup.clearSchedule')}</button>
+            <BiliupDateTimePicker value={draft.dtime} minTimestamp={scheduleBounds.min} maxTimestamp={scheduleBounds.max} language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} placeholder={t('biliup.schedulePlaceholder')} previousMonthLabel={t('biliup.previousMonth')} nextMonthLabel={t('biliup.nextMonth')} disabled={templateBusy} onChange={(value) => set('dtime', value)} />
+            <button type="button" className={buttonClass} style={buttonStyle} disabled={templateBusy || !draft.dtime} onClick={() => set('dtime', '')}>{t('biliup.clearSchedule')}</button>
           </div>
           <span className="block opacity-70">{t('biliup.scheduleHint')}</span>
         </label>
         {(['tid', 'limit', 'interactive'] as const).map((key) => <label key={key} className="space-y-1 text-xs"><span className="flex items-center gap-1">{t(`biliup.field.${key}`)}{(key === 'tid' || key === 'limit' || key === 'interactive') && <Tooltip content={t(key === 'tid' ? 'biliup.tidHint' : key === 'limit' ? 'biliup.limitHint' : 'biliup.interactiveHint')} placement="top" width={key === 'tid' ? 360 : 300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip>}</span>
-          <input type="number" min={key === 'interactive' ? 0 : 1} max={key === 'limit' ? 32 : key === 'interactive' ? 1 : 65535} className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, Number(event.target.value))} />
+          <input type="number" min={key === 'interactive' ? 0 : 1} max={key === 'limit' ? 32 : key === 'interactive' ? 1 : 65535} className={inputClass} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, Number(event.target.value))} />
         </label>)}
         <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
           <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
             <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
               <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.copyright === 2 ? 'translateX(100%)' : 'translateX(0)' }} />
-              {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={busy} onClick={() => { set('copyright', value); if (value === 1) set('source', ''); }}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
+              {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={templateBusy} onClick={() => { set('copyright', value); if (value === 1) set('source', ''); }}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
             </div>
           </div>
-          <label className="space-y-1 text-xs"><span>{t('biliup.field.source')}</span><input className={inputClass} style={{ ...surface, opacity: draft.copyright === 2 ? 1 : 0.5 }} disabled={busy || draft.copyright !== 2} value={draft.source} onChange={(event) => set('source', event.target.value)} /></label>
+          <label className="space-y-1 text-xs"><span>{t('biliup.field.source')}</span><input className={inputClass} style={{ ...surface, opacity: draft.copyright === 2 ? 1 : 0.5 }} disabled={templateBusy || draft.copyright !== 2} value={draft.source} onChange={(event) => set('source', event.target.value)} /></label>
         </div>
         <label className="space-y-1 text-xs"><span>{t('biliup.field.line')}</span>
           <div className="flex min-w-0 gap-2">
-            <select className={`${inputClass} min-w-0 flex-1`} style={surface} disabled={busy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
+            <select className={`${inputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
               {biliupLines.map((line) => <option key={line} value={line}>{line || t('biliup.default')}</option>)}
             </select>
-            <button type="button" className={`${buttonClass} shrink-0`} style={buttonStyle} disabled={busy || !window.electron} onClick={testUploadLines}>{t('biliup.testLines')}</button>
+            <button type="button" className={`${buttonClass} shrink-0`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={testUploadLines}>{t('biliup.testLines')}</button>
           </div>
           {lineTests && <div className="space-y-1 rounded-md border p-2 text-[0.6875rem]" style={{ borderColor: theme.border, backgroundColor: theme.panelBgSubtle }}>
             <p className="opacity-70">{t('biliup.lineTestHint')}</p>
             {lineTests.map((result) => <div key={result.name} className="flex items-center justify-between gap-2"><span>{result.name}</span><span style={{ color: result.ok ? secondaryThemeColor : theme.textMuted }}>{result.ok ? `✓ ${result.status ?? 0} · ${result.elapsedMs ?? 0} ms` : `✕ ${t(result.error === 'tls' ? 'biliup.lineTestTls' : 'biliup.lineTestNetwork')}`}</span></div>)}
           </div>}
         </label>
-        <label className="text-xs space-y-1"><span className="flex items-center gap-1">{t('biliup.field.submit')}<Tooltip content={t('biliup.submitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span><select className={inputClass} style={surface} disabled={busy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
+        <label className="text-xs space-y-1"><span className="flex items-center gap-1">{t('biliup.field.submit')}<Tooltip content={t('biliup.submitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span><select className={inputClass} style={surface} disabled={templateBusy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
           <option value="app">app</option></select></label>
-        <label className="text-xs space-y-1"><span>{t('biliup.field.isOnlySelf')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.isOnlySelf} onChange={(event) => set('isOnlySelf', event.target.value as BiliupTemplate['isOnlySelf'])}>
+        <label className="text-xs space-y-1"><span>{t('biliup.field.isOnlySelf')}</span><select className={inputClass} style={surface} disabled={templateBusy} value={draft.isOnlySelf} onChange={(event) => set('isOnlySelf', event.target.value as BiliupTemplate['isOnlySelf'])}>
           {['', '0', '1'].map((value) => <option key={value} value={value}>{value === '' ? t('biliup.default') : value === '1' ? t('biliup.enabled') : t('biliup.disabled')}</option>)}</select></label>
       </div>
-      <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={busy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
+      <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
       <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
-        <input type="checkbox" disabled={busy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
+        <input type="checkbox" disabled={templateBusy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
       <p className="text-xs opacity-70">{t('biliup.templateHint')}</p>
       <div className="space-y-3">
         <div className="flex items-center gap-2">
@@ -591,10 +595,10 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 gap-2">
-            <input value={uploadFilePath} placeholder={t('biliup.mp4Placeholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} className={`${inputClass} min-w-0 flex-1`} style={surface} />
-            <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseMp4')}</button>
+            <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} className={`${inputClass} min-w-0 flex-1`} style={surface} />
+            <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseVideo')}</button>
           </div>
-          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !isMp4Path(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
+          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !isVideoPath(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
         </div>
         {uploadFileError && <p className="text-xs text-red-500">{uploadFileError}</p>}
         <p className="text-xs opacity-70">{t('biliup.uploadHint')}</p>

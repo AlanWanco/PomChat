@@ -29,6 +29,12 @@ export const BILIUP_MAX_TAGS = 10;
 export const BILIUP_MAX_TAG_HISTORY = 100;
 export const BILIUP_SCHEDULE_MIN_LEAD_SECONDS = 4 * 60 * 60;
 export const BILIUP_SCHEDULE_MAX_AHEAD_SECONDS = 15 * 24 * 60 * 60;
+export const BILIUP_VIDEO_EXTENSIONS = ['mp4', 'mkv', 'flv', 'webm', 'ts', 'm2ts', 'mts', 'mov', 'avi', 'm4v', 'mpeg', 'mpg', '3gp', 'wmv', 'ogv'] as const;
+
+export function isBiliupVideoPath(value: string): boolean {
+  const path = value.split(/[?#]/, 1)[0].toLocaleLowerCase();
+  return BILIUP_VIDEO_EXTENSIONS.some((extension) => path.endsWith(`.${extension}`));
+}
 
 export function splitBiliupTags(value: string): string[] {
   return value.split(/[,，\n]/).map((tag) => tag.trim()).filter(Boolean);
