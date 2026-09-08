@@ -56,6 +56,7 @@
         "ext": "pomchat",
         "name": "PomChat Project",
         "description": "PomChat project file",
+        "icon": "pomchat-document",
         "role": "Editor",
         "mimeType": "application/x-pomchat"
       }
