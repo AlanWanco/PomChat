@@ -13,7 +13,7 @@ try {
     buildSync({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm' });
     return import(pathToFileURL(outfile).href);
   };
-  const { parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
+  const { extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
   const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
@@ -21,6 +21,8 @@ try {
   assert.equal(parseBiliupProgress('waiting for upload'), null);
   assert.equal(parseBiliupProgress('0 B/0 B'), null);
   assert.equal(parseBiliupProgress('1.1 GiB/1 GiB'), 100);
+  assert.equal(extractBiliupProgressDetails('⠓ [00:00:23] [████░░] 114.10 MiB/117.97 MiB (4.90 MiB/s, 1s)'), '114.10 MiB/117.97 MiB · 4.90 MiB/s · 1s');
+  assert.equal(extractBiliupProgressDetails('waiting for upload'), '');
   assert.equal(plainTerminalLine('\x1b[2Khello\x00\r'), 'hello\r');
   assert(!redactBiliupLine('token=privatevalue', ['privatevalue']).includes('privatevalue'));
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));

@@ -10,7 +10,7 @@ import {
   idleBiliupState, normalizeBiliupPreferences, validateBiliupTemplate,
   type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
-import { buildBiliupUploadArgs, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
+import { buildBiliupUploadArgs, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
 
 const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
@@ -315,7 +315,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : undefined);
     const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload';
     update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
-      qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: uploadSucceeded ? '' : state.progressText });
+      qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: '' });
   }
 
   function stop(error?: string) {
@@ -606,7 +606,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
           if (!line) continue;
           const progress = parseBiliupProgress(line);
           if (progress !== null) {
-            state = { ...state, progress, progressText: line };
+            state = { ...state, progress, progressText: extractBiliupProgressDetails(line) };
           } else {
             const bvid = line.match(/\bBV[0-9A-Za-z]{10}\b/)?.[0];
             state = { ...state, bvid: bvid || state.bvid, logs: [...state.logs, line].slice(-300) };
@@ -615,7 +615,10 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
         if (!job.updateTimer) job.updateTimer = setTimeout(() => { job.updateTimer = undefined; if (active === job) publish(); }, 100);
       });
       child.onExit(() => {
-        if (partial.trim()) state = { ...state, logs: [...state.logs, redactBiliupLine(partial, auth.secrets)].slice(-300) };
+        if (partial.trim()) {
+          const line = redactBiliupLine(partial, auth.secrets);
+          if (parseBiliupProgress(line) === null) state = { ...state, logs: [...state.logs, line].slice(-300) };
+        }
       });
     } catch (error) {
       job.forcedError = safeError(error, 'upload');

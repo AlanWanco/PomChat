@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, Clock3, FolderOpen, ImagePlus, Info, Trash2, X } from 'lucide-react';
 import {
@@ -24,6 +24,26 @@ import { unwrapBiliup, useBiliup } from './BiliupProvider';
 interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
 
 const BILIUP_PROJECT_URL = 'https://github.com/biliup/biliup-rs';
+
+type ClipboardFileWithPath = File & { path?: string };
+
+function normalizeLocalPath(value: string) {
+  const path = value.trim().replace(/^(?:['"])(.*)\1$/s, '$1').trim();
+  if (!path.toLowerCase().startsWith('file://')) return path;
+  try {
+    const url = new URL(path);
+    const pathname = decodeURIComponent(url.pathname);
+    if (url.hostname && url.hostname !== 'localhost') return `//${url.hostname}${pathname}`;
+    return /^[A-Za-z]:\//.test(pathname.slice(1)) ? pathname.slice(1) : pathname;
+  } catch {
+    return path;
+  }
+}
+
+function isMp4Path(value: string) {
+  const path = normalizeLocalPath(value);
+  return !/^(?:https?|blob|data):/i.test(path) && /\.mp4(?:[?#].*)?$/i.test(path);
+}
 
 function padDatePart(value: number) {
   return String(value).padStart(2, '0');
@@ -104,8 +124,8 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
     const handlePointerDown = (event: MouseEvent) => {
       if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    document.addEventListener('mousedown', handlePointerDown, true);
+    return () => document.removeEventListener('mousedown', handlePointerDown, true);
   }, [open]);
 
   return <div ref={pickerRef} className="relative min-w-0 flex-1">
@@ -268,6 +288,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const [pendingPhone, setPendingPhone] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [uploadFilePath, setUploadFilePath] = useState('');
+  const [uploadFileError, setUploadFileError] = useState('');
   const [saved, setSaved] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const uploadSectionRef = useRef<HTMLDivElement>(null);
@@ -279,7 +300,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
   const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
 
-  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [state.logs, state.progressText]);
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [state.logs]);
   useEffect(() => {
     if (!focusUpload) return;
     const frame = window.requestAnimationFrame(() => uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -407,10 +428,31 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const chooseUploadFile = () => void perform(async () => {
     if (!window.electron) return;
     const result = await window.electron.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'MP4', extensions: ['mp4'] }] });
-    if (!result.canceled && result.filePaths?.[0]) setUploadFilePath(result.filePaths[0]);
+    if (!result.canceled && result.filePaths?.[0]) {
+      const path = result.filePaths[0];
+      setUploadFilePath(path);
+      setUploadFileError(isMp4Path(path) ? '' : t('biliup.mp4Invalid'));
+    }
   });
+  const handleUploadPathPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const clipboardFile = Array.from(event.clipboardData.files)[0]
+      || Array.from(event.clipboardData.items).find((item) => item.kind === 'file')?.getAsFile();
+    const filePath = clipboardFile ? (clipboardFile as ClipboardFileWithPath).path || '' : '';
+    const uriPath = event.clipboardData.getData('text/uri-list').split(/\r?\n/).find((value) => value && !value.startsWith('#')) || '';
+    const textPath = event.clipboardData.getData('text/plain');
+    const path = normalizeLocalPath(filePath || uriPath || textPath);
+    if (!clipboardFile && !uriPath && !textPath.trim()) return;
+    event.preventDefault();
+    if (!isMp4Path(path)) {
+      setUploadFilePath('');
+      setUploadFileError(t('biliup.mp4Invalid'));
+      return;
+    }
+    setUploadFilePath(path);
+    setUploadFileError('');
+  };
   const uploadSelectedFile = () => void perform(async () => {
-    if (!savedTemplate || !uploadFilePath) return;
+    if (!savedTemplate || !isMp4Path(uploadFilePath)) return;
     if (!window.confirm(`${t('biliup.uploadConfirm')}\n${savedTemplate.name}`)) return;
     await biliup.upload({ directory: preferences.directory, template: { ...savedTemplate } }, uploadFilePath);
   });
@@ -549,11 +591,12 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 gap-2">
-            <input readOnly value={uploadFilePath} placeholder={t('biliup.mp4Placeholder')} title={uploadFilePath} className={`${inputClass} min-w-0 flex-1`} style={surface} />
+            <input value={uploadFilePath} placeholder={t('biliup.mp4Placeholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} className={`${inputClass} min-w-0 flex-1`} style={surface} />
             <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseMp4')}</button>
           </div>
-          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !uploadFilePath} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
+          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !isMp4Path(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
         </div>
+        {uploadFileError && <p className="text-xs text-red-500">{uploadFileError}</p>}
         <p className="text-xs opacity-70">{t('biliup.uploadHint')}</p>
       </div>
       <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {savedTemplate?.name || '—'}</p>
@@ -563,7 +606,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <div role="progressbar" aria-label={t('biliup.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress ?? undefined} className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: theme.panelBgSubtle }}>
             <div className="h-full rounded-full transition-[width]" style={{ width: `${state.progress ?? 0}%`, backgroundColor: secondaryThemeColor, boxShadow: `0 0 12px ${secondaryThemeColor}66` }} />
           </div>
-          <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{state.progress === null ? t('biliup.waitProgress') : `${state.progress.toFixed(1)}%`} {state.progressText}</p>
+          <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{state.progress === null ? t('biliup.waitProgress') : <>{state.progress.toFixed(1)}%{state.progressText && <span className="ml-2 opacity-80">{state.progressText}</span>}</>}</p>
         </>}
         <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 select-text overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{state.logs.join('\n') || t('biliup.consoleHint')}</pre>
         {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}

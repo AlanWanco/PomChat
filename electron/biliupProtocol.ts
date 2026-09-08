@@ -10,6 +10,13 @@ export function plainTerminalLine(text: string): string {
   }).join('');
 }
 
+export function extractBiliupProgressDetails(text: string): string {
+  const line = plainTerminalLine(text).replace(/[\r\n]+/g, ' ').trim();
+  const match = line.match(/([\d.]+\s*(?:B|[KMGT]i?B)\s*\/\s*[\d.]+\s*(?:B|[KMGT]i?B))(?:\s*\(([^)]*)\))?/i);
+  if (!match) return '';
+  return `${match[1]}${match[2] ? ` · ${match[2].split(',').map((part) => part.trim()).filter(Boolean).join(' · ')}` : ''}`;
+}
+
 export function parseBiliupProgress(text: string): number | null {
   const line = plainTerminalLine(text);
   const match = line.match(/([\d.]+)\s*(B|[KMGT]i?B)\s*\/\s*([\d.]+)\s*(B|[KMGT]i?B)/i);
