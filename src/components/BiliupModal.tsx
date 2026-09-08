@@ -196,7 +196,7 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
       <label className="block text-xs font-medium">{t('biliup.account')}</label>
       <div className="flex flex-wrap gap-2 text-xs">
         <button className="border rounded px-2.5 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-40" style={accentStyle} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={addAccount}>{t('biliup.account.add')}</button>
-        <button className="border rounded px-2.5 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!selectedAccount || accounts.length <= 1 || saving} onClick={removeAccount}>{t('biliup.account.delete')}</button>
+        <button className="border rounded px-2.5 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!selectedAccount || accounts.length <= 1 || biliup.state.busy || saving} onClick={removeAccount}>{t('biliup.account.delete')}</button>
       </div>
     </div>
     {accounts.length > 0 && <select aria-label={t('biliup.account')} value={selectedAccount?.id || ''} onChange={(event) => switchAccount(event.target.value)} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' }}>
@@ -288,6 +288,17 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     try { await action(); } catch (error) { biliup.setError(error instanceof Error ? error.message : 'input'); }
     finally { setWorking(false); }
   };
+  const applyDetectedUsername = async (result: BiliupCheck) => {
+    setCheck(result);
+    if (!result.username) return;
+    const accountId = preferences.selectedAccountId || preferences.accounts[0]?.id || 'default';
+    const accounts = preferences.accounts.length > 0
+      ? preferences.accounts.map((account) => account.id === accountId ? { ...account, name: result.username! } : account)
+      : [{ id: accountId, name: result.username, directory: preferences.directory }];
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account || (account.name === result.username && preferences.selectedAccountId === accountId && preferences.accounts.length > 0)) return;
+    await biliup.save({ ...preferences, accounts, selectedAccountId: accountId, directory: account.directory });
+  };
   const chooseCover = () => void perform(async () => {
     if (!window.electron) return;
     const result = await window.electron.showOpenDialog({
@@ -311,7 +322,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     });
   };
   const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
-  const textFields = ['name', 'title', 'tag', 'source', 'cover', 'dynamic', 'missionId'] as const;
+  const textFields = ['name', 'title', 'tag', 'cover', 'dynamic', 'missionId'] as const;
   const savedTemplate = preferences.templates.find((item) => item.id === preferences.selectedTemplateId);
   const selectedTags = splitBiliupTags(draft.tag);
   const addTags = (values: string[]) => {
@@ -348,11 +359,11 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <div className="space-y-5 p-6 sm:p-8">
         <BiliupDirectorySettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { setCheck(unwrapBiliup(await window.electron.biliup.check(preferences.directory))); })}>{t('biliup.check')}</button>
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { await applyDetectedUsername(unwrapBiliup(await window.electron.biliup.check(preferences.directory))); })}>{t('biliup.check')}</button>
         <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'qr')); })}>{t('biliup.qrLogin')}</button>
         <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'sms')); })}>{t('biliup.smsLogin')}</button>
       </div>
-      {check && <p className="text-sm" role="status">{check.version} · {check.cookieFile} · {t(check.cookieOk ? 'biliup.cookieValid' : `biliup.error.${check.error || 'cookie'}`)}</p>}
+      {check && <p className="text-sm" role="status">{check.version} · {check.cookieFile} · {t(check.cookieOk ? 'biliup.cookieValid' : `biliup.error.${check.error || 'cookie'}`)}{check.username && <> · {t('biliup.detectedUser')}: {check.username}</>}</p>}
       {state.kind === 'login' && <div className="space-y-2">
         <p role="status" className="text-sm" style={{ color: secondaryThemeColor }}>{t(`biliup.phase.${state.phase}`)}</p>
         {state.qrImage && <img src={state.qrImage} alt={t('biliup.qrLogin')} className="w-56 h-56 bg-white p-2" style={{ imageRendering: 'pixelated' }} />}
@@ -360,7 +371,10 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <input autoFocus autoComplete="off" inputMode="numeric" aria-label={t(`biliup.phase.${state.phase}`)} value={input} onChange={(event) => setInput(event.target.value)} className={inputClass} style={surface} />
           <button type="submit" className={buttonClass} style={buttonStyle} disabled={working || !input}>{t('biliup.send')}</button>
         </form>}
-        <p className="text-xs opacity-70">{t('biliup.loginHint')}</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs opacity-70">{t('biliup.loginHint')}</p>
+          <button type="button" className={`${buttonClass} shrink-0`} style={buttonStyle} disabled={!state.busy} onClick={() => { void window.electron.biliup.cancel(); }}>{t('biliup.cancel')}</button>
+        </div>
       </div>}
       <hr style={{ borderColor: theme.border }} />
       <div className="flex gap-2">
@@ -408,13 +422,16 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         {(['tid', 'limit', 'interactive'] as const).map((key) => <label key={key} className="space-y-1 text-xs"><span className="flex items-center gap-1">{t(`biliup.field.${key}`)}{(key === 'tid' || key === 'interactive') && <Tooltip content={t(key === 'tid' ? 'biliup.tidHint' : 'biliup.interactiveHint')} placement="top" width={key === 'tid' ? 360 : 300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip>}</span>
           <input type="number" min={key === 'interactive' ? 0 : 1} max={key === 'limit' ? 32 : key === 'interactive' ? 1 : 65535} className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, Number(event.target.value))} />
         </label>)}
-        <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
-          <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
-            <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.copyright === 2 ? 'translateX(100%)' : 'translateX(0)' }} />
-            {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={busy} onClick={() => set('copyright', value)}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
+        <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+          <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
+            <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
+              <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.copyright === 2 ? 'translateX(100%)' : 'translateX(0)' }} />
+              {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={busy} onClick={() => { set('copyright', value); if (value === 1) set('source', ''); }}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
+            </div>
           </div>
+          <label className="space-y-1 text-xs"><span>{t('biliup.field.source')}</span><input className={inputClass} style={{ ...surface, opacity: draft.copyright === 2 ? 1 : 0.5 }} disabled={busy || draft.copyright !== 2} value={draft.source} onChange={(event) => set('source', event.target.value)} /></label>
         </div>
-        <label className="text-xs space-y-1"><span>{t('biliup.field.line')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
+        <label className="space-y-1 text-xs"><span>{t('biliup.field.line')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
           {biliupLines.map((line) => <option key={line} value={line}>{line || t('biliup.default')}</option>)}</select></label>
         <label className="text-xs space-y-1"><span>{t('biliup.field.submit')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
           {['', 'app', 'web', 'bcutandroid'].map((value) => <option key={value} value={value}>{value || t('biliup.default')}</option>)}</select></label>

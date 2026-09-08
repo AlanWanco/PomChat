@@ -76,6 +76,7 @@ export interface BiliupCheck {
   cookieExists: boolean;
   version: string;
   cookieFile: string;
+  username?: string;
   error?: string;
 }
 export type BiliupPhase = 'idle' | 'starting' | 'qr' | 'country' | 'phone' | 'code' | 'uploading' | 'success' | 'failed' | 'cancelled';
@@ -121,7 +122,7 @@ export const idleBiliupState: BiliupState = {
   busy: false, kind: null, phase: 'idle', logs: [], progress: null, progressText: '', qrImage: null,
 };
 export const newBiliupTemplate = (): BiliupTemplate => ({
-  id: '', name: '', title: '', tag: '', tid: 171, copyright: 1,
+  id: '', name: '', title: '', tag: '', tid: 5, copyright: 1,
   source: '', desc: '', dynamic: '', cover: '', dtime: '', line: '', limit: 3, submit: '',
   noReprint: false, dolby: false, hires: false, interactive: 0, missionId: '', isOnlySelf: '',
   chargingPay: false, upSelectionReply: false, closeReply: false, closeDanmu: false,
@@ -170,6 +171,7 @@ export function normalizeBiliupPreferences(value: unknown): BiliupPreferences {
       const normalized = Object.fromEntries(Object.keys(newBiliupTemplate()).map((key) => [key, t[key as keyof BiliupTemplate]])) as unknown as BiliupTemplate;
       // Migrate the removed placeholder instead of ever submitting it literally.
       normalized.title = normalized.title.replaceAll('{filename}', '').trim();
+      if (normalized.copyright === 1) normalized.source = '';
       return normalized;
     }) : [];
   const storedTagHistory = Array.isArray(data.tagHistory) ? data.tagHistory.filter((tag): tag is string => typeof tag === 'string') : [];

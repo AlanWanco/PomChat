@@ -26,6 +26,7 @@ interface Job {
   temporary?: string;
   timer?: ReturnType<typeof setTimeout>;
   qrTimer?: ReturnType<typeof setInterval>;
+  selectTimer?: ReturnType<typeof setTimeout>;
   updateTimer?: ReturnType<typeof setTimeout>;
   forcedError?: string;
 }
@@ -93,10 +94,12 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
         redirect: 'error', signal: AbortSignal.timeout(15000),
       });
       if (!response.ok) fail('network');
-      const data = await response.json() as { code?: number; data?: { isLogin?: boolean } };
-      if (data.code !== 0 || !data.data?.isLogin) fail('cookie');
-    } catch (error) { fail(safeError(error, 'network')); }
-    return auth;
+      const data = await response.json() as { code?: number; data?: { isLogin?: boolean; uname?: string } };
+      const profile = data.data;
+      if (!profile || data.code !== 0 || !profile.isLogin) return fail('cookie');
+      const username = typeof profile.uname === 'string' ? profile.uname.replace(/[\r\n]/g, '').trim().slice(0, 120) : '';
+      return { ...auth, username };
+    } catch (error) { return fail(safeError(error, 'network')); }
   }
 
   async function check(directory: string): Promise<BiliupCheck> {
@@ -107,8 +110,8 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       let cookieExists = false;
       try { cookieExists = (await fs.stat(info.cookie)).isFile(); } catch { /* Login can create the first cookie file. */ }
       try {
-        await verifyCookie(info.cookie);
-        return { binaryOk: true, cookieOk: true, cookieExists, version: info.version, cookieFile: path.basename(info.cookie) };
+        const auth = await verifyCookie(info.cookie);
+        return { binaryOk: true, cookieOk: true, cookieExists, version: info.version, cookieFile: path.basename(info.cookie), username: auth.username || undefined };
       } catch (error) {
         return { binaryOk: true, cookieOk: false, cookieExists, version: info.version, cookieFile: path.basename(info.cookie), error: safeError(error, 'cookie') };
       }
@@ -117,7 +120,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
 
   async function finish(job: Job, exitCode: number) {
     if (active !== job) return;
-    clearTimeout(job.timer); clearTimeout(job.updateTimer); clearInterval(job.qrTimer);
+    clearTimeout(job.timer); clearTimeout(job.selectTimer); clearTimeout(job.updateTimer); clearInterval(job.qrTimer);
     // Do not remove a staging file until the child has exited.
     if (job.temporary) await fs.rm(job.temporary, { recursive: true, force: true }).catch(() => {});
     if (active !== job) return;
@@ -172,47 +175,67 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       const backupPath = `${info.cookie}.backup-${Date.now()}`;
       try { await fs.copyFile(info.cookie, backupPath); await fs.chmod(backupPath, 0o600); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') fail('cookie'); }
+      const qrPath = path.join(info.directory, 'qrcode.png');
+      if (method === 'qr') await fs.rm(qrPath, { force: true }).catch(() => {});
       const startedAt = Date.now();
       const child = spawnPty(job, info, ['--user-cookie', info.cookie, 'login']);
       let buffer = '';
       let selected = false;
       let selecting = false;
-      let qrRead = false;
+      let qrFileKey = '';
+      let qrCandidate: { mtimeMs: number; size: number } | null = null;
+      const chooseLoginMethod = () => {
+        if (active !== job || job.cancelled || selected || selecting) return;
+        selecting = true;
+        if (job.selectTimer) clearTimeout(job.selectTimer);
+        setTimeout(() => {
+          if (active !== job || job.cancelled) return;
+          const marker = buffer.match(/[>❯›]\s*(账号密码|短信登录|扫码登录)/);
+          // dialoguer defaults to SMS (index 1); use the marker when this PTY
+          // exposes it, otherwise retain that documented default.
+          const current = marker ? ['账号密码', '短信登录', '扫码登录'].indexOf(marker[1]) : 1;
+          const target = method === 'qr' ? 2 : 1;
+          selected = true;
+          buffer = '';
+          child.write((target > current ? '\x1b[B' : '\x1b[A').repeat(Math.abs(target - current)) + '\r');
+          if (method === 'qr') update({ phase: 'qr' });
+        }, 150);
+      };
+      job.selectTimer = setTimeout(chooseLoginMethod, 1800);
       child.onData((chunk) => {
         if (active !== job || job.cancelled) return;
         // Login output is never sent to renderer logs: terminals echo phone/code values.
         buffer = (buffer + plainTerminalLine(chunk)).slice(-12000);
-        if (!selected && !selecting && buffer.includes('选择一种登录方式') && buffer.includes('扫码登录')) {
-          selecting = true;
-          setTimeout(() => {
-            if (active !== job || job.cancelled) return;
-            const marker = buffer.match(/[>❯›]\s*(账号密码|短信登录|扫码登录)/);
-            const current = marker ? ['账号密码', '短信登录', '扫码登录'].indexOf(marker[1]) : 1;
-            const target = method === 'qr' ? 2 : 1;
-            selected = true;
-            buffer = '';
-            child.write((target > current ? '\x1b[B' : '\x1b[A').repeat(Math.abs(target - current)) + '\r');
-            if (method === 'qr') update({ phase: 'qr' });
-          }, 150);
+        const loginMenuDetected = buffer.includes('选择一种登录方式') || ['账号密码', '短信登录', '扫码登录'].every((label) => buffer.includes(label));
+        if (!selected && !selecting && loginMenuDetected) {
+          chooseLoginMethod();
           return;
         }
         if (!selected) return;
         if (/challenge|validate|滑动验证|滑块|极验/i.test(buffer)) { stop('captcha'); return; }
-        const phase = buffer.includes('请输入手机国家代码') ? 'country' : buffer.includes('请输入手机号') ? 'phone' : buffer.includes('请输入验证码') ? 'code' : null;
+        const promptBuffer = buffer.replace(/\s+/g, '');
+        const phase = promptBuffer.includes('请输入手机国家代码') ? 'country' : promptBuffer.includes('请输入手机号') ? 'phone' : promptBuffer.includes('请输入验证码') ? 'code' : null;
         if (phase) { buffer = ''; update({ phase }); }
       });
       job.qrTimer = setInterval(() => {
-        if (method !== 'qr' || qrRead || active !== job || job.cancelled) return;
+        if (method !== 'qr' || active !== job || job.cancelled) return;
         void (async () => {
-          const qrPath = path.join(info.directory, 'qrcode.png');
           const stat = await fs.stat(qrPath);
-          if (stat.mtimeMs < startedAt - 100 || stat.size > 1024 * 1024) return;
+          // Some filesystems expose second-level mtimes; allow a small clock
+          // granularity window because the stale file was removed before spawn.
+          if (stat.mtimeMs < startedAt - 2000 || stat.size <= 0 || stat.size > 1024 * 1024) return;
+          if (!qrCandidate || qrCandidate.mtimeMs !== stat.mtimeMs || qrCandidate.size !== stat.size) {
+            qrCandidate = { mtimeMs: stat.mtimeMs, size: stat.size };
+            return;
+          }
+          const fileKey = `${stat.mtimeMs}:${stat.size}`;
+          if (fileKey === qrFileKey) return;
           const image = await fs.readFile(qrPath);
-          if (active !== job || job.cancelled) return;
-          qrRead = true;
+          if (active !== job || job.cancelled || image.length < 8 || !image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return;
+          qrFileKey = fileKey;
           update({ qrImage: `data:image/png;base64,${image.toString('base64')}`, phase: 'qr' });
         })().catch(() => {});
-      }, 600);
+      }, 300);
     } catch (error) {
       job.forcedError = safeError(error, 'login');
       await finish(job, 1);

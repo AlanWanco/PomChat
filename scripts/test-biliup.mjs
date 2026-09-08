@@ -25,6 +25,7 @@ try {
   assert(!redactBiliupLine('token=privatevalue', ['privatevalue']).includes('privatevalue'));
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));
 
+  assert.equal(newBiliupTemplate().tid, 5);
   const template = { ...newBiliupTemplate(), id: 'one', name: 'Test', title: '固定标题', tag: 'one,two' };
   const help = '--title --tid --tag --copyright --limit --desc --source --line --submit --no-reprint --cover';
   assert.equal(validateBiliupTemplate(template), null);
@@ -38,6 +39,10 @@ try {
   assert.deepEqual(args.slice(-2), ['--', file]);
   assert(args.includes('$(touch unsafe); & echo test'));
   assert.equal(args[args.indexOf('--title') + 1], '固定标题');
+  const originalWithSource = buildBiliupUploadArgs({ ...template, source: 'should-not-be-submitted' }, file, 'cookies.json', help);
+  assert(!originalWithSource.includes('--source'));
+  const repost = buildBiliupUploadArgs({ ...template, copyright: 2, source: 'source-name' }, file, 'cookies.json', help);
+  assert.equal(repost[repost.indexOf('--source') + 1], 'source-name');
   const multiline = buildBiliupUploadArgs({ ...template, desc: '第一行\r\n第二行' }, file, 'cookies.json', help);
   assert.equal(multiline[multiline.indexOf('--desc') + 1], '第一行\n第二行');
   const extended = buildBiliupUploadArgs({ ...template, interactive: 1, missionId: '123', isOnlySelf: '1', chargingPay: true, upSelectionReply: true }, file, 'cookies.json', `${help} --interactive --mission-id --is-only-self --charging-pay --up-selection-reply`);
