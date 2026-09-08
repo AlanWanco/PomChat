@@ -76,11 +76,11 @@ jobs:
             build_args: --mac zip dmg --arm64
             artifact_glob: release/*
           - name: windows-x64
-            runner: windows-latest
+            runner: windows-2022
             build_args: --win nsis zip --x64
             artifact_glob: release/*
           - name: windows-arm64
-            runner: windows-latest
+            runner: windows-2022
             build_args: --win nsis zip --arm64
             artifact_glob: release/*
           - name: linux-x64

@@ -18,12 +18,12 @@ jobs:
             artifact_glob: release/*.dmg
             artifact_name: macos-arm64-installer
           - name: windows-x64
-            runner: windows-latest
+            runner: windows-2022
             build_args: --win nsis --x64
             artifact_glob: release/*.exe
             artifact_name: windows-x64-installer
           - name: windows-arm64
-            runner: windows-latest
+            runner: windows-2022
             build_args: --win nsis --arm64
             artifact_glob: release/*.exe
             artifact_name: windows-arm64-installer
