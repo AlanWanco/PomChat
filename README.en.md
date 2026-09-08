@@ -51,6 +51,7 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Set export ranges and filename templates
 - Read and write project files locally through Electron
 - The web version can also be used as an ASS subtitle content viewer
+- The desktop edition can configure biliup for QR/SMS login, submission templates, real upload progress, and post-export auto-submission
 
 ## Main Features
 
@@ -79,7 +80,17 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Preview and export now try to share the same chat rendering logic to reduce styling mismatches
 - Inserted image / text layers now try to share the same transform and layering logic between preview and export to reduce positional drift
 
-### 4. Playback and Export
+### 4. biliup Submissions
+
+- Add an account and enter its extracted biliup directory in Global Settings or **Export → Configure biliup**, then check the binary and credentials
+- Each account uses one biliup directory; switching accounts switches to that directory's `cookies.json`
+- QR login is supported; SMS login accepts the country code, phone number, and verification code in the window. Use QR login if Bilibili requests a slider CAPTCHA
+- Local templates cover biliup title, tags, category, repost source, description, cover, route, concurrency, and related options; scheduled time uses a date-time picker and is limited to 4 hours through 15 days from now
+- Auto-upload can be enabled in the export window only after a valid template has been saved; upload starts after a successful video export
+- biliup runs in the selected account directory and reads its Cookie file; credentials are not stored in project files or upload logs
+- Upload output is captured through a pseudo-terminal for byte-based progress; titles longer than 80 characters are truncated
+
+### 5. Playback and Export
 
 - Scrub audio, loop playback, and remember playback position
 - Set export range quickly

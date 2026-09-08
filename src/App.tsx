@@ -23,6 +23,7 @@ import type { BackgroundSlideItem } from './remotion/types';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
 import { buildAssContent } from './assExport';
 import './App.css';
+import { useBiliup } from './components/BiliupProvider';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
@@ -978,6 +979,7 @@ function areAnyImportGroupOptionsEnabled(group: Record<string, boolean>) {
 }
 
 function App() {
+  const biliup = useBiliup();
   const getSpeakerNameSnapshot = (speakers: Record<string, any>) =>
     Object.fromEntries(Object.entries(speakers || {}).map(([key, speaker]) => [key, speaker?.name || '']));
   const getSystemPrefersDark = () => {
@@ -1943,6 +1945,9 @@ const [previewScale, setPreviewScale] = useState(1);
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const themeColor = themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT);
   const secondaryThemeColor = secondaryThemeColorState || SECONDARY_THEME_DEFAULT;
+  useEffect(() => {
+    biliup.setAppearance({ language, isDarkMode, themeColor, secondaryThemeColor });
+  }, [biliup.setAppearance, language, isDarkMode, themeColor, secondaryThemeColor]);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const appBackground = isDarkMode
     ? `linear-gradient(180deg, ${uiTheme.appBg} 0%, ${uiTheme.appBg} 74%, ${secondaryThemeColor}14 100%)`
@@ -3501,6 +3506,16 @@ const [previewScale, setPreviewScale] = useState(1);
     setExportStatusMessage(t('export.preparing'));
 
     try {
+      let uploadPlan;
+      try {
+        uploadPlan = await biliup.prepare(exportFormat);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : 'upload';
+        biliup.setError(code);
+        setExportStatusMessage(t(`biliup.error.${code}`));
+        biliup.open();
+        return;
+      }
       const slideIntrinsicSizeOverrides = await ensureBackgroundSlideIntrinsicSizes();
       const crf = calculateCRF(exportQuality);
       const preset = calculateX264Preset(exportQuality);
@@ -3523,6 +3538,12 @@ const [previewScale, setPreviewScale] = useState(1);
         setExportStatusMessage(res.message || t('app.exportSuccess'));
         showToast(t(res.placeholder ? 'app.exportPlaceholder' : 'app.exportSuccess'));
         window.electron?.showNotification({ title: 'PomChat', body: t('app.exportSuccess') });
+        if (uploadPlan && !res.placeholder) {
+          // Upload failures are independent of a successfully rendered local video.
+          void biliup.upload(uploadPlan, res.outputPath || trimmedPath).catch(() => {
+            showToast(t('biliup.uploadStartFailed'));
+          });
+        }
       } else {
         setLastExportSucceeded(false);
         const errorMsg = res.error || t('export.failed');
@@ -3540,7 +3561,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setIsExporting(false);
       exportProgressActiveRef.current = false;
     }
-  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes]);
+  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes, biliup]);
 
   const handleRevealExport = useCallback(async () => {
     const targetPath = lastExportOutputPath || exportOutputPath.trim();
@@ -5981,6 +6002,10 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    if (biliup.state.busy && !window.confirm(t('biliup.closeConfirm'))) {
+      await window.electron.cancelAppClose();
+      return;
+    }
     pendingElectronAppCloseRef.current = true;
 
     await runWithUnsavedProjectGuard(async () => {
@@ -5992,16 +6017,21 @@ const [previewScale, setPreviewScale] = useState(1);
       pendingElectronAppCloseRef.current = false;
       await window.electron.cancelAppClose();
     }
-  }, [runWithUnsavedProjectGuard]);
+  }, [runWithUnsavedProjectGuard, biliup.state.busy, t]);
 
   useEffect(() => {
     if (!window.electron) {
       return;
     }
 
-    return window.electron.onAppCloseRequested(() => {
+    void window.electron.setAppCloseListenerReady(true);
+    const unsubscribe = window.electron.onAppCloseRequested(() => {
       void handleElectronAppCloseRequest();
     });
+    return () => {
+      void window.electron.setAppCloseListenerReady(false);
+      unsubscribe();
+    };
   }, [handleElectronAppCloseRequest]);
 
   const handleWebProjectSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {

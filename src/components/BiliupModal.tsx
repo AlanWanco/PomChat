@@ -1,0 +1,466 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CalendarDays, Clock3, FolderOpen, ImagePlus, Info, Trash2, X } from 'lucide-react';
+import {
+  BILIUP_MAX_TAG_HISTORY,
+  BILIUP_MAX_TAGS,
+  BILIUP_SCHEDULE_MAX_AHEAD_SECONDS,
+  BILIUP_SCHEDULE_MIN_LEAD_SECONDS,
+  biliupLines,
+  mergeBiliupTags,
+  newBiliupTemplate,
+  splitBiliupTags,
+  validateBiliupSchedule,
+  validateBiliupTemplate,
+  type BiliupCheck,
+  type BiliupTemplate,
+} from '../biliup';
+import { translate, type Language } from '../i18n';
+import { createThemeTokens } from '../theme';
+import { Tooltip } from './ui/Tooltip';
+import { unwrapBiliup, useBiliup } from './BiliupProvider';
+
+interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function getScheduleBounds() {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    min: Math.ceil((now + BILIUP_SCHEDULE_MIN_LEAD_SECONDS) / 60) * 60,
+    max: Math.floor((now + BILIUP_SCHEDULE_MAX_AHEAD_SECONDS) / 60) * 60,
+  };
+}
+
+function clampScheduleTimestamp(timestamp: number, minTimestamp: number, maxTimestamp: number) {
+  const minuteTimestamp = Math.floor(timestamp / 60) * 60;
+  return Math.min(maxTimestamp, Math.max(minTimestamp, minuteTimestamp));
+}
+
+interface BiliupDateTimePickerProps {
+  value: string;
+  minTimestamp: number;
+  maxTimestamp: number;
+  language: Language;
+  isDarkMode: boolean;
+  themeColor: string;
+  secondaryThemeColor: string;
+  placeholder: string;
+  previousMonthLabel: string;
+  nextMonthLabel: string;
+  onChange: (value: string) => void;
+}
+
+function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isDarkMode, themeColor, secondaryThemeColor, placeholder, previousMonthLabel, nextMonthLabel, onChange }: BiliupDateTimePickerProps) {
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const fallbackTimestamp = clampScheduleTimestamp(minTimestamp, minTimestamp, maxTimestamp);
+  const parsedTimestamp = /^\d{10}$/.test(value) && Number.isFinite(Number(value)) ? Number(value) : fallbackTimestamp;
+  const currentTimestamp = clampScheduleTimestamp(parsedTimestamp, minTimestamp, maxTimestamp);
+  const currentDate = new Date(currentTimestamp * 1000);
+  const [open, setOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() => new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+  const inputStyle = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' };
+  const monthLabel = new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long' }).format(viewMonth);
+  const displayLabel = value
+    ? new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(currentDate) + ` ${padDatePart(currentDate.getHours())}:${padDatePart(currentDate.getMinutes())}`
+    : placeholder;
+  const weekdayLabels = language === 'zh-CN' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const minDate = new Date(minTimestamp * 1000);
+  const maxDate = new Date(maxTimestamp * 1000);
+  const minMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  const maxMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+  const firstWeekday = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).getDay();
+  const dates = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => index < firstWeekday ? null : index - firstWeekday + 1);
+  const updateTimestamp = (nextDate: Date) => {
+    const timestamp = clampScheduleTimestamp(Math.floor(nextDate.getTime() / 1000), minTimestamp, maxTimestamp);
+    onChange(String(timestamp));
+  };
+  const selectDate = (day: number) => {
+    const nextDate = new Date(currentDate);
+    nextDate.setFullYear(viewMonth.getFullYear(), viewMonth.getMonth(), day);
+    updateTimestamp(nextDate);
+  };
+  const selectTime = (hours: number, minutes: number) => {
+    const nextDate = new Date(currentDate);
+    nextDate.setHours(hours, minutes, 0, 0);
+    updateTimestamp(nextDate);
+  };
+  const canSelectTime = (hours: number, minutes: number) => {
+    const nextDate = new Date(currentDate);
+    nextDate.setHours(hours, minutes, 0, 0);
+    const timestamp = Math.floor(nextDate.getTime() / 1000);
+    return timestamp >= minTimestamp && timestamp <= maxTimestamp;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  return <div ref={pickerRef} className="relative min-w-0 flex-1">
+    <button type="button" className="flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors focus:outline-none focus:ring-0" style={inputStyle} onClick={() => { if (!open) setViewMonth(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)); setOpen((previous) => !previous); }} aria-haspopup="dialog" aria-expanded={open}>
+      <CalendarDays size={17} style={{ color: secondaryThemeColor }} />
+      <span className={value ? '' : 'opacity-60'}>{displayLabel}</span>
+    </button>
+    {open && <div role="dialog" aria-label={placeholder} className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border p-4 shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}55`, color: theme.text }}>
+      <div className="mb-3 flex items-center justify-between">
+        <button type="button" className="rounded-lg p-2 transition-colors hover:opacity-80 focus:outline-none focus:ring-0 disabled:opacity-30" style={{ color: secondaryThemeColor }} aria-label={previousMonthLabel} disabled={viewMonth.getTime() <= minMonth.getTime()} onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}>‹</button>
+        <span className="text-sm font-semibold">{monthLabel}</span>
+        <button type="button" className="rounded-lg p-2 transition-colors hover:opacity-80 focus:outline-none focus:ring-0 disabled:opacity-30" style={{ color: secondaryThemeColor }} aria-label={nextMonthLabel} disabled={viewMonth.getTime() >= maxMonth.getTime()} onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}>›</button>
+      </div>
+      <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[0.6875rem] font-medium opacity-60">{weekdayLabels.map((label) => <span key={label}>{label}</span>)}</div>
+      <div className="grid grid-cols-7 gap-1">
+        {dates.map((day, index) => {
+          if (day === null) return <span key={`empty-${index}`} className="h-9" />;
+          const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
+          const dayStart = Math.floor(date.getTime() / 1000);
+          const dayEnd = dayStart + 24 * 60 * 60 - 1;
+          const disabled = dayEnd < minTimestamp || dayStart > maxTimestamp;
+          const selected = currentDate.getFullYear() === date.getFullYear() && currentDate.getMonth() === date.getMonth() && currentDate.getDate() === date.getDate();
+          const today = new Date();
+          const isToday = today.getFullYear() === date.getFullYear() && today.getMonth() === date.getMonth() && today.getDate() === date.getDate();
+          return <button key={day} type="button" className="h-9 rounded-lg text-xs font-medium transition-colors focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-25" disabled={disabled} onClick={() => selectDate(day)} style={selected ? { backgroundColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 5px 14px ${secondaryThemeColor}44` } : isToday ? { color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` } : { color: theme.text }}>{day}</button>;
+        })}
+      </div>
+      <div className="mt-4 flex items-center gap-2 rounded-xl border p-2.5" style={{ backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, borderColor: `${secondaryThemeColor}33` }}>
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: secondaryThemeColor }}><Clock3 size={15} />{language === 'zh-CN' ? '时间' : 'Time'}</span>
+        <select aria-label={language === 'zh-CN' ? '小时' : 'Hour'} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0" style={inputStyle} value={currentDate.getHours()} onChange={(event) => selectTime(Number(event.target.value), currentDate.getMinutes())}>
+          {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour} disabled={!canSelectTime(hour, currentDate.getMinutes())}>{padDatePart(hour)}</option>)}
+        </select>
+        <span className="text-sm opacity-60">:</span>
+        <select aria-label={language === 'zh-CN' ? '分钟' : 'Minute'} className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-0" style={inputStyle} value={currentDate.getMinutes()} onChange={(event) => selectTime(currentDate.getHours(), Number(event.target.value))}>
+          {Array.from({ length: 60 }, (_, minute) => <option key={minute} value={minute} disabled={!canSelectTime(currentDate.getHours(), minute)}>{padDatePart(minute)}</option>)}
+        </select>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-[0.6875rem] opacity-60"><span>{language === 'zh-CN' ? '可选范围' : 'Available range'}</span><span>{new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' }).format(minDate)} – {new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' }).format(maxDate)}</span></div>
+    </div>}
+  </div>;
+}
+
+export function BiliupDirectorySettings({ language, isDarkMode, themeColor, secondaryThemeColor }: Appearance) {
+  const biliup = useBiliup();
+  const t = (key: string) => translate(language, key);
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const accentStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
+  const [directoryDraft, setDirectoryDraft] = useState<{ base: string; value: string } | null>(null);
+  const directory = directoryDraft?.base === biliup.preferences.directory ? directoryDraft.value : biliup.preferences.directory;
+  const [saving, setSaving] = useState(false);
+  const accounts = biliup.preferences.accounts;
+  const selectedAccount = accounts.find((account) => account.id === biliup.preferences.selectedAccountId) || accounts[0];
+  const savePreferences = (next: typeof biliup.preferences) => {
+    setSaving(true);
+    void biliup.save(next).catch((error: Error) => biliup.setError(error.message)).finally(() => setSaving(false));
+  };
+  const switchAccount = (id: string) => {
+    const account = accounts.find((item) => item.id === id);
+    if (!account) return;
+    setDirectoryDraft(null);
+    savePreferences({ ...biliup.preferences, selectedAccountId: account.id, directory: account.directory });
+  };
+  const addAccount = () => {
+    const id = crypto.randomUUID();
+    const account = { id, name: `${t('biliup.account.defaultName')} ${accounts.length + 1}`, directory: '' };
+    savePreferences({ ...biliup.preferences, accounts: [...accounts, account], selectedAccountId: id, directory: '' });
+  };
+  const removeAccount = () => {
+    if (!selectedAccount || accounts.length <= 1 || !window.confirm(t('biliup.account.deleteConfirm'))) return;
+    const remaining = accounts.filter((account) => account.id !== selectedAccount.id);
+    const next = remaining[0];
+    savePreferences({ ...biliup.preferences, accounts: remaining, selectedAccountId: next.id, directory: next.directory });
+  };
+  const saveDirectory = () => {
+    const nextAccounts = selectedAccount
+      ? accounts.map((account) => account.id === selectedAccount.id ? { ...account, directory } : account)
+      : directory ? [{ id: 'default', name: t('biliup.account.defaultName'), directory }] : [];
+    savePreferences({ ...biliup.preferences, accounts: nextAccounts, selectedAccountId: selectedAccount?.id || (nextAccounts[0]?.id || ''), directory });
+  };
+  const chooseDirectory = () => void (async () => {
+    if (!window.electron) return;
+    try {
+      const result = await window.electron.showOpenDialog({ title: t('biliup.chooseDirectory'), properties: ['openDirectory'] });
+      if (!result.canceled && result.filePaths?.[0]) setDirectoryDraft({ base: biliup.preferences.directory, value: result.filePaths[0] });
+    } catch (error) {
+      biliup.setError(error instanceof Error ? error.message : 'settings');
+    }
+  })();
+  return <div className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <label className="block text-xs font-medium">{t('biliup.account')}</label>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <button className="border rounded px-2.5 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-40" style={accentStyle} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={addAccount}>{t('biliup.account.add')}</button>
+        <button className="border rounded px-2.5 py-1.5 transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!selectedAccount || accounts.length <= 1 || saving} onClick={removeAccount}>{t('biliup.account.delete')}</button>
+      </div>
+    </div>
+    {accounts.length > 0 && <select aria-label={t('biliup.account')} value={selectedAccount?.id || ''} onChange={(event) => switchAccount(event.target.value)} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' }}>
+      {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+    </select>}
+    <label className="block text-xs font-medium">{t('biliup.directory')}</label>
+    <div className="flex min-w-0 gap-2">
+      <input aria-label={t('biliup.directory')} value={directory} onChange={(event) => setDirectoryDraft({ base: biliup.preferences.directory, value: event.target.value })}
+        disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving}
+        className="min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' }} />
+      <button type="button" className="inline-flex shrink-0 items-center gap-1.5 border rounded px-3 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={14} />{t('biliup.chooseDirectory')}</button>
+    </div>
+    <div className="flex flex-wrap gap-2 text-xs">
+      <button type="button" className="border rounded px-3 py-2 transition-opacity hover:opacity-80 disabled:opacity-40" style={accentStyle} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={saveDirectory}>{t('biliup.confirm')}</button>
+    </div>
+    <p className="text-xs opacity-70">{t(window.electron ? 'biliup.directoryHint' : 'biliup.desktopOnly')}</p>
+    {biliup.error && <p role="alert" className="text-xs text-red-500">{t(`biliup.error.${biliup.error}`)}</p>}
+  </div>;
+}
+
+export function BiliupExportControls({ language, isDarkMode, themeColor, secondaryThemeColor, isExporting, exportFormat }: { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string; isExporting: boolean; exportFormat: string }) {
+  const biliup = useBiliup();
+  const t = (key: string) => translate(language, key);
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
+  const templateSelectionDisabled = !window.electron || !biliup.loaded || isExporting || biliup.state.busy;
+  const autoUploadDisabled = !biliup.canAutoUpload || isExporting || biliup.state.busy || exportFormat !== 'mp4';
+  const selectTemplate = (id: string) => {
+    void biliup.save({ ...biliup.preferences, selectedTemplateId: id }).catch((error: Error) => biliup.setError(error.message));
+  };
+  return <div className="space-y-3 rounded-lg border p-3 text-sm" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, color: theme.text }}>
+    <div className="flex min-w-0 gap-2">
+      <select aria-label={t('biliup.templateSettings')} className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-0" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, colorScheme: isDarkMode ? 'dark' : 'light' }} disabled={templateSelectionDisabled} value={biliup.preferences.selectedTemplateId} onChange={(event) => selectTemplate(event.target.value)}>
+        <option value="">{t('biliup.newTemplate')}</option>
+        {biliup.preferences.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+      </select>
+      <button type="button" className="shrink-0 rounded border px-3 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={buttonStyle} disabled={!window.electron} onClick={biliup.open}>{t('biliup.templateSettings')}</button>
+    </div>
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm">{t('biliup.autoUpload')}</span>
+      <button type="button" role="switch" aria-checked={biliup.autoUpload} aria-label={t('biliup.autoUpload')} disabled={autoUploadDisabled} onClick={() => biliup.setAutoUpload(!biliup.autoUpload)} className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition-colors duration-200 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: biliup.autoUpload ? secondaryThemeColor : theme.panelBgSubtle, borderColor: biliup.autoUpload ? secondaryThemeColor : theme.border, boxShadow: biliup.autoUpload ? `0 4px 12px ${secondaryThemeColor}55` : 'none' }}>
+        <span className="h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out" style={{ transform: biliup.autoUpload ? 'translateX(20px)' : 'translateX(0)' }} />
+      </button>
+    </div>
+    <p className="text-xs opacity-70">{t('biliup.autoHint')}</p>
+    {biliup.autoUpload && <p className="text-xs">{t('biliup.account')}: {biliup.preferences.accounts.find((item) => item.id === biliup.preferences.selectedAccountId)?.name || '—'} · {biliup.preferences.templates.find((item) => item.id === biliup.preferences.selectedTemplateId)?.name || '—'}</p>}
+    {biliup.error && <p role="alert" className="text-xs text-red-500">{t(`biliup.error.${biliup.error}`)}</p>}
+  </div>;
+}
+
+export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeColor, onClose }: Appearance & { onClose: () => void }) {
+  const biliup = useBiliup();
+  const { preferences, state } = biliup;
+  const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const [draft, setDraft] = useState<BiliupTemplate>(() => ({ ...(preferences.templates.find((item) => item.id === preferences.selectedTemplateId) || newBiliupTemplate()) }));
+  const [check, setCheck] = useState<BiliupCheck | null>(null);
+  const [working, setWorking] = useState(false);
+  const [input, setInput] = useState('');
+  const [tagInput, setTagInput] = useState('');
+  const [uploadFilePath, setUploadFilePath] = useState('');
+  const [saved, setSaved] = useState(false);
+  const logRef = useRef<HTMLPreElement>(null);
+  const busy = working || state.busy;
+  const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' };
+  const inputClass = 'w-full border rounded-md px-3 py-2 text-sm disabled:opacity-50 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
+  const buttonClass = 'border rounded px-3 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40';
+  const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
+  const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
+
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [state.logs, state.progressText]);
+  useEffect(() => { setInput(state.phase === 'country' ? '86' : ''); }, [state.phase]);
+  useEffect(() => { setCheck(null); }, [preferences.directory]);
+  const requestClose = useCallback(() => {
+    if (state.busy) {
+      if (!window.confirm(t('biliup.closeConfirm'))) return;
+      void window.electron.biliup.cancel();
+    }
+    onClose();
+  }, [onClose, state.busy, t]);
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); requestClose(); } };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [requestClose]);
+
+  const perform = async (action: () => Promise<void>) => {
+    setWorking(true); biliup.setError('');
+    try { await action(); } catch (error) { biliup.setError(error instanceof Error ? error.message : 'input'); }
+    finally { setWorking(false); }
+  };
+  const chooseCover = () => void perform(async () => {
+    if (!window.electron) return;
+    const result = await window.electron.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: t('biliup.coverFiles'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+    });
+    if (!result.canceled && result.filePaths?.[0]) set('cover', result.filePaths[0]);
+  });
+  const handleCoverPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    const file = imageItem?.getAsFile();
+    if (!file || !window.electron) return;
+    event.preventDefault();
+    void perform(async () => {
+      const directPath = window.electron.getDroppedFilePath(file);
+      if (directPath) { set('cover', directPath); return; }
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+      const cachedPath = await window.electron.saveClipboardImageToCache({ bytes, contentType: file.type, preferredName: file.name });
+      if (!cachedPath) throw new Error('file');
+      set('cover', cachedPath);
+    });
+  };
+  const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
+  const textFields = ['name', 'title', 'tag', 'source', 'cover', 'dynamic', 'missionId'] as const;
+  const savedTemplate = preferences.templates.find((item) => item.id === preferences.selectedTemplateId);
+  const selectedTags = splitBiliupTags(draft.tag);
+  const addTags = (values: string[]) => {
+    const next = mergeBiliupTags(selectedTags, values).slice(0, BILIUP_MAX_TAGS);
+    set('tag', next.join(','));
+  };
+  const addTagsFromInput = () => {
+    const values = splitBiliupTags(tagInput);
+    if (values.length > 0) addTags(values);
+    setTagInput('');
+  };
+  const toggleHistoryTag = (tag: string) => {
+    const selected = selectedTags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase());
+    set('tag', (selected ? selectedTags.filter((item) => item.toLocaleLowerCase() !== tag.toLocaleLowerCase()) : [...selectedTags, tag].slice(0, BILIUP_MAX_TAGS)).join(','));
+  };
+  const removeTag = (tag: string) => set('tag', selectedTags.filter((item) => item.toLocaleLowerCase() !== tag.toLocaleLowerCase()).join(','));
+  const chooseUploadFile = () => void perform(async () => {
+    if (!window.electron) return;
+    const result = await window.electron.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'MP4', extensions: ['mp4'] }] });
+    if (!result.canceled && result.filePaths?.[0]) setUploadFilePath(result.filePaths[0]);
+  });
+  const uploadSelectedFile = () => void perform(async () => {
+    if (!savedTemplate || !uploadFilePath) return;
+    if (!window.confirm(`${t('biliup.uploadConfirm')}\n${savedTemplate.name}`)) return;
+    await biliup.upload({ directory: preferences.directory, template: { ...savedTemplate } }, uploadFilePath);
+  });
+  const scheduleBounds = getScheduleBounds();
+
+  return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => event.stopPropagation()}>
+    <section role="dialog" aria-modal="true" aria-label={t('biliup.settings')} className="flex w-full max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-[28px] border shadow-2xl"
+      style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: theme.text }}>
+      <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}><div><div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}24` }}>biliup</div><h2 className="text-xl font-semibold" style={{ color: theme.text }}>{t('biliup.settings')}</h2></div><button type="button" className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: theme.textMuted }} aria-label={t('settings.close')} onClick={requestClose}><X size={16} /></button></header>
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}66`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}99` } as React.CSSProperties}>
+        <div className="space-y-5 p-6 sm:p-8">
+        <BiliupDirectorySettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { setCheck(unwrapBiliup(await window.electron.biliup.check(preferences.directory))); })}>{t('biliup.check')}</button>
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'qr')); })}>{t('biliup.qrLogin')}</button>
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'sms')); })}>{t('biliup.smsLogin')}</button>
+      </div>
+      {check && <p className="text-sm" role="status">{check.version} · {check.cookieFile} · {t(check.cookieOk ? 'biliup.cookieValid' : `biliup.error.${check.error || 'cookie'}`)}</p>}
+      {state.kind === 'login' && <div className="space-y-2">
+        <p role="status" className="text-sm" style={{ color: secondaryThemeColor }}>{t(`biliup.phase.${state.phase}`)}</p>
+        {state.qrImage && <img src={state.qrImage} alt={t('biliup.qrLogin')} className="w-56 h-56 bg-white p-2" style={{ imageRendering: 'pixelated' }} />}
+        {['country', 'phone', 'code'].includes(state.phase) && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const value = input; setInput(''); void perform(async () => { unwrapBiliup(await window.electron.biliup.input(state.phase, value)); }); }}>
+          <input autoFocus autoComplete="off" inputMode="numeric" aria-label={t(`biliup.phase.${state.phase}`)} value={input} onChange={(event) => setInput(event.target.value)} className={inputClass} style={surface} />
+          <button type="submit" className={buttonClass} style={buttonStyle} disabled={working || !input}>{t('biliup.send')}</button>
+        </form>}
+        <p className="text-xs opacity-70">{t('biliup.loginHint')}</p>
+      </div>}
+      <hr style={{ borderColor: theme.border }} />
+      <div className="flex gap-2">
+        <select aria-label={t('biliup.templateSettings')} className={inputClass} style={surface} value={draft.id} disabled={busy} onChange={(event) => {
+          setSaved(false); setDraft({ ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) });
+        }}>
+          <option value="">{t('biliup.newTemplate')}</option>
+          {preferences.templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <Tooltip content={t('biliup.delete')} placement="top" width={96} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text} className="inline-flex shrink-0">
+          <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="inline-flex h-9 w-9 items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={busy || !draft.id} onClick={() => void perform(async () => {
+            if (!window.confirm(t('biliup.deleteConfirm'))) return;
+            await biliup.save({ ...preferences, templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
+            setDraft(newBiliupTemplate());
+          })}><Trash2 size={16} /></button>
+        </Tooltip>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {textFields.map((key) => {
+          if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>
+            <div className="flex min-w-0 gap-2">
+              <input className={`${inputClass} min-w-0 flex-1`} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
+              <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseCover}><ImagePlus size={14} />{t('biliup.chooseCover')}</button>
+            </div>
+          </label>;
+          if (key === 'tag') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><div className="flex items-center justify-between gap-2"><span>{t(`biliup.field.${key}`)}</span><span className="opacity-70">{t('biliup.tagCount', { count: selectedTags.length, max: BILIUP_MAX_TAGS })}</span></div>
+            <div className="flex min-h-[2.75rem] flex-wrap items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors focus-within:border-current" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }}>
+              {selectedTags.map((tag) => <span key={tag.toLocaleLowerCase()} className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}44`, color: secondaryThemeColor }}><span className="max-w-[15rem] truncate">{tag}</span><button type="button" className="rounded-full p-0.5 transition-opacity hover:opacity-70 focus:outline-none focus:ring-0" aria-label={`${t('biliup.tagRemove')}: ${tag}`} disabled={busy} onClick={() => removeTag(tag)}><X size={12} /></button></span>)}
+              <input value={tagInput} disabled={busy || selectedTags.length >= BILIUP_MAX_TAGS} placeholder={selectedTags.length >= BILIUP_MAX_TAGS ? '' : t('biliup.tagPlaceholder')} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTagsFromInput(); } }} className="min-w-[10rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none placeholder:opacity-50" />
+            </div>
+            <p className="opacity-70">{t('biliup.tagHint')}</p>
+            <div className="space-y-1.5"><span className="block opacity-70">{t('biliup.tagHistory')}</span><div className="flex flex-wrap gap-1.5">{preferences.tagHistory.length > 0 ? preferences.tagHistory.map((tag) => { const selected = selectedTags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase()); return <button key={tag.toLocaleLowerCase()} type="button" className="rounded-full border px-2.5 py-1 text-xs transition-colors focus:outline-none focus:ring-0 disabled:opacity-40" disabled={busy} onClick={() => toggleHistoryTag(tag)} style={selected ? { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' } : { backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.textMuted }}>{tag}</button>; }) : <span className="opacity-50">—</span>}</div></div>
+          </label>;
+          return <label key={key} className="space-y-1 text-xs"><span>{t(`biliup.field.${key}`)}</span>
+            <input className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, event.target.value)} />
+          </label>;
+        })}
+        <label className="text-xs space-y-1 sm:col-span-2"><span>{t('biliup.field.dtime')}</span>
+          <div className="flex gap-2">
+            <BiliupDateTimePicker value={draft.dtime} minTimestamp={scheduleBounds.min} maxTimestamp={scheduleBounds.max} language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} placeholder={t('biliup.schedulePlaceholder')} previousMonthLabel={t('biliup.previousMonth')} nextMonthLabel={t('biliup.nextMonth')} onChange={(value) => set('dtime', value)} />
+            <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !draft.dtime} onClick={() => set('dtime', '')}>{t('biliup.clearSchedule')}</button>
+          </div>
+          <span className="block opacity-70">{t('biliup.scheduleHint')}</span>
+        </label>
+        {(['tid', 'limit', 'interactive'] as const).map((key) => <label key={key} className="space-y-1 text-xs"><span className="flex items-center gap-1">{t(`biliup.field.${key}`)}{(key === 'tid' || key === 'interactive') && <Tooltip content={t(key === 'tid' ? 'biliup.tidHint' : 'biliup.interactiveHint')} placement="top" width={key === 'tid' ? 360 : 300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip>}</span>
+          <input type="number" min={key === 'interactive' ? 0 : 1} max={key === 'limit' ? 32 : key === 'interactive' ? 1 : 65535} className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, Number(event.target.value))} />
+        </label>)}
+        <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
+          <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
+            <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.copyright === 2 ? 'translateX(100%)' : 'translateX(0)' }} />
+            {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={busy} onClick={() => set('copyright', value)}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
+          </div>
+        </div>
+        <label className="text-xs space-y-1"><span>{t('biliup.field.line')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
+          {biliupLines.map((line) => <option key={line} value={line}>{line || t('biliup.default')}</option>)}</select></label>
+        <label className="text-xs space-y-1"><span>{t('biliup.field.submit')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
+          {['', 'app', 'web', 'bcutandroid'].map((value) => <option key={value} value={value}>{value || t('biliup.default')}</option>)}</select></label>
+        <label className="text-xs space-y-1"><span>{t('biliup.field.isOnlySelf')}</span><select className={inputClass} style={surface} disabled={busy} value={draft.isOnlySelf} onChange={(event) => set('isOnlySelf', event.target.value as BiliupTemplate['isOnlySelf'])}>
+          {['', '0', '1'].map((value) => <option key={value} value={value}>{value === '' ? t('biliup.default') : value === '1' ? t('biliup.enabled') : t('biliup.disabled')}</option>)}</select></label>
+      </div>
+      <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={busy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
+      <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
+        <input type="checkbox" disabled={busy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
+      <p className="text-xs opacity-70">{t('biliup.templateHint')}</p>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <button type="button" className={buttonClass} style={primaryButtonStyle} disabled={busy || !biliup.loaded} onClick={() => void perform(async () => {
+            const error = validateBiliupTemplate(draft) || validateBiliupSchedule(draft.dtime); if (error) throw new Error(error);
+            const next = { ...draft, id: draft.id || crypto.randomUUID() };
+            const tagHistory = mergeBiliupTags(splitBiliupTags(next.tag), preferences.tagHistory).slice(0, BILIUP_MAX_TAG_HISTORY);
+            await biliup.save({ ...preferences, selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
+            setDraft(next); setSaved(true);
+          })}>{t('biliup.saveTemplate')}</button>
+          {saved && <span className="text-xs">{t('biliup.saved')}</span>}
+        </div>
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 gap-2">
+            <input readOnly value={uploadFilePath} placeholder={t('biliup.mp4Placeholder')} title={uploadFilePath} className={`${inputClass} min-w-0 flex-1`} style={surface} />
+            <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseMp4')}</button>
+          </div>
+          <button type="button" className={`${buttonClass} self-start`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !uploadFilePath} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
+        </div>
+        <p className="text-xs opacity-70">{t('biliup.uploadHint')}</p>
+      </div>
+      <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {savedTemplate?.name || '—'}</p>
+      <div className="space-y-2">
+        <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{t(`biliup.phase.${state.phase}`)}</span></div>
+        {state.kind === 'upload' && <>
+          <div role="progressbar" aria-label={t('biliup.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress ?? undefined} className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: theme.panelBgSubtle }}>
+            <div className="h-full rounded-full transition-[width]" style={{ width: `${state.progress ?? 0}%`, backgroundColor: secondaryThemeColor, boxShadow: `0 0 12px ${secondaryThemeColor}66` }} />
+          </div>
+          <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{state.progress === null ? t('biliup.waitProgress') : `${state.progress.toFixed(1)}%`} {state.progressText}</p>
+        </>}
+        <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{state.logs.join('\n') || t('biliup.consoleHint')}</pre>
+        {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}
+        {state.bvid && <p className="text-sm select-text">{state.bvid}</p>}
+        <button className={buttonClass} style={buttonStyle} disabled={!state.busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>
+        </div>
+        </div>
+      </div>
+    </section>
+  </div>, document.body);
+}

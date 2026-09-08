@@ -4,6 +4,21 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
   ping: () => ipcRenderer.invoke('ping'),
+  biliup: {
+    load: () => ipcRenderer.invoke('biliup-load'),
+    save: (preferences: unknown) => ipcRenderer.invoke('biliup-save', preferences),
+    check: (directory: string) => ipcRenderer.invoke('biliup-check', directory),
+    login: (directory: string, method: 'qr' | 'sms') => ipcRenderer.invoke('biliup-login', directory, method),
+    input: (phase: string, value: string) => ipcRenderer.invoke('biliup-input', phase, value),
+    upload: (request: unknown) => ipcRenderer.invoke('biliup-upload', request),
+    cancel: () => ipcRenderer.invoke('biliup-cancel'),
+    state: () => ipcRenderer.invoke('biliup-state'),
+    onState: (callback: (state: unknown) => void) => {
+      const listener = (_event: unknown, state: unknown) => callback(state);
+      ipcRenderer.on('biliup-state', listener);
+      return () => ipcRenderer.removeListener('biliup-state', listener);
+    },
+  },
   exportVideo: (config: any) => ipcRenderer.invoke('export-video', config),
   getExportPaths: (options: any) => ipcRenderer.invoke('get-export-paths', options),
   showOpenDialog: (options: any) => ipcRenderer.invoke('show-open-dialog', options),
@@ -39,6 +54,7 @@ contextBridge.exposeInMainWorld('electron', {
   confirmAppClose: () => ipcRenderer.invoke('confirm-app-close'),
   cancelAppClose: () => ipcRenderer.invoke('cancel-app-close'),
   setProjectOpenListenerReady: (ready: boolean) => ipcRenderer.invoke('project-open-listener-ready', ready),
+  setAppCloseListenerReady: (ready: boolean) => ipcRenderer.invoke('app-close-listener-ready', ready),
   onProjectOpenRequested: (callback: (filePath: string) => void) => {
     const listener = (_event: any, filePath: string) => callback(filePath);
     ipcRenderer.on('project-open-requested', listener);

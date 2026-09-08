@@ -3,6 +3,7 @@ import { Download, FolderOpen, Sparkles, Timer, Trash2, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { Tooltip } from './ui/Tooltip';
+import { BiliupExportControls } from './BiliupModal';
 
 interface ExportProgressState {
   progress: number;
@@ -251,6 +252,7 @@ export function ExportModal({
 }: ExportModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const secondaryUiTheme = createThemeTokens(secondaryThemeColor, isDarkMode);
   const [startInput, setStartInput] = useState(formatTime(rangeStart));
   const [endInput, setEndInput] = useState(formatTime(rangeEnd));
   const [localCustomFilename, setLocalCustomFilename] = useState(customFilename);
@@ -784,6 +786,7 @@ export function ExportModal({
 
              {/* Progress Section */}
              <div className="flex-1 flex flex-col">
+               <div className="mb-4"><BiliupExportControls language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} isExporting={isExporting} exportFormat={exportFormat} /></div>
                <div className="mb-4 flex items-center gap-2">
                  <Timer size={16} style={{ color: secondaryThemeColor }} />
                  <div className="text-sm font-medium">{t('export.progress')}</div>
@@ -792,12 +795,12 @@ export function ExportModal({
                <div className="rounded-2xl border p-3" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
                  <div className="mb-2 flex items-center justify-between text-xs" style={{ color: uiTheme.textMuted }}>
                    <span>{progress?.stage || t('export.waiting')}</span>
-                   <span style={{ color: secondaryThemeColor }}>{progressPercent}%</span>
+                   <span style={{ color: secondaryUiTheme.accent }}>{progressPercent}%</span>
                  </div>
-                 <div className="h-3 overflow-hidden rounded-full" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.2 : 0.1) }}>
+                 <div className="h-3 overflow-hidden rounded-full" style={{ backgroundColor: rgba(uiTheme.accent, isDarkMode ? 0.2 : 0.1) }}>
                    <div
                      className="h-full rounded-full transition-all duration-300"
-                     style={{ width: `${progressPercent}%`, background: `linear-gradient(90deg, ${themeColor} 0%, ${secondaryThemeColor} 100%)`, boxShadow: `0 0 18px ${rgba(secondaryThemeColor, 0.28)}` }}
+                     style={{ width: `${progressPercent}%`, background: `linear-gradient(90deg, ${uiTheme.accent} 0%, ${secondaryUiTheme.accent} 100%)`, boxShadow: `0 0 18px ${rgba(secondaryUiTheme.accent, 0.28)}` }}
                    />
                  </div>
                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">

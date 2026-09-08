@@ -7,6 +7,8 @@ import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
 import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue, isSupportedFontFile, replaceFontPresetFamilyReferences, type FontPresetMap } from '../fontPresets';
 
+import { BiliupDirectorySettings } from './BiliupModal';
+
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
   { label: 'Segoe UI', value: '"Segoe UI", sans-serif' },
@@ -1691,6 +1693,7 @@ export function SettingsPanel({
               )}
             </div>
 
+            <BiliupDirectorySettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
             {window.electron && (
               <div className="space-y-2">
                 <label className="block text-xs font-medium uppercase tracking-wider opacity-70">{t('global.proxy')}</label>

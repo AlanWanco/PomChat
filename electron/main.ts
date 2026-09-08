@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { registerBiliup } from './biliup';
 
 const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/AlanWanco/PomChat/releases/latest';
@@ -587,6 +588,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 let win: BrowserWindow | null;
 let allowWindowClose = false;
 let pendingWindowCloseRequest = false;
+let appCloseListenerReady = false;
 
 function resolveAppFilePath(filePath: string) {
   if (!filePath) {
@@ -833,7 +835,43 @@ function focusProjectWindow() {
   win?.focus();
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const isDevelopment = Boolean(VITE_DEV_SERVER_URL);
+// Electron/Vite restarts the development main process during HMR. A global
+// single-instance lock would make the replacement process exit immediately.
+const hasSingleInstanceLock = isDevelopment || app.requestSingleInstanceLock();
+
+if (isDevelopment) {
+  // Electron may translate the dev server's SIGTERM into an app quit without
+  // invoking the Node signal handler. Allow that quit to pass the window guard.
+  app.on('before-quit', () => {
+    allowWindowClose = true;
+    pendingWindowCloseRequest = false;
+    // A SIGTERM can arrive while the window close event is already blocked;
+    // force the dev process out on the next turn so Vite can restart it.
+    setImmediate(() => app.exit(0));
+  });
+}
+
+// vite-plugin-electron terminates the previous Electron process during a rebuild.
+// Let that signal bypass the unsaved-project close guard; otherwise the old
+// process can stay alive and the next renderer may be left on a white screen.
+if (isDevelopment) {
+  const terminateDevelopmentProcess = () => {
+    allowWindowClose = true;
+    pendingWindowCloseRequest = false;
+    app.quit();
+    // Do not let a renderer close guard block vite-plugin-electron's restart.
+    setTimeout(() => app.exit(0), 500);
+  };
+  process.once('SIGTERM', terminateDevelopmentProcess);
+  process.once('SIGINT', terminateDevelopmentProcess);
+  process.on('message', (message) => {
+    if (message !== 'electron-vite&type=hot-reload') return;
+    for (const browserWindow of BrowserWindow.getAllWindows()) {
+      if (!browserWindow.isDestroyed()) browserWindow.webContents.reload();
+    }
+  });
+}
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
@@ -847,13 +885,14 @@ if (!hasSingleInstanceLock) {
     for (const argument of argv.slice(1)) enqueueProjectOpen(argument, workingDirectory);
     focusProjectWindow();
   });
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !isDevelopment) {
     for (const argument of process.argv.slice(app.isPackaged ? 1 : 2)) enqueueProjectOpen(argument);
   }
 }
 
 function createWindow() {
   projectOpenListenerReady = false;
+  appCloseListenerReady = false;
   allowWindowClose = false;
   pendingWindowCloseRequest = false;
   win = new BrowserWindow({
@@ -874,6 +913,7 @@ function createWindow() {
 
   win.webContents.on('did-start-loading', () => {
     projectOpenListenerReady = false;
+    appCloseListenerReady = false;
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -898,6 +938,16 @@ function createWindow() {
     console.log(`[Renderer:${level}] ${message} (at ${sourceId}:${lineNumber})`, eventOrLevel ? '' : '');
   });
 
+  win.webContents.on('did-finish-load', () => {
+    console.log('[Renderer loaded]', win?.webContents.getURL());
+  });
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (isMainFrame) {
+      console.error('[Renderer load failed]', errorCode, errorDescription, validatedURL);
+    }
+  });
+
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error('[Renderer gone]', details.reason, details.exitCode);
   });
@@ -907,7 +957,7 @@ function createWindow() {
   });
 
   win.on('close', (event) => {
-    if (allowWindowClose) {
+    if (allowWindowClose || (isDevelopment && !appCloseListenerReady)) {
       return;
     }
 
@@ -923,6 +973,7 @@ function createWindow() {
 
   win.on('closed', () => {
     projectOpenListenerReady = false;
+    appCloseListenerReady = false;
     win = null;
     allowWindowClose = false;
     pendingWindowCloseRequest = false;
@@ -930,10 +981,12 @@ function createWindow() {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // Keep the normal macOS application behavior in packaged builds, but let
+  // the development Electron process exit when its window is closed.
+  if (process.platform !== 'darwin' || isDevelopment) {
     app.quit();
-    win = null;
   }
+  win = null;
 });
 
 app.on('activate', () => {
@@ -966,7 +1019,12 @@ ipcMain.handle('project-open-listener-ready', (event, ready: boolean) => {
   projectOpenListenerReady = ready === true;
   flushProjectOpenRequests();
 });
+ipcMain.handle('app-close-listener-ready', (event, ready: boolean) => {
+  if (event.sender !== win?.webContents) return;
+  appCloseListenerReady = ready === true;
+});
 ipcMain.handle('ping', () => 'pong');
+registerBiliup(() => win?.webContents);
 
 ipcMain.handle('confirm-app-close', () => {
   if (!win || win.isDestroyed()) {

@@ -1,14 +1,15 @@
 {
   "name": "pomchat",
   "private": true,
-  "version": "0.4.4",
+  "version": "0.4.5",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/prepare-biliup-pty.mjs && vite",
+    "build": "node scripts/prepare-biliup-pty.mjs && tsc -b && vite build",
     "prepare-remotion-offline": "node scripts/prepare-offline-remotion.mjs",
     "dist": "npm run build && npm run prepare-remotion-offline && electron-builder --publish never",
     "lint": "eslint .",
+    "test:biliup": "node scripts/test-biliup.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "@remotion/renderer": "^4.0.441",
     "ass-compiler": "^0.1.16",
     "lucide-react": "^1.7.0",
+    "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "remotion": "^4.0.441",

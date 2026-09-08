@@ -5,6 +5,7 @@ declare const __APP_VERSION__: string;
 
 interface Window {
   electron: {
+    biliup: import('./biliup').BiliupApi;
     ping: () => Promise<string>;
     exportVideo: (config: any) => Promise<{ success: boolean; error?: string; message?: string; placeholder?: boolean; outputPath?: string; manifestPath?: string | null; elapsedMs?: number; realTimeFactor?: number }>;
     getExportPaths: (options: any) => Promise<{ runtimeDir: string; quickSavePath: string; suggestedPath: string }>;
@@ -44,6 +45,7 @@ interface Window {
     confirmAppClose: () => Promise<boolean>;
     cancelAppClose: () => Promise<boolean>;
     setProjectOpenListenerReady: (ready: boolean) => Promise<void>;
+    setAppCloseListenerReady: (ready: boolean) => Promise<void>;
     onProjectOpenRequested: (callback: (filePath: string) => void) => () => void;
     onAppCloseRequested: (callback: () => void) => () => void;
     onExportProgress: (callback: (progress: { progress: number; elapsedMs: number; estimatedRemainingMs: number | null; stage: string }) => void) => () => void;
