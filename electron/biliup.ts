@@ -286,8 +286,9 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     if (active !== job) return;
     active = null;
     const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : undefined);
+    const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload';
     update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
-      qrImage: null, captchaUrl: null, captchaStatus: '', progress: !error && !job.cancelled && state.kind === 'upload' ? 100 : state.progress });
+      qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: uploadSucceeded ? '' : state.progressText });
   }
 
   function stop(error?: string) {

@@ -488,7 +488,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           </div>
           <span className="block opacity-70">{t('biliup.scheduleHint')}</span>
         </label>
-        {(['tid', 'limit', 'interactive'] as const).map((key) => <label key={key} className="space-y-1 text-xs"><span className="flex items-center gap-1">{t(`biliup.field.${key}`)}{(key === 'tid' || key === 'interactive') && <Tooltip content={t(key === 'tid' ? 'biliup.tidHint' : 'biliup.interactiveHint')} placement="top" width={key === 'tid' ? 360 : 300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip>}</span>
+        {(['tid', 'limit', 'interactive'] as const).map((key) => <label key={key} className="space-y-1 text-xs"><span className="flex items-center gap-1">{t(`biliup.field.${key}`)}{(key === 'tid' || key === 'limit' || key === 'interactive') && <Tooltip content={t(key === 'tid' ? 'biliup.tidHint' : key === 'limit' ? 'biliup.limitHint' : 'biliup.interactiveHint')} placement="top" width={key === 'tid' ? 360 : 300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip>}</span>
           <input type="number" min={key === 'interactive' ? 0 : 1} max={key === 'limit' ? 32 : key === 'interactive' ? 1 : 65535} className={inputClass} style={surface} disabled={busy} value={draft[key]} onChange={(event) => set(key, Number(event.target.value))} />
         </label>)}
         <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
@@ -533,7 +533,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
       </div>
       <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {savedTemplate?.name || '—'}</p>
       <div className="space-y-2">
-        <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{t(`biliup.phase.${state.phase}`)}</span></div>
+        <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
         {state.kind === 'upload' && <>
           <div role="progressbar" aria-label={t('biliup.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress ?? undefined} className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: theme.panelBgSubtle }}>
             <div className="h-full rounded-full transition-[width]" style={{ width: `${state.progress ?? 0}%`, backgroundColor: secondaryThemeColor, boxShadow: `0 0 12px ${secondaryThemeColor}66` }} />
