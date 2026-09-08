@@ -79,7 +79,7 @@ export interface BiliupCheck {
   username?: string;
   error?: string;
 }
-export type BiliupPhase = 'idle' | 'starting' | 'qr' | 'country' | 'phone' | 'code' | 'uploading' | 'success' | 'failed' | 'cancelled';
+export type BiliupPhase = 'idle' | 'starting' | 'qr' | 'country' | 'phone' | 'captcha' | 'captchaChallenge' | 'captchaValidate' | 'code' | 'uploading' | 'success' | 'failed' | 'cancelled';
 export interface BiliupState {
   busy: boolean;
   kind: 'login' | 'upload' | null;
@@ -88,6 +88,8 @@ export interface BiliupState {
   progress: number | null;
   progressText: string;
   qrImage: string | null;
+  captchaUrl: string | null;
+  captchaStatus: string;
   error?: string;
   bvid?: string;
 }
@@ -110,6 +112,8 @@ export interface BiliupApi {
   save: (preferences: BiliupPreferences) => Promise<BiliupResult<BiliupPreferences>>;
   check: (directory: string) => Promise<BiliupResult<BiliupCheck>>;
   login: (directory: string, method: 'qr' | 'sms') => Promise<BiliupResult<void>>;
+  attachCaptchaView: (webContentsId: number) => Promise<BiliupResult<void>>;
+  dismissCaptchaView: () => Promise<BiliupResult<void>>;
   input: (phase: BiliupPhase, value: string) => Promise<BiliupResult<void>>;
   upload: (request: BiliupUploadRequest) => Promise<BiliupResult<void>>;
   cancel: () => Promise<BiliupResult<void>>;
@@ -119,7 +123,7 @@ export interface BiliupApi {
 
 export const emptyBiliupPreferences: BiliupPreferences = { directory: '', selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [] };
 export const idleBiliupState: BiliupState = {
-  busy: false, kind: null, phase: 'idle', logs: [], progress: null, progressText: '', qrImage: null,
+  busy: false, kind: null, phase: 'idle', logs: [], progress: null, progressText: '', qrImage: null, captchaUrl: null, captchaStatus: '',
 };
 export const newBiliupTemplate = (): BiliupTemplate => ({
   id: '', name: '', title: '', tag: '', tid: 5, copyright: 1,

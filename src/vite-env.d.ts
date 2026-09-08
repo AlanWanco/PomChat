@@ -3,6 +3,20 @@
 
 declare const __APP_VERSION__: string;
 
+interface HTMLWebViewElement extends HTMLElement {
+  getWebContentsId: () => number;
+}
+
+declare namespace JSX {
+  interface IntrinsicElements {
+    webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLWebViewElement>, HTMLWebViewElement> & {
+      src?: string;
+      partition?: string;
+      allowpopups?: boolean;
+    };
+  }
+}
+
 interface Window {
   electron: {
     biliup: import('./biliup').BiliupApi;

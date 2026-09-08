@@ -256,10 +256,14 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const [check, setCheck] = useState<BiliupCheck | null>(null);
   const [working, setWorking] = useState(false);
   const [input, setInput] = useState('');
+  const [countryInput, setCountryInput] = useState('86');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [pendingPhone, setPendingPhone] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [uploadFilePath, setUploadFilePath] = useState('');
   const [saved, setSaved] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
+  const captchaViewRef = useRef<HTMLWebViewElement>(null);
   const busy = working || state.busy;
   const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' };
   const inputClass = 'w-full border rounded-md px-3 py-2 text-sm disabled:opacity-50 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
@@ -268,8 +272,35 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [state.logs, state.progressText]);
-  useEffect(() => { setInput(state.phase === 'country' ? '86' : ''); }, [state.phase]);
+  useEffect(() => {
+    if (import.meta.env.DEV && state.captchaStatus) console.debug('[biliup captcha]', state.captchaStatus);
+  }, [state.captchaStatus]);
+  useEffect(() => { if (!['country', 'phone'].includes(state.phase)) setInput(''); }, [state.phase]);
   useEffect(() => { setCheck(null); }, [preferences.directory]);
+  useEffect(() => {
+    if (!state.captchaUrl || !window.electron) return;
+    const view = captchaViewRef.current;
+    if (!view) return;
+    let attached = false;
+    const attach = () => {
+      if (attached) return;
+      try {
+        const webContentsId = view.getWebContentsId();
+        if (!Number.isInteger(webContentsId)) return;
+        attached = true;
+        void window.electron.biliup.attachCaptchaView(webContentsId).then((result) => {
+          if (!result.ok) attached = false;
+        });
+      } catch { /* The guest webview is not attached yet. */ }
+    };
+    view.addEventListener('did-attach', attach);
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      if (attached || attempts++ > 50) { window.clearInterval(timer); return; }
+      attach();
+    }, 100);
+    return () => { window.clearInterval(timer); view.removeEventListener('did-attach', attach); };
+  }, [state.captchaUrl]);
   const requestClose = useCallback(() => {
     if (state.busy) {
       if (!window.confirm(t('biliup.closeConfirm'))) return;
@@ -283,20 +314,40 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     return () => document.removeEventListener('keydown', handler, true);
   }, [requestClose]);
 
-  const perform = async (action: () => Promise<void>) => {
+  const perform = useCallback(async (action: () => Promise<void>) => {
     setWorking(true); biliup.setError('');
     try { await action(); } catch (error) { biliup.setError(error instanceof Error ? error.message : 'input'); }
     finally { setWorking(false); }
+  }, [biliup]);
+  useEffect(() => {
+    if (state.phase !== 'phone' || !pendingPhone || working) return;
+    const phone = pendingPhone;
+    setPendingPhone('');
+    void perform(async () => { unwrapBiliup(await window.electron.biliup.input('phone', phone)); });
+  }, [perform, pendingPhone, state.phase, working]);
+  const submitSmsContact = () => {
+    const country = countryInput.trim();
+    const phone = phoneInput.trim();
+    if (state.phase === 'country') {
+      setPendingPhone(phone);
+      void perform(async () => { unwrapBiliup(await window.electron.biliup.input('country', country)); });
+    } else if (state.phase === 'phone') {
+      void perform(async () => { unwrapBiliup(await window.electron.biliup.input('phone', phone)); });
+    }
   };
+  const resetSmsInputs = () => { setCountryInput('86'); setPhoneInput(''); setPendingPhone(''); };
   const applyDetectedUsername = async (result: BiliupCheck) => {
     setCheck(result);
-    if (!result.username) return;
+    const username = result.username;
+    if (!username) return;
     const accountId = preferences.selectedAccountId || preferences.accounts[0]?.id || 'default';
+    const currentAccount = preferences.accounts.find((account) => account.id === accountId);
+    if (currentAccount && currentAccount.name === username && preferences.selectedAccountId === accountId) return;
     const accounts = preferences.accounts.length > 0
-      ? preferences.accounts.map((account) => account.id === accountId ? { ...account, name: result.username! } : account)
-      : [{ id: accountId, name: result.username, directory: preferences.directory }];
+      ? preferences.accounts.map((account) => account.id === accountId ? { ...account, name: username } : account)
+      : [{ id: accountId, name: username, directory: preferences.directory }];
     const account = accounts.find((item) => item.id === accountId);
-    if (!account || (account.name === result.username && preferences.selectedAccountId === accountId && preferences.accounts.length > 0)) return;
+    if (!account) return;
     await biliup.save({ ...preferences, accounts, selectedAccountId: accountId, directory: account.directory });
   };
   const chooseCover = () => void perform(async () => {
@@ -360,15 +411,33 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <BiliupDirectorySettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
       <div className="flex flex-wrap gap-2">
         <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { await applyDetectedUsername(unwrapBiliup(await window.electron.biliup.check(preferences.directory))); })}>{t('biliup.check')}</button>
-        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'qr')); })}>{t('biliup.qrLogin')}</button>
-        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'sms')); })}>{t('biliup.smsLogin')}</button>
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; resetSmsInputs(); setInput(''); setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'qr')); })}>{t('biliup.qrLogin')}</button>
+        <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { if (check?.cookieExists && !window.confirm(t('biliup.loginOverwriteConfirm'))) return; resetSmsInputs(); setInput(''); setCheck(null); unwrapBiliup(await window.electron.biliup.login(preferences.directory, 'sms')); })}>{t('biliup.smsLogin')}</button>
       </div>
       {check && <p className="text-sm" role="status">{check.version} · {check.cookieFile} · {t(check.cookieOk ? 'biliup.cookieValid' : `biliup.error.${check.error || 'cookie'}`)}{check.username && <> · {t('biliup.detectedUser')}: {check.username}</>}</p>}
       {state.kind === 'login' && <div className="space-y-2">
         <p role="status" className="text-sm" style={{ color: secondaryThemeColor }}>{t(`biliup.phase.${state.phase}`)}</p>
+        {state.captchaStatus && !state.captchaUrl && <p className="text-xs font-medium" style={{ color: secondaryThemeColor }}>{t(`biliup.captchaStatus.${state.captchaStatus}`)}</p>}
         {state.qrImage && <img src={state.qrImage} alt={t('biliup.qrLogin')} className="w-56 h-56 bg-white p-2" style={{ imageRendering: 'pixelated' }} />}
-        {['country', 'phone', 'code'].includes(state.phase) && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const value = input; setInput(''); void perform(async () => { unwrapBiliup(await window.electron.biliup.input(state.phase, value)); }); }}>
-          <input autoFocus autoComplete="off" inputMode="numeric" aria-label={t(`biliup.phase.${state.phase}`)} value={input} onChange={(event) => setInput(event.target.value)} className={inputClass} style={surface} />
+        {state.captchaUrl && <div className="space-y-2 rounded-lg border p-3 text-xs" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}0c` }}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              {state.captchaStatus && <p className="font-medium" style={{ color: secondaryThemeColor }}>{t(`biliup.captchaStatus.${state.captchaStatus}`)}</p>}
+              <p>{t('biliup.captchaHint')}</p>
+            </div>
+            <button type="button" aria-label={t('biliup.closeCaptcha')} title={t('biliup.closeCaptcha')} className="shrink-0 rounded-full p-1 transition-opacity hover:opacity-70 focus:outline-none focus:ring-0" style={{ color: theme.textMuted }} onClick={() => { void window.electron.biliup.dismissCaptchaView(); }}><X size={14} /></button>
+          </div>
+          <webview ref={captchaViewRef} src={state.captchaUrl} partition="persist:pomchat-biliup-captcha" className="h-[28rem] min-h-[24rem] w-full rounded-md border" style={{ borderColor: theme.border }} />
+          <button type="button" className={buttonClass} style={buttonStyle} onClick={() => { if (state.captchaUrl) void window.electron.openExternal(state.captchaUrl); }}>{t('biliup.openCaptcha')}</button>
+          <code className="block max-h-20 select-all break-all opacity-70">{state.captchaUrl}</code>
+        </div>}
+        {['country', 'phone'].includes(state.phase) && <form className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]" onSubmit={(event) => { event.preventDefault(); submitSmsContact(); }}>
+          <label className="space-y-1 text-xs"><span>{t('biliup.phase.country')}</span><input autoFocus={state.phase === 'country'} autoComplete="off" inputMode="numeric" aria-label={t('biliup.phase.country')} value={countryInput} disabled={state.phase !== 'country' || working} onChange={(event) => setCountryInput(event.target.value)} className={inputClass} style={surface} /></label>
+          <label className="space-y-1 text-xs"><span>{t('biliup.phase.phone')}</span><input autoFocus={state.phase === 'phone'} autoComplete="off" inputMode="tel" aria-label={t('biliup.phase.phone')} value={phoneInput} disabled={working} onChange={(event) => setPhoneInput(event.target.value)} className={inputClass} style={surface} /></label>
+          <button type="submit" className={buttonClass} style={buttonStyle} disabled={working || !countryInput.trim() || !phoneInput.trim()}>{t('biliup.send')}</button>
+        </form>}
+        {['captchaChallenge', 'captchaValidate', 'code'].includes(state.phase) && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const value = input; setInput(''); void perform(async () => { unwrapBiliup(await window.electron.biliup.input(state.phase, value)); }); }}>
+          <input autoFocus autoComplete="off" inputMode={state.phase === 'code' ? 'numeric' : 'text'} aria-label={t(`biliup.phase.${state.phase}`)} value={input} onChange={(event) => setInput(event.target.value)} className={inputClass} style={surface} />
           <button type="submit" className={buttonClass} style={buttonStyle} disabled={working || !input}>{t('biliup.send')}</button>
         </form>}
         <div className="flex items-center justify-between gap-3">

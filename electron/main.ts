@@ -904,6 +904,7 @@ function createWindow() {
       webSecurity: false, // For local files
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
 

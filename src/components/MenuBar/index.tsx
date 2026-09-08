@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircle, Undo2, Redo2, Settings } from 'lucide-react';
+import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircle, Undo2, Redo2, Settings, Upload } from 'lucide-react';
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
 
@@ -296,7 +296,7 @@ export function MenuBar({
           {activeMenu === 'export' && (
             <div className="absolute top-full left-0 mt-1 w-52 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button onClick={() => executeAction(biliup.open)} disabled={isWebMode} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} disabled:opacity-50`}>
-                <Settings size={14} /> {t('biliup.settings')}
+                <Upload size={14} /> {t('biliup.settings')}
               </button>
               <button onClick={() => executeAction(onExportAss)} disabled={!projectPath} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} ${!projectPath ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <Subtitles size={14} /> {t('menu.exportAss')}
