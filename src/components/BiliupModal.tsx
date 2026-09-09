@@ -286,7 +286,7 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
       <input aria-label={t('biliup.directory')} value={directory} onChange={(event) => setDirectoryDraft({ base: biliup.preferences.directory, value: event.target.value })} onBlur={saveDirectory}
         disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving}
         className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' }} />
-      <button type="button" className="inline-flex shrink-0 items-center gap-1.5 border rounded px-2.5 py-1.5 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={14} />{t('biliup.chooseDirectory')}</button>
+      <button type="button" className="inline-flex shrink-0 items-center gap-1.5 border rounded px-2.5 py-1 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={14} />{t('biliup.chooseDirectory')}</button>
     </div>
     <p className="text-xs opacity-70">{t(window.electron ? 'biliup.directoryHint' : 'biliup.desktopOnly')}</p>
     {window.electron && <p className="text-xs opacity-70">{t('biliup.directoryLoginHint')}</p>}
@@ -626,7 +626,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>
             <div className="flex min-w-0 gap-2">
               <input className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
-              <button type="button" className={`${buttonClass} !px-2.5 !py-1.5 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={chooseCover}><ImagePlus size={14} />{t('biliup.chooseCover')}</button>
+              <button type="button" className={`${buttonClass} !px-2.5 !py-1 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={chooseCover}><ImagePlus size={14} />{t('biliup.chooseCover')}</button>
             </div>
           </label>;
           if (key === 'tag') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><div className="flex items-center justify-between gap-2"><span>{t(`biliup.field.${key}`)}</span><span className="opacity-70">{t('biliup.tagCount', { count: selectedTags.length, max: BILIUP_MAX_TAGS })}</span></div>
@@ -718,7 +718,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <div className="text-sm font-medium">{t('biliup.uploadVideo')}</div>
           <div className="flex min-w-0 gap-2">
             <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={handleUploadPathDrop} className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} />
-            <button type="button" className={`${buttonClass} !px-2.5 !py-1.5 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseVideo')}</button>
+            <button type="button" className={`${buttonClass} !px-2.5 !py-1 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseVideo')}</button>
           </div>
           <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !canUploadDraft || !isVideoPath(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
         </div>
