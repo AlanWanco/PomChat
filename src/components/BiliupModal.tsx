@@ -525,6 +525,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     { label: t('biliup.field.submit'), value: uploadConfirmation.template.submit || 'app' },
     { label: t('biliup.field.dtime'), value: uploadConfirmation.template.dtime || t('biliup.default') },
     { label: t('biliup.field.limit'), value: String(uploadConfirmation.template.limit) },
+    { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.enabled') : t('biliup.disabled') },
   ] : [];
 
   return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => event.stopPropagation()}>
