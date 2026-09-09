@@ -121,11 +121,14 @@ interface BiliupDateTimePickerProps {
   placeholder: string;
   previousMonthLabel: string;
   nextMonthLabel: string;
+  confirmLabel: string;
+  confirmDisabled?: boolean;
   disabled?: boolean;
   onChange: (value: string) => void;
+  onConfirm: () => void;
 }
 
-function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isDarkMode, themeColor, secondaryThemeColor, placeholder, previousMonthLabel, nextMonthLabel, disabled = false, onChange }: BiliupDateTimePickerProps) {
+function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isDarkMode, themeColor, secondaryThemeColor, placeholder, previousMonthLabel, nextMonthLabel, confirmLabel, confirmDisabled = false, disabled = false, onChange, onConfirm }: BiliupDateTimePickerProps) {
   const theme = createThemeTokens(themeColor, isDarkMode);
   const pickerRef = useRef<HTMLDivElement>(null);
   const fallbackTimestamp = clampScheduleTimestamp(minTimestamp, minTimestamp, maxTimestamp);
@@ -212,6 +215,7 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
           {Array.from({ length: 60 }, (_, minute) => <option key={minute} value={minute} disabled={!canSelectTime(currentDate.getHours(), minute)}>{padDatePart(minute)}</option>)}
         </select>
       </div>
+      <button type="button" className="mt-4 w-full rounded-xl border px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40" disabled={disabled || confirmDisabled} onClick={() => { onConfirm(); setOpen(false); }} style={confirmDisabled ? { backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.textMuted } : { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 5px 14px ${secondaryThemeColor}44` }}>{confirmLabel}</button>
       <div className="mt-3 flex items-center justify-between text-[0.6875rem] opacity-60"><span>{language === 'zh-CN' ? '可选范围' : 'Available range'}</span><span>{new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' }).format(minDate)} – {new Intl.DateTimeFormat(language === 'zh-CN' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' }).format(maxDate)}</span></div>
     </div>}
   </div>;
@@ -639,10 +643,9 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <label className="text-xs space-y-1 sm:col-span-2"><span>{t('biliup.field.dtime')}</span>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-              <BiliupDateTimePicker value={pendingSchedule ?? draft.dtime} minTimestamp={scheduleBounds.min} maxTimestamp={scheduleBounds.max} language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} placeholder={t('biliup.schedulePlaceholder')} previousMonthLabel={t('biliup.previousMonth')} nextMonthLabel={t('biliup.nextMonth')} disabled={templateBusy} onChange={(value) => setPendingSchedule(value)} />
+              <BiliupDateTimePicker value={pendingSchedule ?? draft.dtime} minTimestamp={scheduleBounds.min} maxTimestamp={scheduleBounds.max} language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} placeholder={t('biliup.schedulePlaceholder')} previousMonthLabel={t('biliup.previousMonth')} nextMonthLabel={t('biliup.nextMonth')} confirmLabel={t('biliup.confirmSchedule')} confirmDisabled={pendingSchedule === null} disabled={templateBusy} onChange={(value) => setPendingSchedule(value)} onConfirm={() => { if (pendingSchedule !== null) { set('dtime', pendingSchedule); setPendingSchedule(null); } }} />
               <button type="button" className={`${buttonClass} shrink-0`} style={buttonStyle} disabled={templateBusy || (pendingSchedule === null && !draft.dtime)} onClick={() => setPendingSchedule('')}>{t('biliup.clearSchedule')}</button>
             </div>
-            <button type="button" className={`${buttonClass} w-full !rounded-full py-2`} style={pendingSchedule !== null ? primaryButtonStyle : buttonStyle} disabled={templateBusy || pendingSchedule === null} onClick={() => { if (pendingSchedule === null) return; set('dtime', pendingSchedule); setPendingSchedule(null); }}>{t('biliup.confirmSchedule')}</button>
           </div>
           <span className="block opacity-70">{t('biliup.scheduleHint')}</span>
         </label>
@@ -655,10 +658,6 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <label className="space-y-1 text-xs"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.limit')}<Tooltip content={t('biliup.limitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
           <input type="number" min={1} max={32} className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.limit} onChange={(event) => set('limit', Number(event.target.value))} />
         </label>
-        <button type="button" role="switch" aria-checked={draft.interactive === 1} aria-label={t('biliup.field.interactive')} disabled={templateBusy} onClick={() => set('interactive', draft.interactive === 1 ? 0 : 1)} className="flex min-h-[2.5rem] w-full items-center justify-between gap-2 self-end rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50" style={{ backgroundColor: draft.interactive === 1 ? `${secondaryThemeColor}14` : theme.panelBgSubtle, borderColor: draft.interactive === 1 ? `${secondaryThemeColor}55` : theme.border, color: theme.text }}>
-          <span className="flex min-h-4 items-center gap-1 text-left">{t('biliup.field.interactive')}<Tooltip content={t('biliup.interactiveHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
-          <span className="shrink-0 opacity-70">{draft.interactive === 1 ? t('biliup.yes') : t('biliup.no')}</span>
-        </button>
         <div className="text-xs space-y-1"><span className="block">{t('biliup.field.isOnlySelf')}</span>
           <div role="radiogroup" aria-label={t('biliup.field.isOnlySelf')} className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
             <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.isOnlySelf === '1' ? 'translateX(100%)' : 'translateX(0)' }} />
@@ -670,6 +669,10 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
             </label>
           </div>
         </div>
+        <button type="button" role="switch" aria-checked={draft.interactive === 1} aria-label={t('biliup.field.interactive')} disabled={templateBusy} onClick={() => set('interactive', draft.interactive === 1 ? 0 : 1)} className="flex min-h-[2.5rem] w-full items-center justify-between gap-2 self-end rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50" style={{ backgroundColor: draft.interactive === 1 ? `${secondaryThemeColor}14` : theme.panelBgSubtle, borderColor: draft.interactive === 1 ? `${secondaryThemeColor}55` : theme.border, color: theme.text }}>
+          <span className="flex min-h-4 items-center gap-1 text-left">{t('biliup.field.interactive')}<Tooltip content={t('biliup.interactiveHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
+          <span className="shrink-0 opacity-70">{draft.interactive === 1 ? t('biliup.yes') : t('biliup.no')}</span>
+        </button>
         <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
           <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
             <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
