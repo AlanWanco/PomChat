@@ -679,7 +679,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           </div>
           <label className="space-y-1 text-xs"><span>{t('biliup.field.source')}</span><input className={singleLineInputClass} style={{ ...surface, opacity: draft.copyright === 2 ? 1 : 0.5 }} disabled={templateBusy || draft.copyright !== 2} value={draft.source} onChange={(event) => set('source', event.target.value)} /></label>
         </div>
-        <label className="space-y-1 text-xs"><span>{t('biliup.field.line')}</span>
+        <label className="space-y-1 text-xs"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.line')}<Tooltip content={t('biliup.lineHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
           <div className="flex min-w-0 gap-2">
             <select className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft.line} onChange={(event) => set('line', event.target.value)}>
               {biliupLines.map((line) => <option key={line} value={line}>{line || t('biliup.default')}</option>)}
@@ -694,7 +694,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <label className="text-xs space-y-1"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.submit')}<Tooltip content={t('biliup.submitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span><select className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
           <option value="app">app</option></select></label>
       </div>
-      <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
+      <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={`${inputClass} my-[3px]`} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
       <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
         <input type="checkbox" disabled={templateBusy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
       <p className="text-xs opacity-70">{t('biliup.templateHint')}</p>
