@@ -645,7 +645,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <input type="checkbox" disabled={templateBusy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
       <p className="text-xs opacity-70">{t('biliup.templateHint')}</p>
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="space-y-2">
           <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={primaryButtonStyle} disabled={busy || !biliup.loaded} onClick={() => void perform(async () => {
             const error = validateBiliupTemplate(draft) || validateBiliupSchedule(draft.dtime); if (error) throw new Error(error);
             const next = { ...draft, id: draft.id || crypto.randomUUID() };
@@ -653,7 +653,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
             await biliup.save({ ...preferences, selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
             setDraft(next); setSaved(true);
           })}>{t('biliup.saveTemplate')}</button>
-          {saved && <span className="text-xs">{t('biliup.saved')}</span>}
+          {saved && <p className="text-center text-xs" style={{ color: secondaryThemeColor }}>{t('biliup.saved')}</p>}
         </div>
         <hr className="my-[27px]" style={{ borderColor: theme.border }} />
         <div className="flex min-w-0 flex-col gap-2">
