@@ -352,7 +352,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' };
   const inputClass = 'w-full border rounded-md px-3 py-2 text-sm disabled:opacity-50 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
   const singleLineInputClass = `${inputClass} my-[3px]`;
-  const buttonClass = 'inline-flex items-center justify-center border rounded px-2.5 py-1 text-xs transition-opacity hover:opacity-80 disabled:opacity-40';
+  const buttonClass = 'inline-flex self-center items-center justify-center border rounded px-2.5 py-1 text-xs transition-opacity hover:opacity-80 disabled:opacity-40';
   const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
   const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
 
