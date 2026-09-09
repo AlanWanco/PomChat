@@ -273,7 +273,7 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
     }
   })();
   return <div className="space-y-3">
-    <label className="block text-xs font-medium">{t('biliup.account')}</label>
+    <label className="block text-sm font-medium">{t('biliup.account')}</label>
     <div className="flex min-w-0 items-center gap-2">
       {accounts.length > 0 && <select aria-label={t('biliup.account')} value={selectedAccount?.id || ''} onChange={(event) => switchAccount(event.target.value)} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' }}>
         {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
@@ -605,7 +605,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
       </div>}
       <hr style={{ borderColor: theme.border }} />
-      <label className="block text-xs font-medium">{t('biliup.uploadTemplate')}</label>
+      <label className="block text-sm font-medium">{t('biliup.uploadTemplate')}</label>
       <div className="flex gap-2">
         <select aria-label={t('biliup.templateSettings')} className={singleLineInputClass} style={surface} value={draft.id} disabled={templateBusy} onChange={(event) => {
           setSaved(false); setPendingSchedule(null); setDraft({ ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) });
