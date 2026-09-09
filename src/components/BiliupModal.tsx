@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Clock3, FolderOpen, ImagePlus, Info, Trash2, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, FolderOpen, ImagePlus, Info, Trash2, Upload, X } from 'lucide-react';
 import {
   BILIUP_MAX_TAG_HISTORY,
   BILIUP_MAX_TAGS,
@@ -309,6 +309,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const [tagInput, setTagInput] = useState('');
   const [uploadFilePath, setUploadFilePath] = useState('');
   const [uploadFileError, setUploadFileError] = useState('');
+  const [uploadConfirmation, setUploadConfirmation] = useState<{ template: BiliupTemplate; filePath: string } | null>(null);
   const [activeUploadTitle, setActiveUploadTitle] = useState('');
   const [saved, setSaved] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
@@ -365,10 +366,15 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     onClose();
   }, [onClose, state.busy, t]);
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); requestClose(); } };
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      if (uploadConfirmation) setUploadConfirmation(null);
+      else requestClose();
+    };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [requestClose]);
+  }, [requestClose, uploadConfirmation]);
 
   const perform = useCallback(async (action: () => Promise<void>) => {
     setWorking(true); biliup.setError('');
@@ -490,28 +496,35 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     setUploadFilePath(path);
     setUploadFileError('');
   };
-  const uploadSelectedFile = () => void perform(async () => {
+  const uploadSelectedFile = () => {
     if (!canUploadDraft || !isVideoPath(uploadFilePath)) return;
-    const template = { ...draft };
-    const uploadConfig = [
-      `${t('biliup.templateSettings')}: ${template.name || '—'}`,
-      `${t('biliup.field.title')}: ${template.title}`,
-      `${t('biliup.field.tag')}: ${template.tag}`,
-      `${t('biliup.field.tid')}: ${template.tid}`,
-      `${t('biliup.field.copyright')}: ${template.copyright === 1 ? t('biliup.original') : t('biliup.repost')}`,
-      `${t('biliup.field.line')}: ${template.line || t('biliup.default')}`,
-      `${t('biliup.field.submit')}: ${template.submit || 'app'}`,
-      `${t('biliup.field.dtime')}: ${template.dtime || t('biliup.default')}`,
-      `${t('biliup.videoFiles')}: ${uploadFilePath}`,
-    ].join('\n');
-    if (!window.confirm(`${t('biliup.uploadConfirm')}\n\n${uploadConfig}`)) return;
+    setUploadConfirmation({ template: { ...draft }, filePath: uploadFilePath });
+  };
+  const confirmUpload = () => {
+    if (!uploadConfirmation) return;
+    const { template, filePath } = uploadConfirmation;
+    setUploadConfirmation(null);
     setActiveUploadTitle(template.title);
-    await biliup.upload({ directory: preferences.directory, template }, uploadFilePath);
-  });
+    void perform(async () => {
+      await biliup.upload({ directory: preferences.directory, template }, filePath);
+    });
+  };
   const testUploadLines = () => void perform(async () => {
     setLineTests(unwrapBiliup(await window.electron.biliup.testLines()));
   });
   const scheduleBounds = getScheduleBounds();
+  const confirmationDetails = uploadConfirmation ? [
+    { label: t('biliup.field.name'), value: uploadConfirmation.template.name || '—' },
+    { label: t('biliup.field.title'), value: uploadConfirmation.template.title || '—', wide: true },
+    { label: t('biliup.field.tag'), value: uploadConfirmation.template.tag || t('biliup.default'), wide: true },
+    { label: t('biliup.field.tid'), value: String(uploadConfirmation.template.tid) },
+    { label: t('biliup.field.copyright'), value: uploadConfirmation.template.copyright === 1 ? t('biliup.original') : t('biliup.repost') },
+    ...(uploadConfirmation.template.copyright === 2 ? [{ label: t('biliup.field.source'), value: uploadConfirmation.template.source || '—', wide: true }] : []),
+    { label: t('biliup.field.line'), value: uploadConfirmation.template.line || t('biliup.default') },
+    { label: t('biliup.field.submit'), value: uploadConfirmation.template.submit || 'app' },
+    { label: t('biliup.field.dtime'), value: uploadConfirmation.template.dtime || t('biliup.default') },
+    { label: t('biliup.field.limit'), value: String(uploadConfirmation.template.limit) },
+  ] : [];
 
   return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => event.stopPropagation()}>
     <section role="dialog" aria-modal="true" aria-label={t('biliup.settings')} className="flex w-full max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-[28px] border shadow-2xl"
@@ -670,5 +683,38 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
       </div>
     </section>
+    {uploadConfirmation && <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) setUploadConfirmation(null); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="biliup-upload-confirm-title" className="flex w-full max-w-2xl max-h-[86vh] flex-col overflow-hidden rounded-[26px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}44`, color: theme.text }} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}35`, color: secondaryThemeColor }}><Upload size={18} /></span>
+            <div className="min-w-0">
+              <h3 id="biliup-upload-confirm-title" className="text-xl font-semibold">{t('biliup.uploadConfirmTitle')}</h3>
+              <p className="mt-1 text-sm" style={{ color: theme.textMuted }}>{t('biliup.uploadConfirm')}</p>
+            </div>
+          </div>
+          <button type="button" className="rounded-full p-2 transition-colors hover:opacity-75" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: theme.textMuted }} aria-label={t('settings.close')} onClick={() => setUploadConfirmation(null)}><X size={16} /></button>
+        </header>
+        <div className="min-h-0 space-y-4 overflow-y-auto p-6">
+          <div className="rounded-2xl border p-4" style={{ borderColor: `${secondaryThemeColor}35`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}` }}>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold" style={{ color: secondaryThemeColor }}><span className="inline-flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: `${secondaryThemeColor}20` }}><Check size={13} /></span>{t('biliup.uploadConfirmConfig')}</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {confirmationDetails.map((item) => <div key={item.label} className={item.wide ? 'sm:col-span-2' : ''}>
+                <div className="mb-1 text-xs" style={{ color: theme.textMuted }}>{item.label}</div>
+                <div className="rounded-xl border px-3 py-2 text-sm break-words" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>{item.value}</div>
+              </div>)}
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.cardBg }}>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Upload size={15} style={{ color: secondaryThemeColor }} />{t('biliup.uploadConfirmFile')}</div>
+            <div className="rounded-xl border px-3 py-3 text-sm leading-6 break-all font-mono" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }}>{uploadConfirmation.filePath}</div>
+          </div>
+        </div>
+        <footer className="flex flex-col-reverse gap-2 border-t px-6 py-4 sm:flex-row sm:justify-end" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}08` : `${themeColor}04` }}>
+          <button type="button" className="inline-flex items-center justify-center rounded-full border px-5 py-2.5 text-sm transition-opacity hover:opacity-80" style={{ backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.text }} onClick={() => setUploadConfirmation(null)}>{t('biliup.editUpload')}</button>
+          <button type="button" className="inline-flex items-center justify-center gap-2 rounded-full border px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40" style={primaryButtonStyle} disabled={busy} onClick={confirmUpload}><Check size={15} />{t('biliup.confirmUpload')}</button>
+        </footer>
+      </section>
+    </div>}
   </div>, document.body);
 }
