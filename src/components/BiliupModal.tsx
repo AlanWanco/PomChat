@@ -50,10 +50,16 @@ function getVideoPathFromFile(file: File | null | undefined) {
   return directPath && isVideoPath(directPath) ? directPath : '';
 }
 
+function extractUriListPath(value: string) {
+  return value.split(/\r?\n/).map((item) => item.trim()).find((item) => item && !item.startsWith('#')) || '';
+}
+
 function extractClipboardVideoPath(event: ClipboardEvent<HTMLInputElement>) {
   const fileItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file');
   const directPath = getVideoPathFromFile(fileItem?.getAsFile());
   if (directPath) return directPath;
+  const uriPath = normalizeLocalPath(extractUriListPath(event.clipboardData?.getData('text/uri-list') || ''));
+  if (isVideoPath(uriPath)) return uriPath;
   const textPath = normalizeLocalPath(event.clipboardData?.getData('text/plain')?.trim() || '');
   return isVideoPath(textPath) ? textPath : '';
 }
@@ -456,7 +462,8 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     const clipboardItems = Array.from(event.clipboardData?.items || []);
     const hasFile = clipboardItems.some((item) => item.kind === 'file');
     const text = event.clipboardData?.getData('text/plain')?.trim() || '';
-    if (!hasFile && !text) return;
+    const uriList = event.clipboardData?.getData('text/uri-list')?.trim() || '';
+    if (!hasFile && !text && !uriList) return;
     event.preventDefault();
     const path = extractClipboardVideoPath(event);
     if (!path) {
@@ -472,8 +479,9 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     event.stopPropagation();
     const file = event.dataTransfer.files[0] || Array.from(event.dataTransfer.items).find((item) => item.kind === 'file')?.getAsFile();
     const directPath = getVideoPathFromFile(file);
+    const uriPath = normalizeLocalPath(extractUriListPath(event.dataTransfer.getData('text/uri-list') || ''));
     const textPath = normalizeLocalPath(event.dataTransfer.getData('text/plain')?.trim() || '');
-    const path = directPath || (isVideoPath(textPath) ? textPath : '');
+    const path = directPath || (isVideoPath(uriPath) ? uriPath : '') || (isVideoPath(textPath) ? textPath : '');
     if (!path) {
       setUploadFilePath('');
       setUploadFileError(t('biliup.videoInvalid'));

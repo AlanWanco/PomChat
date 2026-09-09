@@ -32,6 +32,7 @@ try {
   assert(isBiliupVideoPath('C:\\Videos\\clip.mp4'));
   assert(isBiliupVideoPath('/tmp/clip.mkv'));
   assert(isBiliupVideoPath('/tmp/clip.webm'));
+  assert(isBiliupVideoPath('/Volumes/SSK/LocalSend/「鬼頭明里のふくみみラジオ」#066.mp4'));
   assert(!isBiliupVideoPath('/tmp/clip.txt'));
   assert.equal(newBiliupTemplate().tid, 5);
   assert.equal(newBiliupTemplate().submit, 'app');
