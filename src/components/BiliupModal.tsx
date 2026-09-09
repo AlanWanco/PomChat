@@ -525,7 +525,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     { label: t('biliup.field.submit'), value: uploadConfirmation.template.submit || 'app' },
     { label: t('biliup.field.dtime'), value: uploadConfirmation.template.dtime || t('biliup.default') },
     { label: t('biliup.field.limit'), value: String(uploadConfirmation.template.limit) },
-    { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.enabled') : t('biliup.disabled') },
+    { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.onlySelf') : t('biliup.public') },
   ] : [];
 
   return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => event.stopPropagation()}>
@@ -638,8 +638,16 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </label>
         <label className="text-xs space-y-1"><span className="flex items-center gap-1">{t('biliup.field.submit')}<Tooltip content={t('biliup.submitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex cursor-help rounded-full p-0.5 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span><select className={inputClass} style={surface} disabled={templateBusy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
           <option value="app">app</option></select></label>
-        <label className="text-xs space-y-1"><span>{t('biliup.field.isOnlySelf')}</span><select className={inputClass} style={surface} disabled={templateBusy} value={draft.isOnlySelf} onChange={(event) => set('isOnlySelf', event.target.value as BiliupTemplate['isOnlySelf'])}>
-          {['', '0', '1'].map((value) => <option key={value} value={value}>{value === '' ? t('biliup.default') : value === '1' ? t('biliup.enabled') : t('biliup.disabled')}</option>)}</select></label>
+        <div className="text-xs space-y-1"><span className="block">{t('biliup.field.isOnlySelf')}</span>
+          <div role="radiogroup" aria-label={t('biliup.field.isOnlySelf')} className="flex overflow-hidden rounded-md border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
+            <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md px-3 py-2 text-sm transition-colors" style={draft.isOnlySelf === '1' ? { color: theme.textMuted } : { backgroundColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 4px 12px ${secondaryThemeColor}44` }}>
+              <input type="radio" name="biliup-visibility" value="public" checked={draft.isOnlySelf !== '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '')} className="sr-only" />{t('biliup.public')}
+            </label>
+            <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md px-3 py-2 text-sm transition-colors" style={draft.isOnlySelf === '1' ? { backgroundColor: secondaryThemeColor, color: '#ffffff', boxShadow: `0 4px 12px ${secondaryThemeColor}44` } : { color: theme.textMuted }}>
+              <input type="radio" name="biliup-visibility" value="only-self" checked={draft.isOnlySelf === '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '1')} className="sr-only" />{t('biliup.onlySelf')}
+            </label>
+          </div>
+        </div>
       </div>
       <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
       <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
