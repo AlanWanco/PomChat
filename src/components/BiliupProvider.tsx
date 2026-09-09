@@ -1,38 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   emptyBiliupPreferences, idleBiliupState, validateBiliupSchedule, validateBiliupTemplate,
-  type BiliupPreferences, type BiliupState, type BiliupResult, type BiliupUploadPlan,
+  type BiliupPreferences, type BiliupUploadPlan,
 } from '../biliup';
-import { translate, type Language } from '../i18n';
+import { translate } from '../i18n';
+import { BiliupContext, type BiliupAppearance, type BiliupContextValue, unwrapBiliup } from './BiliupContext';
 import { BiliupModal } from './BiliupModal';
 
-export function unwrapBiliup<T>(result: BiliupResult<T>): T {
-  if (!result.ok) throw new Error(result.error || 'input');
-  return result.value as T;
-}
-interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
-interface BiliupContextValue {
-  preferences: BiliupPreferences;
-  state: BiliupState;
-  loaded: boolean;
-  autoUpload: boolean;
-  error: string;
-  canAutoUpload: boolean;
-  open: () => void;
-  setAutoUpload: (enabled: boolean) => void;
-  setError: (error: string) => void;
-  setAppearance: (appearance: Appearance) => void;
-  save: (preferences: BiliupPreferences) => Promise<void>;
-  prepare: (format: string) => Promise<BiliupUploadPlan | null>;
-  upload: (plan: BiliupUploadPlan, filePath: string) => Promise<void>;
-}
-const BiliupContext = createContext<BiliupContextValue | null>(null);
-export function useBiliup() {
-  const context = useContext(BiliupContext);
-  if (!context) throw new Error('BiliupProvider missing');
-  return context;
-}
+// Keep the old import path available during Vite HMR and for existing consumers.
+export { unwrapBiliup, useBiliup } from './BiliupContext';
+
+type Appearance = BiliupAppearance;
 
 export function BiliupProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(emptyBiliupPreferences);
@@ -42,6 +21,7 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [focusUpload, setFocusUpload] = useState(false);
   const [error, setError] = useState('');
+  const notifiedUploadBvid = useRef('');
   const [appearance, setAppearance] = useState<Appearance>({ language: 'zh-CN', isDarkMode: false, themeColor: '#9ca4b8', secondaryThemeColor: '#ed7e96' });
   const selected = preferences.templates.find((t) => t.id === preferences.selectedTemplateId);
   const canAutoUpload = Boolean(window.electron && loaded && preferences.directory.trim() && selected && !validateBiliupTemplate(selected) && !validateBiliupSchedule(selected.dtime));
@@ -77,6 +57,17 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     });
   }, [canAutoUpload, loaded, preferences, save]);
 
+  useEffect(() => {
+    if (state.kind !== 'upload') return;
+    if (state.phase === 'uploading') {
+      notifiedUploadBvid.current = '';
+      return;
+    }
+    if (state.phase !== 'success' || !state.bvid || notifiedUploadBvid.current === state.bvid || !window.electron) return;
+    notifiedUploadBvid.current = state.bvid;
+    void window.electron.showNotification({ title: 'PomChat', body: translate(appearance.language, 'biliup.uploadSuccess') }).catch(() => {});
+  }, [appearance.language, state.bvid, state.kind, state.phase]);
+
   const prepare = async (format: string): Promise<BiliupUploadPlan | null> => {
     if (!autoUpload) return null;
     if (!canAutoUpload || !selected) throw new Error(validateBiliupSchedule(selected?.dtime || '') || 'template');
@@ -92,7 +83,6 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     setError('');
     try {
       unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath }));
-      void window.electron.showNotification({ title: 'PomChat', body: translate(appearance.language, 'biliup.uploadSuccess') }).catch(() => {});
     }
     catch (failure) {
       const code = failure instanceof Error ? failure.message : 'upload';

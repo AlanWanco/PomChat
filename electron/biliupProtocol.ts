@@ -17,6 +17,10 @@ export function extractBiliupProgressDetails(text: string): string {
   return `${match[1]}${match[2] ? ` · ${match[2].split(',').map((part) => part.trim()).filter(Boolean).join(' · ')}` : ''}`;
 }
 
+export function extractBiliupBvid(text: string): string | null {
+  return plainTerminalLine(text).match(/\bBV[0-9A-Za-z]{10}\b/)?.[0] || null;
+}
+
 export function parseBiliupProgress(text: string): number | null {
   const line = plainTerminalLine(text);
   const match = line.match(/([\d.]+)\s*(B|[KMGT]i?B)\s*\/\s*([\d.]+)\s*(B|[KMGT]i?B)/i);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, Clock3, FolderOpen, ImagePlus, Info, Trash2, X } from 'lucide-react';
 import {
@@ -21,7 +21,7 @@ import {
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
-import { unwrapBiliup, useBiliup } from './BiliupProvider';
+import { unwrapBiliup, useBiliup } from './BiliupContext';
 
 interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
 
@@ -45,11 +45,15 @@ function isVideoPath(value: string) {
   return !/^(?:https?|blob|data):/i.test(path) && isBiliupVideoPath(path);
 }
 
+function getVideoPathFromFile(file: File | null | undefined) {
+  const directPath = file && window.electron ? window.electron.getDroppedFilePath(file) : '';
+  return directPath && isVideoPath(directPath) ? directPath : '';
+}
+
 function extractClipboardVideoPath(event: ClipboardEvent<HTMLInputElement>) {
   const fileItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file');
-  const file = fileItem?.getAsFile();
-  const directPath = file && window.electron ? window.electron.getDroppedFilePath(file) : '';
-  if (directPath && isVideoPath(directPath)) return directPath;
+  const directPath = getVideoPathFromFile(fileItem?.getAsFile());
+  if (directPath) return directPath;
   const textPath = normalizeLocalPath(event.clipboardData?.getData('text/plain')?.trim() || '');
   return isVideoPath(textPath) ? textPath : '';
 }
@@ -299,6 +303,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const [tagInput, setTagInput] = useState('');
   const [uploadFilePath, setUploadFilePath] = useState('');
   const [uploadFileError, setUploadFileError] = useState('');
+  const [activeUploadTitle, setActiveUploadTitle] = useState('');
   const [saved, setSaved] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const uploadSectionRef = useRef<HTMLDivElement>(null);
@@ -420,6 +425,8 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
   const textFields = ['name', 'title', 'tag', 'cover', 'dynamic', 'missionId'] as const;
   const savedTemplate = preferences.templates.find((item) => item.id === preferences.selectedTemplateId);
+  const draftValidationError = validateBiliupTemplate(draft) || validateBiliupSchedule(draft.dtime);
+  const canUploadDraft = Boolean(window.electron && biliup.loaded && preferences.directory.trim() && !draftValidationError);
   const showManualCaptchaInput = ['captchaChallenge', 'captchaValidate'].includes(state.phase) && ['attachFailed', 'viewClosed'].includes(state.captchaStatus);
   const selectedTags = splitBiliupTags(draft.tag);
   const addTags = (values: string[]) => {
@@ -460,10 +467,38 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     setUploadFilePath(path);
     setUploadFileError('');
   };
+  const handleUploadPathDrop = (event: DragEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = event.dataTransfer.files[0] || Array.from(event.dataTransfer.items).find((item) => item.kind === 'file')?.getAsFile();
+    const directPath = getVideoPathFromFile(file);
+    const textPath = normalizeLocalPath(event.dataTransfer.getData('text/plain')?.trim() || '');
+    const path = directPath || (isVideoPath(textPath) ? textPath : '');
+    if (!path) {
+      setUploadFilePath('');
+      setUploadFileError(t('biliup.videoInvalid'));
+      return;
+    }
+    setUploadFilePath(path);
+    setUploadFileError('');
+  };
   const uploadSelectedFile = () => void perform(async () => {
-    if (!savedTemplate || !isVideoPath(uploadFilePath)) return;
-    if (!window.confirm(`${t('biliup.uploadConfirm')}\n${savedTemplate.name}`)) return;
-    await biliup.upload({ directory: preferences.directory, template: { ...savedTemplate } }, uploadFilePath);
+    if (!canUploadDraft || !isVideoPath(uploadFilePath)) return;
+    const template = { ...draft };
+    const uploadConfig = [
+      `${t('biliup.templateSettings')}: ${template.name || '—'}`,
+      `${t('biliup.field.title')}: ${template.title}`,
+      `${t('biliup.field.tag')}: ${template.tag}`,
+      `${t('biliup.field.tid')}: ${template.tid}`,
+      `${t('biliup.field.copyright')}: ${template.copyright === 1 ? t('biliup.original') : t('biliup.repost')}`,
+      `${t('biliup.field.line')}: ${template.line || t('biliup.default')}`,
+      `${t('biliup.field.submit')}: ${template.submit || 'app'}`,
+      `${t('biliup.field.dtime')}: ${template.dtime || t('biliup.default')}`,
+      `${t('biliup.videoFiles')}: ${uploadFilePath}`,
+    ].join('\n');
+    if (!window.confirm(`${t('biliup.uploadConfirm')}\n\n${uploadConfig}`)) return;
+    setActiveUploadTitle(template.title);
+    await biliup.upload({ directory: preferences.directory, template }, uploadFilePath);
   });
   const testUploadLines = () => void perform(async () => {
     setLineTests(unwrapBiliup(await window.electron.biliup.testLines()));
@@ -598,17 +633,18 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           })}>{t('biliup.saveTemplate')}</button>
           {saved && <span className="text-xs">{t('biliup.saved')}</span>}
         </div>
+        <hr className="my-3" style={{ borderColor: theme.border }} />
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 gap-2">
-            <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} className={`${inputClass} min-w-0 flex-1`} style={surface} />
+            <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={handleUploadPathDrop} className={`${inputClass} min-w-0 flex-1`} style={surface} />
             <button type="button" className={`${buttonClass} inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={14} />{t('biliup.chooseVideo')}</button>
           </div>
-          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !biliup.canAutoUpload || !isVideoPath(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
+          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !canUploadDraft || !isVideoPath(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
         </div>
         {uploadFileError && <p className="text-xs text-red-500">{uploadFileError}</p>}
         <p className="text-xs opacity-70">{t('biliup.uploadHint')}</p>
       </div>
-      <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {savedTemplate?.name || '—'}</p>
+      <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {draft.name || '—'}</p>
       <div ref={uploadSectionRef} className="space-y-2">
         <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
         {state.kind === 'upload' && <>
@@ -619,7 +655,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </>}
         <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 select-text overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{state.logs.join('\n') || t('biliup.consoleHint')}</pre>
         {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}
-        {state.bvid && <p className="text-sm select-text">{[state.bvid, savedTemplate?.title].filter(Boolean).join(' · ')}</p>}
+        {state.bvid && <p className="text-sm select-text">{[state.bvid, activeUploadTitle || savedTemplate?.title].filter(Boolean).join(' · ')}</p>}
         <button className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={!state.busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>
         </div>
         </div>

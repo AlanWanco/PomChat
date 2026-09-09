@@ -10,7 +10,7 @@ import {
   idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
   type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
-import { buildBiliupUploadArgs, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
+import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
 
 const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
@@ -312,8 +312,9 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     if (job.temporary) await fs.rm(job.temporary, { recursive: true, force: true }).catch(() => {});
     if (active !== job) return;
     active = null;
-    const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : undefined);
-    const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload';
+    const uploadMissingBvid = state.kind === 'upload' && !job.cancelled && !job.forcedError && exitCode === 0 && !state.bvid;
+    const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : uploadMissingBvid ? 'upload' : undefined);
+    const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload' && Boolean(state.bvid);
     update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
       qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: '' });
   }
@@ -349,7 +350,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
         if (/^(path|home|userprofile|systemroot|windir|comspec|temp|tmp|tmpdir|appdata|localappdata|programdata|http_proxy|https_proxy|all_proxy|no_proxy)$/i.test(key) && value) env[key] = value;
       }
       job.pty = pty.spawn(info.binary, args, { cwd: info.directory, name: 'xterm-256color', cols: 160, rows: 40, env });
-      job.pty.onExit(({ exitCode }) => { void finish(job, exitCode); });
+      job.pty.onExit(({ exitCode }) => { setImmediate(() => { void finish(job, exitCode); }); });
       return job.pty;
     } catch { return fail('native'); }
   }
@@ -604,11 +605,11 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
         for (const raw of lines) {
           const line = redactBiliupLine(raw, auth.secrets).trim();
           if (!line) continue;
+          const bvid = extractBiliupBvid(line);
           const progress = parseBiliupProgress(line);
           if (progress !== null) {
-            state = { ...state, progress, progressText: extractBiliupProgressDetails(line) };
+            state = { ...state, bvid: bvid || state.bvid, progress, progressText: extractBiliupProgressDetails(line) };
           } else {
-            const bvid = line.match(/\bBV[0-9A-Za-z]{10}\b/)?.[0];
             state = { ...state, bvid: bvid || state.bvid, logs: [...state.logs, line].slice(-300) };
           }
         }
@@ -617,7 +618,9 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       child.onExit(() => {
         if (partial.trim()) {
           const line = redactBiliupLine(partial, auth.secrets);
-          if (parseBiliupProgress(line) === null) state = { ...state, logs: [...state.logs, line].slice(-300) };
+          const bvid = extractBiliupBvid(line);
+          if (parseBiliupProgress(line) === null) state = { ...state, bvid: bvid || state.bvid, logs: [...state.logs, line].slice(-300) };
+          else if (bvid) state = { ...state, bvid };
         }
       });
     } catch (error) {

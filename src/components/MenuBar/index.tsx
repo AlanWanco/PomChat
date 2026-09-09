@@ -3,7 +3,7 @@ import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircl
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
 
-import { useBiliup } from '../BiliupProvider';
+import { useBiliup } from '../BiliupContext';
 
 interface MenuBarProps {
   isDarkMode: boolean;

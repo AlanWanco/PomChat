@@ -23,7 +23,7 @@ import type { BackgroundSlideItem } from './remotion/types';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
 import { buildAssContent } from './assExport';
 import './App.css';
-import { useBiliup } from './components/BiliupProvider';
+import { useBiliup } from './components/BiliupContext';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
