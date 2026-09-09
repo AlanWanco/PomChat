@@ -286,7 +286,7 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
       <input aria-label={t('biliup.directory')} value={directory} onChange={(event) => setDirectoryDraft({ base: biliup.preferences.directory, value: event.target.value })} onBlur={saveDirectory}
         disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving}
         className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' }} />
-      <button type="button" className="inline-flex shrink-0 items-center gap-1.5 border rounded px-2.5 py-1.5 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={12} />{t('biliup.chooseDirectory')}</button>
+      <button type="button" className="inline-flex self-center shrink-0 items-center gap-1.5 border rounded px-2.5 py-1.5 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={12} />{t('biliup.chooseDirectory')}</button>
     </div>
     <p className="text-xs opacity-70">{t(window.electron ? 'biliup.directoryHint' : 'biliup.desktopOnly')}</p>
     {window.electron && <p className="text-xs opacity-70">{t('biliup.directoryLoginHint')}</p>}
