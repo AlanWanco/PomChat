@@ -74,7 +74,7 @@ export function Tooltip({
   return (
     <span
       ref={triggerRef}
-      className={className}
+      className={`m-0 ${className}`}
       onMouseEnter={() => setVisible(true)}
       onMouseLeave={() => setVisible(false)}
       onFocus={() => setVisible(true)}

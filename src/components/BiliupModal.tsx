@@ -655,10 +655,21 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         <label className="space-y-1 text-xs"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.limit')}<Tooltip content={t('biliup.limitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
           <input type="number" min={1} max={32} className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.limit} onChange={(event) => set('limit', Number(event.target.value))} />
         </label>
-        <label className="flex min-h-[3.25rem] items-center gap-2 self-end rounded-md border px-3 py-2 text-xs" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
-          <input type="checkbox" checked={draft.interactive === 1} disabled={templateBusy} onChange={(event) => set('interactive', event.target.checked ? 1 : 0)} style={{ accentColor: secondaryThemeColor }} />
-          <span className="flex min-h-4 items-center gap-1">{t('biliup.field.interactive')}<Tooltip content={t('biliup.interactiveHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
-        </label>
+        <button type="button" role="switch" aria-checked={draft.interactive === 1} aria-label={t('biliup.field.interactive')} disabled={templateBusy} onClick={() => set('interactive', draft.interactive === 1 ? 0 : 1)} className="flex min-h-[2.5rem] w-full items-center justify-between gap-2 self-end rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50" style={{ backgroundColor: draft.interactive === 1 ? `${secondaryThemeColor}14` : theme.panelBgSubtle, borderColor: draft.interactive === 1 ? `${secondaryThemeColor}55` : theme.border, color: theme.text }}>
+          <span className="flex min-h-4 items-center gap-1 text-left">{t('biliup.field.interactive')}<Tooltip content={t('biliup.interactiveHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
+          <span className="shrink-0 opacity-70">{draft.interactive === 1 ? t('biliup.yes') : t('biliup.no')}</span>
+        </button>
+        <div className="text-xs space-y-1"><span className="block">{t('biliup.field.isOnlySelf')}</span>
+          <div role="radiogroup" aria-label={t('biliup.field.isOnlySelf')} className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
+            <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.isOnlySelf === '1' ? 'translateX(100%)' : 'translateX(0)' }} />
+            <label className="relative z-10 flex-1 cursor-pointer rounded-md px-3 py-2 text-center transition-colors duration-200 focus-within:outline-none" style={draft.isOnlySelf !== '1' ? { color: '#ffffff' } : { color: theme.textMuted }}>
+              <input type="radio" name="biliup-visibility" value="public" checked={draft.isOnlySelf !== '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '')} className="sr-only" />{t('biliup.public')}
+            </label>
+            <label className="relative z-10 flex-1 cursor-pointer rounded-md px-3 py-2 text-center transition-colors duration-200 focus-within:outline-none" style={draft.isOnlySelf === '1' ? { color: '#ffffff' } : { color: theme.textMuted }}>
+              <input type="radio" name="biliup-visibility" value="only-self" checked={draft.isOnlySelf === '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '1')} className="sr-only" />{t('biliup.onlySelf')}
+            </label>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
           <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
             <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
@@ -682,17 +693,6 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </label>
         <label className="text-xs space-y-1"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.submit')}<Tooltip content={t('biliup.submitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span><select className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.submit} onChange={(event) => set('submit', event.target.value as BiliupTemplate['submit'])}>
           <option value="app">app</option></select></label>
-        <div className="text-xs space-y-1"><span className="block">{t('biliup.field.isOnlySelf')}</span>
-          <div role="radiogroup" aria-label={t('biliup.field.isOnlySelf')} className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
-            <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.isOnlySelf === '1' ? 'translateX(100%)' : 'translateX(0)' }} />
-            <label className="relative z-10 flex-1 cursor-pointer rounded-md px-3 py-2 text-center transition-colors duration-200 focus-within:outline-none" style={draft.isOnlySelf !== '1' ? { color: '#ffffff' } : { color: theme.textMuted }}>
-              <input type="radio" name="biliup-visibility" value="public" checked={draft.isOnlySelf !== '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '')} className="sr-only" />{t('biliup.public')}
-            </label>
-            <label className="relative z-10 flex-1 cursor-pointer rounded-md px-3 py-2 text-center transition-colors duration-200 focus-within:outline-none" style={draft.isOnlySelf === '1' ? { color: '#ffffff' } : { color: theme.textMuted }}>
-              <input type="radio" name="biliup-visibility" value="only-self" checked={draft.isOnlySelf === '1'} disabled={templateBusy} onChange={() => set('isOnlySelf', '1')} className="sr-only" />{t('biliup.onlySelf')}
-            </label>
-          </div>
-        </div>
       </div>
       <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={inputClass} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
       <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
