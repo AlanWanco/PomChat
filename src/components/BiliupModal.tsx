@@ -605,6 +605,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
       </div>}
       <hr style={{ borderColor: theme.border }} />
+      <label className="block text-xs font-medium">{t('biliup.uploadTemplate')}</label>
       <div className="flex gap-2">
         <select aria-label={t('biliup.templateSettings')} className={singleLineInputClass} style={surface} value={draft.id} disabled={templateBusy} onChange={(event) => {
           setSaved(false); setPendingSchedule(null); setDraft({ ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) });
