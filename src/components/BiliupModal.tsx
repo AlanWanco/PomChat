@@ -614,7 +614,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           {preferences.templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
         <Tooltip content={t('biliup.delete')} placement="top" width={96} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text} className="inline-flex shrink-0">
-          <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="inline-flex h-9 w-9 items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={templateBusy || !draft.id} onClick={() => void perform(async () => {
+          <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="my-[3px] inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={templateBusy || !draft.id} onClick={() => void perform(async () => {
             if (!window.confirm(t('biliup.deleteConfirm'))) return;
             await biliup.save({ ...preferences, templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
             setDraft(newBiliupTemplate());
