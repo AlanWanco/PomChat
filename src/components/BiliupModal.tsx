@@ -517,6 +517,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     { label: t('biliup.field.name'), value: uploadConfirmation.template.name || '—' },
     { label: t('biliup.field.title'), value: uploadConfirmation.template.title || '—', wide: true },
     { label: t('biliup.field.tag'), value: uploadConfirmation.template.tag || t('biliup.default'), wide: true },
+    { label: t('biliup.field.desc'), value: uploadConfirmation.template.desc || t('biliup.default'), wide: true },
     { label: t('biliup.field.tid'), value: String(uploadConfirmation.template.tid) },
     { label: t('biliup.field.copyright'), value: uploadConfirmation.template.copyright === 1 ? t('biliup.original') : t('biliup.repost') },
     ...(uploadConfirmation.template.copyright === 2 ? [{ label: t('biliup.field.source'), value: uploadConfirmation.template.source || '—', wide: true }] : []),
@@ -701,7 +702,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {confirmationDetails.map((item) => <div key={item.label} className={item.wide ? 'sm:col-span-2' : ''}>
                 <div className="mb-1 text-xs" style={{ color: theme.textMuted }}>{item.label}</div>
-                <div className="rounded-xl border px-3 py-2 text-sm break-words" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>{item.value}</div>
+                <div className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl border px-3 py-2 text-sm break-words" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>{item.value}</div>
               </div>)}
             </div>
           </div>
