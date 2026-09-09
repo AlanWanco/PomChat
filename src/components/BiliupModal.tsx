@@ -641,7 +641,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           })}>{t('biliup.saveTemplate')}</button>
           {saved && <span className="text-xs">{t('biliup.saved')}</span>}
         </div>
-        <hr className="my-3" style={{ borderColor: theme.border }} />
+        <hr className="my-[27px]" style={{ borderColor: theme.border }} />
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 gap-2">
             <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={handleUploadPathDrop} className={`${inputClass} min-w-0 flex-1`} style={surface} />
