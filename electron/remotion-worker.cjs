@@ -651,8 +651,8 @@ const runRender = async (config) => {
 
     if (mode === 'gpu') {
       if (process.platform === 'win32') {
-        // Remotion h264 on Windows does not support "required".
-        // Keep GPU preference but allow fallback.
+        // Remotion 4.0.484+ supports NVIDIA NVENC on Windows.
+        // Keep GPU preference but allow the software retry below.
         return { hardwareAcceleration: 'if-possible', gl: 'angle' };
       }
       if (process.platform === 'darwin') {
@@ -677,6 +677,10 @@ const runRender = async (config) => {
     const message = (error && error.message ? error.message : '').toLowerCase();
     return (
       message.includes('hardware acceleration') ||
+      message.includes('nvenc') ||
+      message.includes('nvcuda') ||
+      message.includes('libcuda') ||
+      message.includes('videotoolbox') ||
       message.includes('gpu process') ||
       message.includes('angle') ||
       message.includes('swiftshader')
@@ -751,7 +755,6 @@ const runRender = async (config) => {
         chromiumOptions: {
           disableWebSecurity: true,
           gl: strategy.gl,
-          hardwareAcceleration: strategy.hardwareAcceleration,
         },
       });
 
@@ -761,7 +764,15 @@ const runRender = async (config) => {
             x264Preset: config.x264Preset || 'veryfast',
             crf: config.crf || 20,
           }
-        : {};
+        : !isAlphaExport
+          ? {
+              videoBitrate: `${Math.max(2, Math.round(
+                ({ fast: 6, balance: 10, high: 16 }[config.exportQuality] || 10)
+                * (composition.width * composition.height / (1920 * 1080))
+                * (composition.fps / 30),
+              ))}M`,
+            }
+          : {};
 
       await renderMedia({
         serveUrl,
@@ -783,7 +794,6 @@ const runRender = async (config) => {
         chromiumOptions: {
           disableWebSecurity: true,
           gl: strategy.gl,
-          hardwareAcceleration: strategy.hardwareAcceleration,
         },
         hardwareAcceleration: isAlphaExport ? 'disable' : strategy.hardwareAcceleration,
         onProgress: ({ progress, stitchStage, renderedFrames, encodedFrames }) => {

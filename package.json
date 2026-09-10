@@ -10,18 +10,19 @@
     "dist": "npm run build && npm run prepare-remotion-offline && electron-builder --publish never",
     "lint": "eslint .",
     "test:biliup": "node scripts/test-biliup.mjs",
+    "test:remotion:gpu": "node scripts/test-remotion-gpu.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@remotion/bundler": "^4.0.441",
-    "@remotion/gif": "4.0.441",
-    "@remotion/renderer": "^4.0.441",
+    "@remotion/bundler": "4.0.523",
+    "@remotion/gif": "4.0.523",
+    "@remotion/renderer": "4.0.523",
     "ass-compiler": "^0.1.16",
     "lucide-react": "^1.7.0",
     "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "remotion": "^4.0.441",
+    "remotion": "4.0.523",
     "wavesurfer.js": "^7.12.5"
   },
   "devDependencies": {
