@@ -1181,15 +1181,42 @@ ipcMain.handle('export-video', async (_event, config) => {
             stage: 'Concatenating parallel segments',
           });
 
+          const concatStartedAt = Date.now();
           runConcatMp4([segmentAPath, segmentBPath], outputPath);
+          const concatMs = Date.now() - concatStartedAt;
           const elapsedMs = Date.now() - exportStartedAt;
           const durationSeconds = Math.max(0.1, exportRange.end - exportRange.start);
+          const segmentDiagnostics = segmentResults
+            .filter((entry): entry is PromiseFulfilledResult<any> => entry.status === 'fulfilled')
+            .map((entry) => entry.value?.renderDiagnostics)
+            .filter(Boolean);
+          const actualEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.actualEncoder).filter(Boolean))];
+          const expectedEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.expectedEncoder).filter(Boolean))];
+          const hardwareStates = segmentDiagnostics.map((diagnostics: any) => diagnostics.hardwareAccelerated).filter((value: unknown): value is boolean => typeof value === 'boolean');
+          const renderDiagnostics = {
+            mode: 'parallel-segments',
+            requestedHardware: config?.exportHardware || 'auto',
+            actualEncoders,
+            expectedEncoders,
+            hardwareAccelerated: hardwareStates.length === 2 ? hardwareStates.every(Boolean) : null,
+            browserGls: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.browserGl).filter(Boolean))],
+            fallbackUsed: segmentDiagnostics.some((diagnostics: any) => diagnostics.fallbackUsed),
+            concatMs,
+            segments: segmentDiagnostics,
+          };
+          const encoderLabel = actualEncoders.join(', ') || expectedEncoders.join(', ') || 'unknown';
+          const accelerationLabel = renderDiagnostics.hardwareAccelerated === true
+            ? 'hardware'
+            : renderDiagnostics.hardwareAccelerated === false
+              ? 'software'
+              : 'unconfirmed';
           result = {
             success: true,
             outputPath,
             elapsedMs,
             realTimeFactor: elapsedMs / (durationSeconds * 1000),
-            message: `Exported with parallel segments in ${(elapsedMs / 1000).toFixed(2)}s`,
+            renderDiagnostics,
+            message: `Exported with parallel segments in ${(elapsedMs / 1000).toFixed(2)}s, encoder ${encoderLabel} (${accelerationLabel}), concat ${(concatMs / 1000).toFixed(2)}s`,
             workerDetails: {
               stdout: null,
               stderr: null,
@@ -1215,6 +1242,7 @@ ipcMain.handle('export-video', async (_event, config) => {
       outputPath: result.outputPath,
       elapsedMs: result.elapsedMs,
       realTimeFactor: result.realTimeFactor,
+      renderDiagnostics: result.renderDiagnostics || null,
       message: result.message,
     };
     if (config?.exportLogEnabled) {
@@ -1225,6 +1253,7 @@ ipcMain.handle('export-video', async (_event, config) => {
         elapsedMs: result.elapsedMs ?? Date.now() - exportStartedAt,
         realTimeFactor: result.realTimeFactor ?? null,
         resultMessage: result.message || '',
+        renderDiagnostics: result.renderDiagnostics || null,
         workerStdOut: workerDetails?.stdout ?? null,
         workerStdErr: workerDetails?.stderr ?? null,
       });

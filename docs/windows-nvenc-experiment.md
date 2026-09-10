@@ -86,4 +86,29 @@ npm run test:remotion:gpu -- --gl=swangle
 - Windows：确认主仓库干净、基线为 `e60386a`，Node `26.8.1` / npm `11.19.0`，RTX 3060 Ti（8GB）、驱动 `610.88`。
 - Windows：新版依赖安装、NVENC 短片、完整客户端导出及安装包测试仍待执行；上述环境检查不代表这些测试已通过。
 
+## 导出日志字段
+
+启用导出日志后，成功记录新增 `renderDiagnostics`：
+
+- `requestedHardware`：UI 中选择的 `auto` / `gpu` / `cpu`，只是请求，不是实际结果。
+- `actualEncoder`：Remotion/FFmpeg 报告的实际编码器，例如 `h264_nvenc`、`h264_videotoolbox` 或 `libx264`。
+- `hardwareAccelerated`：实际编码器是否硬件加速；为 `null` 表示没有捕获到编码器诊断，不能据此宣称使用了 GPU。
+- `browserGl`：Chromium 请求的 GL 后端，例如 `angle`；它不等同于物理 GPU 已被使用。
+- `attempts`：每次渲染尝试；GPU 失败并回退时会同时保留 GPU 和 CPU 尝试。
+- `fallbackUsed` / `fallbackReason`：是否发生硬件到 CPU 的回退。
+- `bundleMs`、`attempts[*].phaseMs`、`audioMuxMs`：用于区分 Bundle、Composition 解析、逐帧渲染/编码和音频封装瓶颈。
+- 并行导出额外记录 `segments`、`actualEncoders`、`hardwareAccelerated` 和 `concatMs`。
+
+因此，`exportHardware: "auto"` 加上导出成功并不能证明 NVENC；应以 `actualEncoder: "h264_nvenc"`，并结合 `nvidia-smi dmon` 中的编码器活动为准。
+
+## UI 模式语义
+
+实验分支中的三个选项共用 Remotion `4.0.523`，但选择不同的执行策略：
+
+- `GPU 硬件编码`：请求 ANGLE 与硬件编码器；Windows/Linux 目标为 NVENC，macOS 目标为 VideoToolbox。硬件不可用时按现有安全策略回退到 CPU，并在日志中标明。
+- `CPU 纯软件编码`：禁用浏览器硬件加速，使用 SwiftShader 和软件 `libx264`。这是旧 CPU 路径的执行语义，不会为了保留旧版依赖而在同一安装包内混装 Remotion 版本。
+- `自动选择`：按平台选择策略；Windows/Linux 优先尝试硬件，macOS 当前保持 CPU 默认，最终结果仍以日志为准。
+
+如果需要和旧 Remotion `4.0.441` 做严格基准，应使用主分支或单独的旧依赖 worktree；不要把一个应用内的 UI 选项直接实现成两套 Remotion 依赖。
+
 参考：[Remotion 硬件编码文档](https://www.remotion.dev/docs/hardware-acceleration)。

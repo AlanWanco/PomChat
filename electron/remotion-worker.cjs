@@ -711,6 +711,49 @@ const runRender = async (config) => {
       };
     }
     const durationSeconds = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
+    const expectedEncoderForStrategy = (strategy) => {
+      if (renderCodec === 'h264') {
+        if (strategy.hardwareAcceleration !== 'disable') {
+          if (process.platform === 'darwin') return 'h264_videotoolbox';
+          if (process.platform === 'win32' || process.platform === 'linux') return 'h264_nvenc';
+        }
+        return 'libx264';
+      }
+      if (renderCodec === 'prores') {
+        return strategy.hardwareAcceleration !== 'disable' && process.platform === 'darwin' ? 'prores_videotoolbox' : 'prores_ks';
+      }
+      if (renderCodec === 'vp8') return 'libvpx';
+      return null;
+    };
+    const diagnostics = {
+      requestedHardware: config.exportHardware || 'auto',
+      codec: renderCodec,
+      exportFormat,
+      dimensions: config.dimensions || null,
+      fps: config.fps || null,
+      durationSeconds,
+      renderConcurrency: getRenderConcurrency(config.renderConcurrency),
+      attempts: [],
+      fallbackUsed: false,
+      fallbackReason: null,
+      logMessages: [],
+    };
+    let activeAttempt = null;
+    const collectRemotionLog = ({ previewString }) => {
+      const message = typeof previewString === 'string' ? previewString : '';
+      const encoderMatch = message.match(/Encoder:\s*([^,]+),\s*hardware accelerated:\s*(true|false)/i);
+      if (encoderMatch && activeAttempt) {
+        activeAttempt.actualEncoder = encoderMatch[1].trim();
+        activeAttempt.hardwareAccelerated = encoderMatch[2].toLowerCase() === 'true';
+        return;
+      }
+      if (/Hardware encoder ".+" not available|Hardware accelerated encoding disabled/i.test(message)) {
+        const safeMessage = message.replace(/\s+/g, ' ').trim();
+        if (safeMessage && diagnostics.logMessages.length < 8 && !diagnostics.logMessages.includes(safeMessage)) {
+          diagnostics.logMessages.push(safeMessage);
+        }
+      }
+    };
 
     let lastProgressSentAt = 0;
     let lastProgressValue = -1;
@@ -741,15 +784,32 @@ const runRender = async (config) => {
   };
 
     sendProgress(0.02, 'Bundling Remotion composition', true);
+    const bundleStartedAt = Date.now();
     const serveUrl = await getBundle(bundle);
+    diagnostics.bundleMs = Date.now() - bundleStartedAt;
 
     const renderOnce = async (strategy) => {
+      const attempt = {
+        strategy: strategy.hardwareAcceleration,
+        browserGl: strategy.gl,
+        expectedEncoder: expectedEncoderForStrategy(strategy),
+        actualEncoder: null,
+        hardwareAccelerated: null,
+        quality: null,
+        phaseMs: {},
+        success: false,
+      };
+      diagnostics.attempts.push(attempt);
+      activeAttempt = attempt;
+
       sendProgress(0.12, 'Resolving composition');
+      const compositionStartedAt = Date.now();
       const composition = await selectComposition({
         serveUrl,
         id: 'PodchatRender',
         inputProps,
         logLevel: 'error',
+        onLog: collectRemotionLog,
         binariesDirectory,
         browserExecutable,
         chromiumOptions: {
@@ -757,6 +817,7 @@ const runRender = async (config) => {
           gl: strategy.gl,
         },
       });
+      attempt.phaseMs.composition = Date.now() - compositionStartedAt;
 
       sendProgress(0.2, isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)');
       const qualityOptions = strategy.hardwareAcceleration === 'disable' && !isAlphaExport
@@ -773,7 +834,9 @@ const runRender = async (config) => {
               ))}M`,
             }
           : {};
+      attempt.quality = { ...qualityOptions };
 
+      const renderStartedAt = Date.now();
       await renderMedia({
         serveUrl,
         composition,
@@ -783,7 +846,8 @@ const runRender = async (config) => {
         outputLocation: config.outputPath,
         inputProps,
         overwrite: true,
-        logLevel: 'error',
+        logLevel: 'verbose',
+        onLog: collectRemotionLog,
         concurrency: getRenderConcurrency(config.renderConcurrency),
         imageFormat: renderImageFormat,
         jpegQuality: renderJpegQuality,
@@ -821,6 +885,8 @@ const runRender = async (config) => {
           sendProgress(Math.max(0.2, Math.min(0.99, weightedProgress)), stage);
         },
       });
+      attempt.phaseMs.render = Date.now() - renderStartedAt;
+      attempt.success = true;
 
       return composition;
     };
@@ -833,6 +899,8 @@ const runRender = async (config) => {
     } catch (error) {
       if (usedStrategy.hardwareAcceleration !== 'disable' && isHardwareAccelerationError(error)) {
         console.warn('GPU strategy failed, retrying CPU fallback:', error && error.message ? error.message : error);
+        diagnostics.fallbackUsed = true;
+        diagnostics.fallbackReason = 'GPU or hardware encoder unavailable';
         sendProgress(0.15, 'GPU unavailable, retrying with CPU');
         usedStrategy = cpuFallbackStrategy;
         composition = await renderOnce(usedStrategy);
@@ -843,6 +911,7 @@ const runRender = async (config) => {
 
     if (shouldPostMuxLocalAudio) {
       sendProgress(0.97, 'Muxing audio/video', true);
+      const muxStartedAt = Date.now();
 
       const tempDir = fs.mkdtempSync(path.join(path.dirname(config.outputPath), '.pomchat-postmux-'));
       const silentVideoPath = path.join(tempDir, path.basename(config.outputPath));
@@ -862,7 +931,23 @@ const runRender = async (config) => {
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
+      diagnostics.audioMuxMs = Date.now() - muxStartedAt;
     }
+
+    const finalAttempt = diagnostics.attempts[diagnostics.attempts.length - 1] || null;
+    diagnostics.final = finalAttempt;
+    diagnostics.expectedEncoder = finalAttempt?.expectedEncoder || null;
+    diagnostics.actualEncoder = finalAttempt?.actualEncoder || null;
+    diagnostics.hardwareAccelerated = finalAttempt?.hardwareAccelerated ?? null;
+    diagnostics.browserGl = finalAttempt?.browserGl || null;
+    diagnostics.strategy = finalAttempt?.strategy || null;
+    diagnostics.totalMs = Date.now() - startedAt;
+    const encoderLabel = diagnostics.actualEncoder || diagnostics.expectedEncoder || 'unknown';
+    const accelerationLabel = diagnostics.hardwareAccelerated === true
+      ? 'hardware'
+      : diagnostics.hardwareAccelerated === false
+        ? 'software'
+        : 'unconfirmed';
 
     const elapsedMs = Date.now() - startedAt;
     const realTimeFactor = elapsedMs / (durationSeconds * 1000);
@@ -874,7 +959,8 @@ const runRender = async (config) => {
         outputPath: config.outputPath,
         elapsedMs,
         realTimeFactor,
-        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime)${muxedAudioMode ? `, audio ${muxedAudioMode}` : ''}`,
+        renderDiagnostics: diagnostics,
+        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime), encoder ${encoderLabel} (${accelerationLabel}), GL ${diagnostics.browserGl || 'unknown'}${diagnostics.fallbackUsed ? ', CPU fallback' : ''}${muxedAudioMode ? `, audio ${muxedAudioMode}` : ''}`,
       },
     });
   } finally {
