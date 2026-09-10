@@ -725,6 +725,7 @@ const runRender = async (config) => {
       if (renderCodec === 'vp8') return 'libvpx';
       return null;
     };
+    const isHardwareVideoEncoder = (encoder) => /(?:_nvenc|_videotoolbox|_qsv|_amf|_vaapi|_mediacodec)$/i.test(encoder);
     const diagnostics = {
       requestedHardware: config.exportHardware || 'auto',
       codec: renderCodec,
@@ -795,6 +796,8 @@ const runRender = async (config) => {
         expectedEncoder: expectedEncoderForStrategy(strategy),
         actualEncoder: null,
         hardwareAccelerated: null,
+        encoderSource: null,
+        ffmpegVideoEncoders: [],
         quality: null,
         phaseMs: {},
         success: false,
@@ -848,6 +851,22 @@ const runRender = async (config) => {
         overwrite: true,
         logLevel: 'verbose',
         onLog: collectRemotionLog,
+        ffmpegOverride: ({ args }) => {
+          if (Array.isArray(args)) {
+            for (let index = 0; index < args.length - 1; index += 1) {
+              if (!['-c:v', '-vcodec', '-codec:v'].includes(args[index])) continue;
+              const encoder = args[index + 1];
+              if (typeof encoder !== 'string' || encoder === 'copy') continue;
+              if (!attempt.ffmpegVideoEncoders.includes(encoder)) {
+                attempt.ffmpegVideoEncoders.push(encoder);
+              }
+              attempt.actualEncoder = encoder;
+              attempt.hardwareAccelerated = isHardwareVideoEncoder(encoder);
+              attempt.encoderSource = 'ffmpegArgs';
+            }
+          }
+          return args;
+        },
         concurrency: getRenderConcurrency(config.renderConcurrency),
         imageFormat: renderImageFormat,
         jpegQuality: renderJpegQuality,
