@@ -277,6 +277,45 @@ function replaceExportOutput(sourcePath: string, outputPath: string) {
   }
 }
 
+function muxPcmAudioIntoVideo({
+  silentVideoPath,
+  audioSourcePath,
+  outputPath,
+  startTime,
+  duration,
+}: {
+  silentVideoPath: string;
+  audioSourcePath: string;
+  outputPath: string;
+  startTime: number;
+  duration: number;
+}) {
+  const ffmpegBinary = resolveRemotionBinary('ffmpeg');
+  const exportDuration = Math.max(0.1, Number.isFinite(duration) ? duration : 0.1);
+  const baseArgs = [
+    '-y',
+    '-i', silentVideoPath,
+    ...(startTime > 0 ? ['-ss', String(startTime)] : []),
+    '-t', String(exportDuration),
+    '-i', audioSourcePath,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-c:a', 'pcm_s16le',
+    '-af', 'aresample=async=1:first_pts=0',
+    '-movflags', '+faststart',
+    '-avoid_negative_ts', 'make_zero',
+    '-t', String(exportDuration),
+    outputPath,
+  ];
+
+  execFileSync(ffmpegBinary, baseArgs, { stdio: 'pipe' });
+  return {
+    audioMode: 'pcm-transcode',
+    audioEncoder: 'pcm_s16le',
+  };
+}
+
 function runConcatMp4(segmentPaths: string[], outputPath: string) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomchat-concat-'));
   const listPath = path.join(tempDir, 'segments.txt');
@@ -323,13 +362,15 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
         '-crf', '20',
         '-pix_fmt', 'yuv420p',
         '-movflags', '+faststart',
-        ...(hasAudioInAllSegments ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '192k'] : []),
+        ...(hasAudioInAllSegments
+          ? ['-map', '[outa]', '-c:a', 'pcm_s16le', '-af', 'aresample=async=1:first_pts=0']
+          : []),
         outputPath,
       ], { stdio: 'pipe' });
       return {
         mode: 'reencode',
         videoEncoder: 'libx264',
-        audioEncoder: hasAudioInAllSegments ? 'aac' : null,
+        audioEncoder: hasAudioInAllSegments ? 'pcm_s16le' : null,
       };
     }
   } finally {
@@ -708,6 +749,28 @@ function resolveAppFilePath(filePath: string) {
   }
 
   return filePath;
+}
+
+function resolveLocalMediaPath(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (/^file:/i.test(trimmed)) {
+    try {
+      const filePath = urlToPath(trimmed);
+      return path.isAbsolute(filePath) ? filePath : null;
+    } catch {
+      return null;
+    }
+  }
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) {
+    return null;
+  }
+
+  const resolved = resolveAppFilePath(trimmed);
+  return path.isAbsolute(resolved) ? resolved : null;
 }
 
 function resolveProjectResourcePath(projectFilePath: string, resourcePath: string) {
@@ -1235,6 +1298,22 @@ ipcMain.handle('export-video', async (_event, config) => {
       typeof exportRange.end === 'number' &&
       exportRange.end > exportRange.start
     );
+    const localAudioSourcePath = resolveLocalMediaPath(config?.audioPath);
+    const shouldPcmMuxParallelAudio = Boolean(
+      canUseParallelSegments &&
+      localAudioSourcePath &&
+      fs.existsSync(localAudioSourcePath)
+    );
+    // A manually selected export range is a clip operation. Use lossless PCM
+    // rather than stream-copy/AAC so the end of the clip has no codec padding.
+    const shouldPcmTranscodeClippedAudio = Boolean(
+      config?.exportRangeCustomized === true &&
+      config?.exportFormat !== 'mov-alpha' &&
+      config?.exportFormat !== 'webm-alpha'
+    );
+    const singleWorkerConfig = shouldPcmTranscodeClippedAudio
+      ? { ...workerConfig, audioTranscodeCodec: 'pcm-16' }
+      : workerConfig;
 
     let result: any = null;
 
@@ -1247,10 +1326,23 @@ ipcMain.handle('export-video', async (_event, config) => {
         const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
         const tempDir = fs.mkdtempSync(path.join(tempRoot, 'pomchat-parallel-export-'));
         const outputExt = path.extname(outputPath) || '.mp4';
-        const segmentAPath = path.join(tempDir, `segment-a${outputExt}`);
-        const segmentBPath = path.join(tempDir, `segment-b${outputExt}`);
+        const shouldPcmTranscodeParallelRenderedAudio = Boolean(
+          canUseParallelSegments &&
+          config?.audioPath &&
+          !shouldPcmMuxParallelAudio
+        );
+        // Remotion only permits H.264 + PCM when the intermediate file uses a
+        // MOV/MKV extension. The final file remains the requested MP4.
+        const segmentOutputExt = shouldPcmTranscodeParallelRenderedAudio ? '.mov' : outputExt;
+        const segmentAPath = path.join(tempDir, `segment-a${segmentOutputExt}`);
+        const segmentBPath = path.join(tempDir, `segment-b${segmentOutputExt}`);
         const renderConcurrency = Math.max(1, Math.floor(getCpuCount() / 2));
         const workerProgress = [0, 0];
+        const parallelSegmentConfig = shouldPcmMuxParallelAudio
+          ? { ...workerConfig, audioPath: '' }
+          : shouldPcmTranscodeParallelRenderedAudio
+            ? { ...workerConfig, audioTranscodeCodec: 'pcm-16' }
+            : workerConfig;
 
         try {
           const aggregateProgress = (segmentIndex: number, payload: any) => {
@@ -1265,7 +1357,7 @@ ipcMain.handle('export-video', async (_event, config) => {
 
           const segmentResults = await Promise.allSettled([
             runWorkerExport(workerPath, {
-              ...workerConfig,
+              ...parallelSegmentConfig,
               outputPath: segmentAPath,
               exportRange: {
                 start: exportRange.start,
@@ -1274,7 +1366,7 @@ ipcMain.handle('export-video', async (_event, config) => {
               renderConcurrency,
             }, (payload) => aggregateProgress(0, payload)),
             runWorkerExport(workerPath, {
-              ...workerConfig,
+              ...parallelSegmentConfig,
               outputPath: segmentBPath,
               exportRange: {
                 start: splitTime,
@@ -1296,11 +1388,12 @@ ipcMain.handle('export-video', async (_event, config) => {
             stage: 'Concatenating parallel segments',
           });
 
+          const concatenatedVideoPath = shouldPcmMuxParallelAudio
+            ? path.join(tempDir, `concatenated${outputExt}`)
+            : temporaryOutputPath as string;
           const concatStartedAt = Date.now();
-          const concatResult = runConcatMp4([segmentAPath, segmentBPath], temporaryOutputPath as string);
+          const concatResult = runConcatMp4([segmentAPath, segmentBPath], concatenatedVideoPath);
           const concatMs = Date.now() - concatStartedAt;
-          const outputMedia = probeOutputMedia(temporaryOutputPath as string);
-          const elapsedMs = Date.now() - exportStartedAt;
           const segmentDiagnostics = segmentResults
             .filter((entry): entry is PromiseFulfilledResult<any> => entry.status === 'fulfilled')
             .map((entry) => entry.value?.renderDiagnostics)
@@ -1309,12 +1402,41 @@ ipcMain.handle('export-video', async (_event, config) => {
             total + (typeof diagnostics.renderedDurationSeconds === 'number' ? diagnostics.renderedDurationSeconds : 0)
           ), 0);
           const durationSeconds = Math.max(0.1, renderedDurationSeconds || (exportRange.end - exportRange.start));
+          let parallelAudioMuxResult: { audioMode: string; audioEncoder: string } | null = null;
+          let audioMuxMs = 0;
+          if (shouldPcmMuxParallelAudio) {
+            win?.webContents.send('export-progress', {
+              progress: 0.985,
+              elapsedMs: Date.now() - exportStartedAt,
+              estimatedRemainingMs: null,
+              stage: 'Muxing PCM audio',
+            });
+            const audioMuxStartedAt = Date.now();
+            parallelAudioMuxResult = muxPcmAudioIntoVideo({
+              silentVideoPath: concatenatedVideoPath,
+              audioSourcePath: localAudioSourcePath as string,
+              outputPath: temporaryOutputPath as string,
+              startTime: Math.max(0, exportRange.start || 0),
+              duration: durationSeconds,
+            });
+            audioMuxMs = Date.now() - audioMuxStartedAt;
+          }
+          const outputMedia = probeOutputMedia(temporaryOutputPath as string);
+          const elapsedMs = Date.now() - exportStartedAt;
           const actualEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.actualEncoder).filter(Boolean))];
           const expectedEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.expectedEncoder).filter(Boolean))];
           const hardwareStates = segmentDiagnostics.map((diagnostics: any) => diagnostics.hardwareAccelerated).filter((value: unknown): value is boolean => typeof value === 'boolean');
           const segmentHardwareAccelerated = hardwareStates.length === 2 ? hardwareStates.every(Boolean) : null;
           const finalEncoder = concatResult.videoEncoder || actualEncoders[0] || expectedEncoders[0] || null;
           const finalHardwareAccelerated = concatResult.mode === 'reencode' ? false : segmentHardwareAccelerated;
+          const audioPipelines = [
+            ...segmentDiagnostics.map((diagnostics: any) => diagnostics.audioPipeline),
+            ...(parallelAudioMuxResult ? ['ffmpeg-postmux'] : []),
+          ].filter(Boolean);
+          const audioMuxModes = [
+            ...segmentDiagnostics.map((diagnostics: any) => diagnostics.audioMuxMode),
+            parallelAudioMuxResult?.audioMode,
+          ].filter(Boolean);
           const renderDiagnostics = {
             mode: 'parallel-segments',
             requestedHardware: config?.exportHardware || 'auto',
@@ -1330,8 +1452,12 @@ ipcMain.handle('export-video', async (_event, config) => {
             concatMode: concatResult.mode,
             concatVideoEncoder: concatResult.videoEncoder,
             concatAudioEncoder: concatResult.audioEncoder,
-            audioPipelines: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.audioPipeline).filter(Boolean))],
-            audioMuxModes: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.audioMuxMode).filter(Boolean))],
+            audioPipelines: [...new Set(audioPipelines)],
+            audioMuxModes: [...new Set(audioMuxModes)],
+            audioTranscodeCodec: parallelAudioMuxResult?.audioEncoder
+              || segmentDiagnostics.map((diagnostics: any) => diagnostics.audioTranscodeCodec).find(Boolean)
+              || null,
+            audioMuxMs: parallelAudioMuxResult ? audioMuxMs : null,
             outputMedia,
             concatMs,
             renderedDurationSeconds: durationSeconds,
@@ -1362,7 +1488,7 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
 
     if (!result) {
-      result = await runWorkerExport(workerPath, workerConfig, (payload) => {
+      result = await runWorkerExport(workerPath, singleWorkerConfig, (payload) => {
         win?.webContents.send('export-progress', payload);
       });
     }

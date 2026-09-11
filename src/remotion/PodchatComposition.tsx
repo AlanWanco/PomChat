@@ -302,7 +302,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     ? Math.floor((props.exportRange.start * fps) % backgroundVideoDurationFrames)
     : Math.max(0, Math.round(props.exportRange.start * fps));
   const backgroundVideoStartFrame = backgroundMediaStartFrame;
-  const backgroundVideoSequenceFrom = backgroundVideoDurationFrames && !props.background?.renderStartsAtZero
+  const backgroundVideoSequenceFrom = !props.background?.renderStartsAtZero && backgroundVideoStartFrame > 0
     ? -backgroundVideoStartFrame
     : 0;
   const backgroundObjectPosition = (() => {
@@ -439,19 +439,21 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                 </Loop>
               </Sequence>
             ) : (
-              <OffthreadVideo
-                src={props.background.image}
-                muted
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: backgroundObjectFit,
-                  objectPosition: backgroundObjectPosition,
-                  filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
-                  transform: backgroundObjectFit === 'cover' ? 'scale(1.05)' : undefined,
-                  transformOrigin: backgroundObjectPosition
-                }}
-              />
+              <Sequence from={backgroundVideoSequenceFrom}>
+                <OffthreadVideo
+                  src={props.background.image}
+                  muted
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: backgroundObjectFit,
+                    objectPosition: backgroundObjectPosition,
+                    filter: `blur(${props.background.blur ?? 0}px) brightness(${props.background.brightness ?? 1})`,
+                    transform: backgroundObjectFit === 'cover' ? 'scale(1.05)' : undefined,
+                    transformOrigin: backgroundObjectPosition
+                  }}
+                />
+              </Sequence>
             )
           ) : (
             <Img

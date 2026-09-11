@@ -276,6 +276,7 @@ const muxAudioIntoVideo = ({
   outputPath,
   startTime,
   duration,
+  audioCodec,
 }) => {
   const ffmpegBinary = resolveFfmpegBinary(binariesDirectory);
   const baseArgs = [
@@ -290,6 +291,18 @@ const muxAudioIntoVideo = ({
     '-avoid_negative_ts', 'make_zero',
     '-t', String(duration),
   ];
+  const usePcmTranscode = audioCodec === 'pcm-16' || audioCodec === 'pcm_s16le';
+
+  if (usePcmTranscode) {
+    execFileSync(ffmpegBinary, [
+      ...baseArgs,
+      '-c:v', 'copy',
+      '-c:a', 'pcm_s16le',
+      '-af', 'aresample=async=1:first_pts=0',
+      outputPath,
+    ], { stdio: 'pipe' });
+    return { audioMode: 'pcm-transcode' };
+  }
 
   // Preserve the source audio stream whenever the selected container accepts it.
   try {
@@ -300,17 +313,17 @@ const muxAudioIntoVideo = ({
     ], { stdio: 'pipe' });
     return { audioMode: 'copy' };
   } catch (_copyError) {
-    // Some containers cannot carry the source audio codec. Retry with AAC rather
-    // than failing the entire export, while keeping the stream-copy path primary.
+    // Some containers cannot carry the source audio codec. Retry with lossless
+    // PCM instead of AAC so clipped exports do not gain encoder delay/padding
+    // at the end of the selected range.
     execFileSync(ffmpegBinary, [
       ...baseArgs,
       '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-b:a', '192k',
+      '-c:a', 'pcm_s16le',
       '-af', 'aresample=async=1:first_pts=0',
       outputPath,
     ], { stdio: 'pipe' });
-    return { audioMode: 'aac-transcode-fallback' };
+    return { audioMode: 'pcm-transcode-fallback' };
   }
 };
 
@@ -751,7 +764,12 @@ const runRender = async (config) => {
     const isAlphaExport = isMovAlpha || isWebmAlpha;
     const shouldPostMuxLocalAudio = (exportFormat === 'mp4' || exportFormat === 'mov-alpha') && Boolean(localAudioSourcePath);
     const renderCodec = isMovAlpha ? 'prores' : isWebmAlpha ? 'vp8' : 'h264';
-    const renderAudioCodec = shouldPostMuxLocalAudio ? null : config.audioPath ? (isWebmAlpha ? 'opus' : 'aac') : null;
+    const shouldTranscodeRenderedAudio = config.audioTranscodeCodec === 'pcm-16';
+    const renderAudioCodec = shouldPostMuxLocalAudio
+      ? null
+      : config.audioPath
+        ? (isWebmAlpha ? 'opus' : shouldTranscodeRenderedAudio ? 'pcm-16' : 'aac')
+        : null;
     if (shouldPostMuxLocalAudio) {
       // Keep local audio out of Remotion's stitch step. FFmpeg post-muxing below
       // applies the export-range offset and preserves the source track when possible.
@@ -798,7 +816,14 @@ const runRender = async (config) => {
       durationSeconds,
       renderConcurrency: getRenderConcurrency(config.renderConcurrency),
       audioSource: config.audioPath ? (localAudioSourcePath ? 'local' : 'remote') : 'none',
-      audioPipeline: shouldPostMuxLocalAudio ? 'ffmpeg-postmux' : config.audioPath ? 'remotion' : 'none',
+      audioPipeline: shouldPostMuxLocalAudio
+        ? 'ffmpeg-postmux'
+        : shouldTranscodeRenderedAudio
+          ? 'remotion-pcm-transcode'
+          : config.audioPath
+            ? 'remotion'
+            : 'none',
+      audioTranscodeCodec: shouldTranscodeRenderedAudio ? 'pcm_s16le' : null,
       audioMuxMode: null,
       attempts: [],
       fallbackUsed: false,
@@ -1025,6 +1050,7 @@ const runRender = async (config) => {
           outputPath: config.outputPath,
           startTime: Math.max(0, inputProps.exportRange.start || 0),
           duration: exportDuration,
+          audioCodec: config.audioTranscodeCodec,
         });
         muxedAudioMode = muxResult.audioMode;
       } finally {

@@ -3155,6 +3155,7 @@ const [previewScale, setPreviewScale] = useState(1);
     );
     return {
       ...restConfig,
+      exportRangeCustomized: exportRangeTouchedRef.current || config.exportRangeCustomized === true,
       audioPath: resolveExportAssetPath(restConfig.audioPath),
       content: Array.isArray(restConfig.content)
         ? restConfig.content.map((item: any) => item?.type === 'text' ? { ...item, text: remapMarkdownImagePaths(item.text || '') } : item)
