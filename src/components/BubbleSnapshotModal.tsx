@@ -69,6 +69,46 @@ type SnapshotPayload = {
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|mkv|m4v)(\?|$)/i;
 const CSS_URL_RE = /url\((['"]?)(.*?)\1\)/g;
 
+function SnapshotAvatar({ src, alt, style, currentTime = 0 }: { src: string; alt: string; style: React.CSSProperties; currentTime?: number }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isVideo = VIDEO_EXT_RE.test(src);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    const targetTime = Math.max(0, currentTime);
+    if (video.readyState >= 1 && Math.abs((video.currentTime || 0) - targetTime) > 0.08) {
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Ignore not-ready seek errors; loadedmetadata will retry once.
+      }
+    }
+  }, [currentTime, isVideo, src]);
+
+  if (isVideo) {
+    return (
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        preload="auto"
+        className="rounded-full shrink-0 object-cover"
+        style={style}
+        onLoadedMetadata={(event) => {
+          try {
+            event.currentTarget.currentTime = Math.max(0, currentTime);
+          } catch {
+            // Ignore not-ready seek errors.
+          }
+        }}
+      />
+    );
+  }
+  return <img src={src} alt={alt} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={style} />;
+}
+
 const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result || ''));
@@ -117,11 +157,37 @@ const cloneWithInlineStyles = (source: Element): Element => {
 
   const sourceChildren = Array.from(source.childNodes);
   sourceChildren.forEach((child) => {
-    if (child.nodeType === Node.ELEMENT_NODE) {
-      clone.appendChild(cloneWithInlineStyles(child as Element));
+    if (child.nodeType !== Node.ELEMENT_NODE) {
+      clone.appendChild(child.cloneNode(true));
       return;
     }
-    clone.appendChild(child.cloneNode(true));
+
+    const media = child as Element;
+    if (media instanceof HTMLImageElement || media instanceof HTMLVideoElement) {
+      const sourceWidth = media instanceof HTMLVideoElement ? media.videoWidth : media.naturalWidth;
+      const sourceHeight = media instanceof HTMLVideoElement ? media.videoHeight : media.naturalHeight;
+      if (media instanceof HTMLVideoElement ? media.readyState >= 2 : media.complete) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, sourceWidth);
+          canvas.height = Math.max(1, sourceHeight);
+          const context = canvas.getContext('2d');
+          if (context && sourceWidth > 0 && sourceHeight > 0) {
+            context.drawImage(media, 0, 0, sourceWidth, sourceHeight);
+            const frame = document.createElement('img');
+            frame.src = canvas.toDataURL('image/png');
+            frame.alt = media instanceof HTMLImageElement ? media.alt : '';
+            copyStyles(media, frame);
+            clone.appendChild(frame);
+            return;
+          }
+        } catch {
+          // Fall back to cloning the media element when the frame is not readable.
+        }
+      }
+    }
+
+    clone.appendChild(cloneWithInlineStyles(media));
   });
   return clone;
 };
@@ -156,19 +222,37 @@ const inlineCloneResources = async (root: Element, cache: Map<string, string>) =
 
 const waitForMediaReady = async (root: HTMLElement) => {
   const images = Array.from(root.querySelectorAll('img'));
-  await Promise.all(images.map((image) => new Promise<void>((resolve) => {
-    if (image.complete && image.naturalWidth > 0) {
-      resolve();
-      return;
-    }
-    const done = () => {
-      image.removeEventListener('load', done);
-      image.removeEventListener('error', done);
-      resolve();
-    };
-    image.addEventListener('load', done, { once: true });
-    image.addEventListener('error', done, { once: true });
-  })));
+  const videos = Array.from(root.querySelectorAll('video'));
+  await Promise.all([
+    ...images.map((image) => new Promise<void>((resolve) => {
+      if (image.complete && image.naturalWidth > 0) {
+        resolve();
+        return;
+      }
+      const done = () => {
+        image.removeEventListener('load', done);
+        image.removeEventListener('error', done);
+        resolve();
+      };
+      image.addEventListener('load', done, { once: true });
+      image.addEventListener('error', done, { once: true });
+    })),
+    ...videos.map((video) => new Promise<void>((resolve) => {
+      if (video.readyState >= 2 && video.videoWidth > 0 && !video.seeking) {
+        resolve();
+        return;
+      }
+      const done = () => {
+        video.removeEventListener('loadeddata', done);
+        video.removeEventListener('seeked', done);
+        video.removeEventListener('error', done);
+        resolve();
+      };
+      video.addEventListener('loadeddata', done, { once: true });
+      video.addEventListener('seeked', done, { once: true });
+      video.addEventListener('error', done, { once: true });
+    })),
+  ]);
 };
 
 const renderSvgPreviewToCanvas = async ({ previewUrl, width, height }: { previewUrl: string; width: number; height: number }) => {
@@ -344,19 +428,21 @@ export function BubbleSnapshotModal({
     return () => window.clearTimeout(timer);
   }, [localBackgroundMode, localBackgroundColor, localCustomBackgroundImage, localBackgroundImageSizing, localTileAlign, localBackgroundBlur, localBackgroundBrightness, localSidePadding, localBubbleMaxWidthPercent, localExportScale, onBackgroundModeChange, onBackgroundColorChange, onCustomBackgroundImageChange, onBackgroundImageSizingChange, onTileAlignChange, onBackgroundBlurChange, onBackgroundBrightnessChange, onSidePaddingChange, onBubbleMaxWidthPercentChange, onExportScaleChange, open]);
 
-  const renderAvatar = useCallback((speaker: SharedChatSpeaker, style: React.CSSProperties) => {
+  const renderAvatar = useCallback((speaker: SharedChatSpeaker, style: React.CSSProperties, currentTime = 0) => {
     if (!speaker.avatar) {
       return null;
     }
     const src = resolveAssetSrc?.(speaker.avatar) || speaker.avatar;
     const bubbleScale = chatLayout?.bubbleScale ?? 1.5;
-    const borderWidth = Math.max(2, Math.round(4 * bubbleScale));
-    const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
+    const borderWidth = speaker.style?.avatarBorderWidth != null
+      ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * bubbleScale)
+      : Math.max(2, Math.round(4 * bubbleScale));
+    const borderColor = speaker.style?.avatarBorderColor || '#ffffff';
     return (
-      <img
+      <SnapshotAvatar
         src={src}
         alt={speaker.name || ''}
-        referrerPolicy="no-referrer"
+        currentTime={currentTime}
         style={{
           ...style,
           boxSizing: 'border-box',
@@ -366,7 +452,7 @@ export function BubbleSnapshotModal({
         }}
       />
     );
-  }, [chatLayout?.bubbleScale, isDarkMode, resolveAssetSrc]);
+  }, [chatLayout?.bubbleScale, resolveAssetSrc]);
 
   const renderInlineImage = useCallback(({ src, alt, key, style }: { src: string; alt: string; key?: string; style: React.CSSProperties }) => (
     <img
@@ -434,7 +520,7 @@ export function BubbleSnapshotModal({
           nextSpeakerId={nextSpeakerId}
           isLatestVisible={index === subtitles.length - 1}
           renderInlineImage={renderInlineImage}
-          renderAvatar={({ style }) => renderAvatar(speaker, style)}
+          renderAvatar={({ style }) => renderAvatar(speaker, style, subtitle.start + 1)}
           renderBubble={({ outerStyle, contentStyle, children }) => (
             <div style={outerStyle}>
               <div style={contentStyle}>{children}</div>

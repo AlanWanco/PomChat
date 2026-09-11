@@ -8,6 +8,8 @@ const { fileURLToPath } = require('node:url');
 
 let cachedBundle = null;
 let cachedPatchedBinariesDir = null;
+let activeCancel = null;
+let cancelRequested = false;
 
 const getBundledBrowserExecutable = () => {
   const manifestPaths = [
@@ -222,7 +224,52 @@ const resolveFfmpegBinary = (binariesDirectory) => {
   );
 };
 
-const muxAudioIntoMp4 = ({
+const resolveFfprobeBinary = (binariesDirectory) => {
+  const ffmpegBinary = resolveFfmpegBinary(binariesDirectory);
+  const ffprobeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const siblingPath = path.join(path.dirname(ffmpegBinary), ffprobeName);
+  if (isRegularFile(siblingPath)) {
+    return siblingPath;
+  }
+  return ffprobeName;
+};
+
+const probeOutputMedia = (outputPath, binariesDirectory) => {
+  if (!outputPath || !isRegularFile(outputPath)) {
+    return null;
+  }
+  try {
+    const raw = execFileSync(resolveFfprobeBinary(binariesDirectory), [
+      '-v', 'error',
+      '-show_entries', 'stream=index,codec_type,codec_name,pix_fmt:stream_tags=encoder,alpha_mode:format=duration',
+      '-of', 'json',
+      outputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    const parsed = JSON.parse(raw);
+    const streams = Array.isArray(parsed?.streams)
+      ? parsed.streams.map((stream) => {
+          const tags = stream.tags || {};
+          return {
+            index: stream.index,
+            codecType: stream.codec_type || null,
+            codecName: stream.codec_name || null,
+            pixelFormat: stream.pix_fmt || null,
+            encoder: tags.encoder || tags.ENCODER || null,
+            alphaMode: tags.alpha_mode || tags.ALPHA_MODE || null,
+          };
+        })
+      : [];
+    const duration = Number(parsed?.format?.duration);
+    return {
+      durationSeconds: Number.isFinite(duration) ? duration : null,
+      streams,
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
+const muxAudioIntoVideo = ({
   binariesDirectory,
   silentVideoPath,
   audioSourcePath,
@@ -239,28 +286,31 @@ const muxAudioIntoMp4 = ({
     '-i', audioSourcePath,
     '-map', '0:v:0',
     '-map', '1:a:0',
-    '-c:v', 'copy',
     '-movflags', '+faststart',
     '-avoid_negative_ts', 'make_zero',
     '-t', String(duration),
   ];
 
+  // Preserve the source audio stream whenever the selected container accepts it.
   try {
     execFileSync(ffmpegBinary, [
       ...baseArgs,
-      '-c:a', 'copy',
+      '-c', 'copy',
       outputPath,
     ], { stdio: 'pipe' });
     return { audioMode: 'copy' };
   } catch (_copyError) {
+    // Some containers cannot carry the source audio codec. Retry with AAC rather
+    // than failing the entire export, while keeping the stream-copy path primary.
     execFileSync(ffmpegBinary, [
       ...baseArgs,
+      '-c:v', 'copy',
       '-c:a', 'aac',
       '-b:a', '192k',
       '-af', 'aresample=async=1:first_pts=0',
       outputPath,
     ], { stdio: 'pipe' });
-    return { audioMode: 'aac-transcode' };
+    return { audioMode: 'aac-transcode-fallback' };
   }
 };
 
@@ -635,7 +685,12 @@ const getBundle = async (bundleFn) => {
 const runRender = async (config) => {
   const startedAt = Date.now();
   const { bundle } = requirePackagedModule('@remotion/bundler', 'dist/index.js');
-  const { renderMedia, selectComposition } = requirePackagedModule('@remotion/renderer', 'dist/index.js');
+  const { renderMedia, selectComposition, makeCancelSignal } = requirePackagedModule('@remotion/renderer', 'dist/index.js');
+  const { cancelSignal, cancel } = makeCancelSignal();
+  activeCancel = cancel;
+  if (cancelRequested) {
+    cancel();
+  }
   const mediaServer = await createLocalMediaServer();
   const binariesDirectory = patchMacCompositorBinaries();
   const browserExecutable = getBundledBrowserExecutable();
@@ -694,9 +749,14 @@ const runRender = async (config) => {
     const isMovAlpha = exportFormat === 'mov-alpha';
     const isWebmAlpha = exportFormat === 'webm-alpha';
     const isAlphaExport = isMovAlpha || isWebmAlpha;
-    const shouldPostMuxLocalAudio = exportFormat === 'mp4' && Boolean(localAudioSourcePath);
+    const shouldPostMuxLocalAudio = (exportFormat === 'mp4' || exportFormat === 'mov-alpha') && Boolean(localAudioSourcePath);
     const renderCodec = isMovAlpha ? 'prores' : isWebmAlpha ? 'vp8' : 'h264';
-    const renderAudioCodec = isMovAlpha || shouldPostMuxLocalAudio ? null : isWebmAlpha ? 'opus' : 'aac';
+    const renderAudioCodec = shouldPostMuxLocalAudio ? null : config.audioPath ? (isWebmAlpha ? 'opus' : 'aac') : null;
+    if (shouldPostMuxLocalAudio) {
+      // Keep local audio out of Remotion's stitch step. FFmpeg post-muxing below
+      // applies the export-range offset and preserves the source track when possible.
+      inputProps.audioPath = '';
+    }
     const renderPixelFormat = isMovAlpha ? 'yuva444p10le' : isWebmAlpha ? 'yuva420p' : 'yuv420p';
     const renderImageFormat = isAlphaExport ? 'png' : 'jpeg';
     const renderJpegQuality = isAlphaExport ? undefined : 92;
@@ -708,6 +768,9 @@ const runRender = async (config) => {
         image: '',
         blur: 0,
         brightness: 1,
+        slides: Array.isArray(inputProps.background?.slides)
+          ? inputProps.background.slides.filter((slide) => slide?.layer === 'overlay')
+          : [],
       };
     }
     const durationSeconds = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
@@ -734,6 +797,9 @@ const runRender = async (config) => {
       fps: config.fps || null,
       durationSeconds,
       renderConcurrency: getRenderConcurrency(config.renderConcurrency),
+      audioSource: config.audioPath ? (localAudioSourcePath ? 'local' : 'remote') : 'none',
+      audioPipeline: shouldPostMuxLocalAudio ? 'ffmpeg-postmux' : config.audioPath ? 'remotion' : 'none',
+      audioMuxMode: null,
       attempts: [],
       fallbackUsed: false,
       fallbackReason: null,
@@ -790,10 +856,12 @@ const runRender = async (config) => {
     diagnostics.bundleMs = Date.now() - bundleStartedAt;
 
     const renderOnce = async (strategy) => {
+      const effectiveHardwareAcceleration = isAlphaExport ? 'disable' : strategy.hardwareAcceleration;
       const attempt = {
         strategy: strategy.hardwareAcceleration,
+        effectiveHardwareAcceleration,
         browserGl: strategy.gl,
-        expectedEncoder: expectedEncoderForStrategy(strategy),
+        expectedEncoder: expectedEncoderForStrategy({ ...strategy, hardwareAcceleration: effectiveHardwareAcceleration }),
         actualEncoder: null,
         hardwareAccelerated: null,
         encoderSource: null,
@@ -848,6 +916,7 @@ const runRender = async (config) => {
         audioCodec: renderAudioCodec,
         outputLocation: config.outputPath,
         inputProps,
+        cancelSignal,
         overwrite: true,
         logLevel: 'verbose',
         onLog: collectRemotionLog,
@@ -912,6 +981,9 @@ const runRender = async (config) => {
 
     let composition;
     let muxedAudioMode = null;
+    if (cancelRequested) {
+      throw new Error('Export cancelled');
+    }
     let usedStrategy = hardwareStrategy;
     try {
       composition = await renderOnce(usedStrategy);
@@ -928,7 +1000,15 @@ const runRender = async (config) => {
       }
     }
 
+    const renderedDurationSeconds = composition
+      ? Math.max(0.1, composition.durationInFrames / composition.fps)
+      : durationSeconds;
+    diagnostics.renderedDurationSeconds = renderedDurationSeconds;
+
     if (shouldPostMuxLocalAudio) {
+      if (cancelRequested) {
+        throw new Error('Export cancelled');
+      }
       sendProgress(0.97, 'Muxing audio/video', true);
       const muxStartedAt = Date.now();
 
@@ -937,8 +1017,8 @@ const runRender = async (config) => {
 
       try {
         fs.renameSync(config.outputPath, silentVideoPath);
-        const exportDuration = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
-        const muxResult = muxAudioIntoMp4({
+        const exportDuration = renderedDurationSeconds;
+        const muxResult = muxAudioIntoVideo({
           binariesDirectory,
           silentVideoPath,
           audioSourcePath: localAudioSourcePath,
@@ -950,16 +1030,25 @@ const runRender = async (config) => {
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
+      diagnostics.audioMuxMode = muxedAudioMode;
       diagnostics.audioMuxMs = Date.now() - muxStartedAt;
     }
 
+    if (cancelRequested) {
+      throw new Error('Export cancelled');
+    }
+
+    diagnostics.outputMedia = probeOutputMedia(config.outputPath, binariesDirectory);
     const finalAttempt = diagnostics.attempts[diagnostics.attempts.length - 1] || null;
     diagnostics.final = finalAttempt;
     diagnostics.expectedEncoder = finalAttempt?.expectedEncoder || null;
     diagnostics.actualEncoder = finalAttempt?.actualEncoder || null;
+    diagnostics.encoderSource = finalAttempt?.encoderSource || null;
+    diagnostics.ffmpegVideoEncoders = finalAttempt?.ffmpegVideoEncoders || [];
     diagnostics.hardwareAccelerated = finalAttempt?.hardwareAccelerated ?? null;
     diagnostics.browserGl = finalAttempt?.browserGl || null;
     diagnostics.strategy = finalAttempt?.strategy || null;
+    diagnostics.effectiveHardwareAcceleration = finalAttempt?.effectiveHardwareAcceleration || null;
     diagnostics.totalMs = Date.now() - startedAt;
     const encoderLabel = diagnostics.actualEncoder || diagnostics.expectedEncoder || 'unknown';
     const accelerationLabel = diagnostics.hardwareAccelerated === true
@@ -969,7 +1058,7 @@ const runRender = async (config) => {
         : 'unconfirmed';
 
     const elapsedMs = Date.now() - startedAt;
-    const realTimeFactor = elapsedMs / (durationSeconds * 1000);
+    const realTimeFactor = elapsedMs / (renderedDurationSeconds * 1000);
     sendProgress(1, 'Done', true);
     sendMessage({
       type: 'result',
@@ -983,15 +1072,29 @@ const runRender = async (config) => {
       },
     });
   } finally {
+    if (activeCancel === cancel) {
+      activeCancel = null;
+    }
     await mediaServer.close();
   }
 };
 
 process.on('message', (message) => {
-  if (!message || message.type !== 'render' || !message.payload) {
+  if (!message) {
     return;
   }
 
+  if (message.type === 'cancel') {
+    cancelRequested = true;
+    activeCancel?.();
+    return;
+  }
+
+  if (message.type !== 'render' || !message.payload) {
+    return;
+  }
+
+  cancelRequested = false;
   runRender(message.payload).catch((error) => {
     const errorMessage = error && error.message ? error.message : 'Unknown export error';
     const stack = error && error.stack ? error.stack : '';
@@ -1000,7 +1103,8 @@ process.on('message', (message) => {
     sendMessage({
       type: 'error',
       payload: {
-        message: errorMessage,
+        message: cancelRequested ? 'Export cancelled' : errorMessage,
+        cancelled: cancelRequested,
       },
     });
   });

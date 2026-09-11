@@ -269,6 +269,26 @@ export const getBubbleMotionState = (progress: number, style: SharedChatLayout['
   }
 };
 
+export const getBubbleAnimationWindow = ({
+  start,
+  end,
+  animationStyle = 'rise',
+  animationDuration = 0.2,
+}: {
+  start: number;
+  end?: number;
+  animationStyle?: SharedChatLayout['animationStyle'];
+  animationDuration?: number;
+}) => {
+  const hasAnimation = animationStyle !== 'none' && animationDuration > 0;
+  return {
+    appearanceTime: Math.max(0, start - (hasAnimation ? animationDuration : 0)),
+    disappearanceTime: typeof end === 'number'
+      ? end + (hasAnimation ? animationDuration : 0)
+      : Number.POSITIVE_INFINITY,
+  };
+};
+
 function SvgStrokeText({
   text,
   fontSize,
@@ -1341,9 +1361,12 @@ export function ChatAnnotationBubble({ item, speaker, currentTime, layoutScale, 
   const annotationProgress = annotationAnimationStyle === 'none' || annotationAnimationDuration <= 0
     ? 1
     : clamp((currentTime - item.start + annotationAnimationDuration) / annotationAnimationDuration, 0, 1);
+  const annotationDisappearProgress = typeof item.end === 'number' && currentTime > item.end && annotationAnimationStyle !== 'none' && annotationAnimationDuration > 0
+    ? clamp(1 - ((currentTime - item.end) / annotationAnimationDuration), 0, 1)
+    : 1;
   const annotationMotion = annotationAnimationStyle === 'none'
     ? { opacity: 1, transform: undefined, filter: undefined }
-    : getBubbleMotionState(annotationProgress, annotationAnimationStyle, speaker.side);
+    : getBubbleMotionState(annotationProgress * annotationDisappearProgress, annotationAnimationStyle, speaker.side);
   const shadowSize = (speaker.style?.shadowSize ?? 1) * combinedScale;
   const bubbleShadowEnabled = speaker.style?.bubbleShadow ?? true;
   const textShadowEnabled = speaker.style?.textShadow ?? true;

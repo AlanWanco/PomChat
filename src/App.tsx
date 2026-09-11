@@ -12,7 +12,7 @@ import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
 import { StyleManagerModal } from './components/StyleManagerModal';
 import { BubbleSnapshotModal } from './components/BubbleSnapshotModal';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
-import { getBubbleMotionState } from './components/chat/SharedChatBubbles';
+import { getBubbleAnimationWindow, getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { useAssSubtitle } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
 import { createThemeTokens, rgba } from './theme';
@@ -537,6 +537,138 @@ const sanitizeProjectOverrides = (value: unknown) => {
   return overrides;
 };
 
+function PreviewAvatar({
+  src,
+  alt,
+  style,
+  currentTime = 0,
+  isPlaying = false,
+}: {
+  src: string;
+  alt: string;
+  style: React.CSSProperties;
+  currentTime?: number;
+  isPlaying?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isVideo = /\.(mp4|webm|mov|mkv|m4v)(\?|$)/i.test(src);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    const targetTime = Math.max(0, currentTime);
+    if (video.readyState >= 1 && Math.abs((video.currentTime || 0) - targetTime) > 0.08) {
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Ignore not-ready seek errors; loadedmetadata will retry once.
+      }
+    }
+  }, [currentTime, isVideo, src]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    if (isPlaying) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, isVideo, src]);
+
+  if (isVideo) {
+    return (
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        className="rounded-full shrink-0 object-cover"
+        style={style}
+        onLoadedMetadata={(event) => {
+          const video = event.currentTarget;
+          try {
+            video.currentTime = Math.max(0, currentTime);
+          } catch {
+            // Ignore not-ready seek errors.
+          }
+          if (isPlaying) {
+            void video.play().catch(() => undefined);
+          }
+        }}
+      />
+    );
+  }
+
+  return <img src={src} alt={alt} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={style} />;
+}
+
+function PreviewInlineMedia({
+  src,
+  alt,
+  style,
+  currentTime = 0,
+  isPlaying = false,
+}: {
+  src: string;
+  alt: string;
+  style: React.CSSProperties;
+  currentTime?: number;
+  isPlaying?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isVideo = /\.(mp4|webm|mov|mkv|m4v)(\?|$)/i.test(src);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    const targetTime = Math.max(0, currentTime);
+    if (video.readyState >= 1 && Math.abs((video.currentTime || 0) - targetTime) > 0.08) {
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Ignore not-ready seek errors; loadedmetadata will retry once.
+      }
+    }
+  }, [currentTime, isVideo, src]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    if (isPlaying) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, isVideo, src]);
+
+  if (isVideo) {
+    return (
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        preload="auto"
+        className="object-contain"
+        style={style}
+        onLoadedMetadata={(event) => {
+          try {
+            event.currentTarget.currentTime = Math.max(0, currentTime);
+          } catch {
+            // Ignore not-ready seek errors.
+          }
+          if (isPlaying) {
+            void event.currentTarget.play().catch(() => undefined);
+          }
+        }}
+      />
+    );
+  }
+
+  return <img src={src} alt={alt} referrerPolicy="no-referrer" style={style} />;
+}
+
 function PreviewBackgroundAsset({
   src,
   blur,
@@ -565,6 +697,7 @@ function PreviewBackgroundAsset({
   editOverlay,
   onEditBoxChange,
   onNaturalSizeChange,
+  isPlaying = false,
 }: {
   src?: string;
   blur: number;
@@ -593,6 +726,7 @@ function PreviewBackgroundAsset({
   editOverlay?: React.ReactNode;
   onEditBoxChange?: (box: { centerX: number; centerY: number; width: number; height: number }) => void;
   onNaturalSizeChange?: (size: { width: number; height: number }) => void;
+  isPlaying?: boolean;
 }) {
   // Track container size and natural image size to compute contain-fit overlay rect
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(intrinsicWidth && intrinsicHeight ? { w: intrinsicWidth, h: intrinsicHeight } : null);
@@ -604,14 +738,41 @@ function PreviewBackgroundAsset({
     setNaturalSize(null);
   }, [intrinsicHeight, intrinsicWidth, src]);
 
-  const appearanceTime = Math.max(0, start - (animationStyle === 'none' ? 0 : animationDuration));
+  const hasAnimation = animationStyle !== 'none' && animationDuration > 0;
+  const appearanceTime = Math.max(0, start - (hasAnimation ? animationDuration : 0));
   const progress = animationStyle === 'none' || animationDuration <= 0
     ? 1
     : Math.max(0, Math.min(1, (currentTime - appearanceTime) / animationDuration));
-  const disappearProgress = typeof end === 'number' && currentTime > end && animationStyle !== 'none' && animationDuration > 0
+  const disappearProgress = typeof end === 'number' && currentTime > end && hasAnimation
     ? Math.max(0, Math.min(1, 1 - ((currentTime - end) / animationDuration)))
     : 1;
   const motionState = getBubbleMotionState(progress * disappearProgress, animationStyle, 'left');
+  const isVideo = /\.(mp4|webm|mov|mkv)(\?|$)/i.test(src || '');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    const targetTime = Math.max(0, currentTime - appearanceTime);
+    if (video.readyState >= 1 && Math.abs((video.currentTime || 0) - targetTime) > 0.08) {
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Ignore not-ready seek errors; loadedmetadata will retry once.
+      }
+    }
+  }, [appearanceTime, currentTime, isVideo, src]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
+    if (isPlaying) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, isVideo, src]);
+
   // Transform applied to the asset (and matched by the edit overlay so controls track the image).
   // transformOrigin is always 50% 50% so rotate/scale behaves like PS Free Transform (center-based).
   const assetTransform = `translate(${offsetX}px, ${offsetY}px) rotate(${rotation}deg) scale(${scale}) ${motionState.transform || ''}`.trim();
@@ -679,9 +840,28 @@ function PreviewBackgroundAsset({
     touchAction: draggable ? 'none' : undefined,
   };
 
-  const isVideo = /\.(mp4|webm|mov|mkv)(\?|$)/i.test(src || '');
   const media = isVideo
-    ? <video src={src} muted loop playsInline className="w-full h-full" style={{ ...assetStyle, pointerEvents: 'none' }} onLoadedMetadata={(e) => setNaturalSize({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })} />
+    ? <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        className="w-full h-full"
+        style={{ ...assetStyle, pointerEvents: 'none' }}
+        onLoadedMetadata={(e) => {
+          const video = e.currentTarget;
+          setNaturalSize({ w: video.videoWidth, h: video.videoHeight });
+          const targetTime = Math.max(0, currentTime - appearanceTime);
+          try {
+            video.currentTime = targetTime;
+          } catch {
+            // Ignore not-ready seek errors.
+          }
+          if (isPlaying) {
+            void video.play().catch(() => undefined);
+          }
+        }}
+      />
     : (
       <img
         src={src}
@@ -1055,6 +1235,7 @@ function App() {
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
   const [lastExportOutputPath, setLastExportOutputPath] = useState('');
   const [lastExportSucceeded, setLastExportSucceeded] = useState(false);
+  const exportCancellationRequestedRef = useRef(false);
   const [activeInsertImageId, setActiveInsertImageId] = useState<string | null>(null);
   const [isInsertImageEditMode, setIsInsertImageEditMode] = useState(false);
   const [focusInsertImageSettingsKey, setFocusInsertImageSettingsKey] = useState(0);
@@ -3478,6 +3659,17 @@ const [previewScale, setPreviewScale] = useState(1);
     }
   }, [exportOutputPath, quickSavePath, t]);
 
+  const handleCancelExport = useCallback(async () => {
+    if (!window.electron || !isExporting) return;
+    exportCancellationRequestedRef.current = true;
+    setExportStatusMessage(t('export.cancelling'));
+    try {
+      await window.electron.cancelExport();
+    } catch (error) {
+      console.error('Failed to cancel export:', error);
+    }
+  }, [isExporting, t]);
+
   const handleStartExport = useCallback(async () => {
     if (!window.electron) {
       alert(t('export.clientOnly'));
@@ -3499,6 +3691,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     setIsExporting(true);
+    exportCancellationRequestedRef.current = false;
     exportProgressActiveRef.current = true;
     setLastExportOutputPath(trimmedPath);
     setLastExportSucceeded(false);
@@ -3516,10 +3709,18 @@ const [previewScale, setPreviewScale] = useState(1);
         biliup.open();
         return;
       }
+      if (exportCancellationRequestedRef.current) {
+        return;
+      }
       const slideIntrinsicSizeOverrides = await ensureBackgroundSlideIntrinsicSizes();
+      if (exportCancellationRequestedRef.current) {
+        return;
+      }
       const crf = calculateCRF(exportQuality);
       const preset = calculateX264Preset(exportQuality);
-      
+      if (exportCancellationRequestedRef.current) {
+        return;
+      }
       const res = await window.electron.exportVideo({
         ...getExportConfig(slideIntrinsicSizeOverrides),
         outputPath: trimmedPath,
@@ -3546,19 +3747,28 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       } else {
         setLastExportSucceeded(false);
-        const errorMsg = res.error || t('export.failed');
+        if (res.cancelled || exportCancellationRequestedRef.current) {
+          setExportStatusMessage(t('export.cancelled'));
+        } else {
+          const errorMsg = res.error || t('export.failed');
+          setExportStatusMessage(errorMsg);
+          showToast(errorMsg);
+          window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
+        }
+      }
+    } catch (error: any) {
+      setLastExportSucceeded(false);
+      if (exportCancellationRequestedRef.current) {
+        setExportStatusMessage(t('export.cancelled'));
+      } else {
+        const errorMsg = `${t('export.failed')}: ${error.message}`;
         setExportStatusMessage(errorMsg);
         showToast(errorMsg);
         window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
       }
-    } catch (error: any) {
-      setLastExportSucceeded(false);
-      const errorMsg = `${t('export.failed')}: ${error.message}`;
-      setExportStatusMessage(errorMsg);
-      showToast(errorMsg);
-      window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
     } finally {
       setIsExporting(false);
+      exportCancellationRequestedRef.current = false;
       exportProgressActiveRef.current = false;
     }
   }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes, biliup]);
@@ -6195,12 +6405,18 @@ const [previewScale, setPreviewScale] = useState(1);
     const fps = Math.max(1, config.fps || 60);
     return Math.round(currentTime * fps) / fps;
   }, [currentTime, config.fps]);
+  const previewSubtitles = useMemo(
+    () => [...subtitles].sort((a, b) => a.start - b.start || a.end - b.end),
+    [subtitles]
+  );
   const visibleBackgroundSlides = backgroundSlides.filter((slide: BackgroundSlideItem) => {
     if (slide.visible === false) return false;
     const animationDuration = slide.animationDuration ?? 0.24;
-    const instantAppearanceEpsilon = (slide.animationStyle || 'fade') === 'none' || animationDuration <= 0 ? (1 / Math.max(1, config.fps || 60)) : 0;
-    const appearanceTime = Math.max(0, slide.start - ((slide.animationStyle || 'fade') === 'none' ? 0 : animationDuration) - instantAppearanceEpsilon);
-    return previewRenderTime >= appearanceTime && previewRenderTime <= (slide.end + animationDuration);
+    const hasAnimation = (slide.animationStyle || 'fade') !== 'none' && animationDuration > 0;
+    const instantAppearanceEpsilon = hasAnimation ? 0 : (1 / Math.max(1, config.fps || 60));
+    const appearanceTime = Math.max(0, slide.start - (hasAnimation ? animationDuration : 0) - instantAppearanceEpsilon);
+    const disappearanceTime = slide.end + (hasAnimation ? animationDuration : 0);
+    return previewRenderTime >= appearanceTime && previewRenderTime <= disappearanceTime;
   });
   const backgroundSlidesBelowChat = visibleBackgroundSlides
     .filter((slide: BackgroundSlideItem) => (slide.layer || 'background') === 'background')
@@ -6208,16 +6424,21 @@ const [previewScale, setPreviewScale] = useState(1);
   const backgroundSlidesAboveChat = visibleBackgroundSlides
     .filter((slide: BackgroundSlideItem) => slide.layer === 'overlay')
     .sort((a: BackgroundSlideItem, b: BackgroundSlideItem) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0));
-  const visibleAnnotations = subtitles.filter((item) => {
+  const visibleAnnotations = previewSubtitles.filter((item) => {
     if (item.visible === false) return false;
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type !== 'annotation') return false;
-    const animationStyle = config.chatLayout?.animationStyle || 'rise';
+    const animationStyle = speaker.style?.animationStyle || config.chatLayout?.animationStyle || 'rise';
     const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
-    const appearanceTime = Math.max(0, item.start - (animationStyle === 'none' ? 0 : animationDuration));
-    return previewRenderTime >= appearanceTime && previewRenderTime <= item.end;
+    const { appearanceTime, disappearanceTime } = getBubbleAnimationWindow({
+      start: item.start,
+      end: item.end,
+      animationStyle,
+      animationDuration,
+    });
+    return previewRenderTime >= appearanceTime && previewRenderTime <= disappearanceTime;
   });
-  const appearedMessages = useMemo(() => subtitles.filter((item) => {
+  const appearedMessages = useMemo(() => previewSubtitles.filter((item) => {
     if (item.visible === false) return false;
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type === 'annotation') return false;
@@ -6226,7 +6447,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const animationLeadTime = animationStyle === 'none' ? 0 : animationDuration;
     const appearanceTime = Math.max(0, item.start - animationLeadTime);
     return previewRenderTime >= appearanceTime;
-  }), [subtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
+  }), [previewSubtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
   const visibleMessageRows = useMemo(() => {
     const maxVisible = config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT;
     return (config.chatLayout?.interruptionEnabled ?? true)
@@ -6254,16 +6475,19 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    const targetTime = Math.max(0, previewRenderTime);
+    const backgroundDuration = Number(config.background?.duration);
+    const targetTime = Number.isFinite(backgroundDuration) && backgroundDuration > 0
+      ? ((previewRenderTime % backgroundDuration) + backgroundDuration) % backgroundDuration
+      : Math.max(0, previewRenderTime);
     const drift = Math.abs((bgVideo.currentTime || 0) - targetTime);
     if (drift > 0.08) {
       try {
         bgVideo.currentTime = targetTime;
-      } catch (_error) {
+      } catch {
         // ignore not-ready seek errors
       }
     }
-  }, [previewRenderTime, seekTick, isPlaying, config.background?.image]);
+  }, [previewRenderTime, seekTick, isPlaying, config.background?.duration, config.background?.image]);
 
   useEffect(() => {
     const bgVideo = previewBackgroundVideoRef.current;
@@ -7168,6 +7392,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     currentTime={previewRenderTime}
                     start={slide.start}
                     end={slide.end}
+                    isPlaying={isPlaying}
                     draggable={activeInsertImageId === slide.id && isInsertImageEditMode}
                     onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
                     onNaturalSizeChange={(size) => updateSlideIntrinsicSize(slide.id, size.width, size.height)}
@@ -7234,13 +7459,13 @@ const [previewScale, setPreviewScale] = useState(1);
                                         nextSpeakerId={nextSpeakerId}
                                         isLatestVisible={itemIndex === track.items.length - 1}
                                         bubbleMaxWidthOverridePx={bubbleWidth}
-                                        renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                                        renderInlineImage={({ src, alt, key, style }) => <PreviewInlineMedia key={key || `${item.id}-${src}`} src={resolvePath(src) || src} alt={alt} currentTime={previewRenderTime} isPlaying={isPlaying} style={style} />}
                                         renderAvatar={({ src, alt, style }) => {
                                           const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
                                           const combinedScale = Math.max(0.1, 1) * bubbleScale;
                                           const borderWidth = speaker.style?.avatarBorderWidth != null ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * combinedScale) : Math.max(2, Math.round(4 * combinedScale));
-                                          const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
-                                          return <img src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={{ ...style, pointerEvents: 'none', boxSizing: 'border-box', border: `${borderWidth}px solid ${borderColor}`, backgroundColor: borderColor }} />;
+                                          const borderColor = speaker.style?.avatarBorderColor || '#ffffff';
+                                          return <PreviewAvatar src={resolvePath(src) || src} alt={alt} currentTime={previewRenderTime} isPlaying={isPlaying} style={{ ...style, pointerEvents: 'none', boxSizing: 'border-box', border: `${borderWidth}px solid ${borderColor}`, backgroundColor: borderColor }} />;
                                         }}
                                         renderBubble={({ outerStyle, contentStyle, children }) => <div style={{ ...outerStyle, pointerEvents: 'none' }}><div style={{ ...contentStyle, pointerEvents: 'none' }}>{children}</div></div>}
                                       />
@@ -7288,11 +7513,12 @@ const [previewScale, setPreviewScale] = useState(1);
                                 nextSpeakerId={nextSpeakerId}
                                 isLatestVisible={isLatestRow}
                                 renderInlineImage={({ src, alt, key, style }) => (
-                                  <img
+                                  <PreviewInlineMedia
                                     key={key || `${item.id}-${src}`}
-                                    src={resolvePath(src)}
+                                    src={resolvePath(src) || src}
                                     alt={alt}
-                                    referrerPolicy="no-referrer"
+                                    currentTime={previewRenderTime}
+                                    isPlaying={isPlaying}
                                     style={style}
                                   />
                                 )}
@@ -7300,13 +7526,13 @@ const [previewScale, setPreviewScale] = useState(1);
                                    const bubbleScale = previewChatLayout?.bubbleScale ?? 1.5;
                                    const combinedScale = Math.max(0.1, 1) * bubbleScale;
                                    const borderWidth = speaker.style?.avatarBorderWidth != null ? Math.round(parseFloat(String(speaker.style.avatarBorderWidth)) * combinedScale) : Math.max(2, Math.round(4 * combinedScale));
-                                  const borderColor = speaker.style?.avatarBorderColor || (isDarkMode ? '#1f2937' : '#ffffff');
+                                  const borderColor = speaker.style?.avatarBorderColor || '#ffffff';
                                   return (
-                                    <img
-                                      src={resolvePath(src)}
+                                    <PreviewAvatar
+                                      src={resolvePath(src) || src}
                                       alt={alt}
-                                      referrerPolicy="no-referrer"
-                                      className="rounded-full shrink-0 object-cover"
+                                      currentTime={previewRenderTime}
+                                      isPlaying={isPlaying}
                                       style={{
                                         ...style,
                                         pointerEvents: 'none',
@@ -7385,6 +7611,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     currentTime={previewRenderTime}
                     start={slide.start}
                     end={slide.end}
+                    isPlaying={isPlaying}
                     draggable={false}
                     onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
                     onNaturalSizeChange={(size) => updateSlideIntrinsicSize(slide.id, size.width, size.height)}
@@ -7413,7 +7640,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
-                            renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                            renderInlineImage={({ src, alt, key, style }) => <PreviewInlineMedia key={key || `${item.id}-${src}`} src={resolvePath(src) || src} alt={alt} currentTime={previewRenderTime} isPlaying={isPlaying} style={style} />}
                           />
                         </div>
                       );
@@ -7430,7 +7657,7 @@ const [previewScale, setPreviewScale] = useState(1);
                             currentTime={previewRenderTime}
                             layoutScale={1}
                             chatLayout={{ ...previewChatLayout, bubbleScale: previewChatLayout?.bubbleScale }}
-                            renderInlineImage={({ src, alt, key, style }) => <img key={key || `${item.id}-${src}`} src={resolvePath(src)} alt={alt} referrerPolicy="no-referrer" style={style} />}
+                            renderInlineImage={({ src, alt, key, style }) => <PreviewInlineMedia key={key || `${item.id}-${src}`} src={resolvePath(src) || src} alt={alt} currentTime={previewRenderTime} isPlaying={isPlaying} style={style} />}
                           />
                         </div>
                       );
@@ -7910,6 +8137,7 @@ const [previewScale, setPreviewScale] = useState(1);
              setShowExportModal(false);
            }
          }}
+         onCancelExport={handleCancelExport}
          onOutputPathChange={setExportOutputPath}
          onChoosePath={handleChooseExportPath}
          onQuickSave={() => setExportOutputPath(quickSavePath)}

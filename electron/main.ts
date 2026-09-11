@@ -194,7 +194,7 @@ function resolveRemotionBinary(binaryName: 'ffmpeg' | 'ffprobe') {
     if (fs.existsSync(binaryPath)) {
       return binaryPath;
     }
-  } catch (_error) {
+  } catch {
     // Fall back to PATH below.
   }
 
@@ -211,8 +211,69 @@ function probeHasAudioStream(inputPath: string) {
       inputPath,
     ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
     return output.length > 0;
-  } catch (_error) {
+  } catch {
     return false;
+  }
+}
+
+function probeOutputMedia(outputPath: string) {
+  if (!outputPath || !fs.existsSync(outputPath)) {
+    return null;
+  }
+  try {
+    const raw = execFileSync(resolveRemotionBinary('ffprobe'), [
+      '-v', 'error',
+      '-show_entries', 'stream=index,codec_type,codec_name,pix_fmt:stream_tags=encoder,alpha_mode:format=duration',
+      '-of', 'json',
+      outputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    const parsed = JSON.parse(raw);
+    const streams = Array.isArray(parsed?.streams)
+      ? parsed.streams.map((stream: any) => {
+          const tags = stream.tags || {};
+          return {
+            index: stream.index,
+            codecType: stream.codec_type || null,
+            codecName: stream.codec_name || null,
+            pixelFormat: stream.pix_fmt || null,
+            encoder: tags.encoder || tags.ENCODER || null,
+            alphaMode: tags.alpha_mode || tags.ALPHA_MODE || null,
+          };
+        })
+      : [];
+    const duration = Number(parsed?.format?.duration);
+    return {
+      durationSeconds: Number.isFinite(duration) ? duration : null,
+      streams,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function replaceExportOutput(sourcePath: string, outputPath: string) {
+  if (path.resolve(sourcePath) === path.resolve(outputPath)) {
+    return;
+  }
+
+  if (process.platform !== 'win32' || !fs.existsSync(outputPath)) {
+    fs.renameSync(sourcePath, outputPath);
+    return;
+  }
+
+  const backupPath = `${outputPath}.pomchat-previous-${process.pid}-${Date.now()}`;
+  fs.renameSync(outputPath, backupPath);
+  try {
+    fs.renameSync(sourcePath, outputPath);
+    fs.rmSync(backupPath, { force: true });
+  } catch (error) {
+    try {
+      if (fs.existsSync(outputPath)) fs.rmSync(outputPath, { force: true });
+      if (fs.existsSync(backupPath)) fs.renameSync(backupPath, outputPath);
+    } catch {
+      // Preserve the original error; the failed replacement is reported to the user.
+    }
+    throw error;
   }
 }
 
@@ -242,8 +303,12 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
         '-avoid_negative_ts', 'make_zero',
         outputPath,
       ], { stdio: 'pipe' });
-      return;
-    } catch (_copyError) {
+      return {
+        mode: 'copy',
+        videoEncoder: null,
+        audioEncoder: null,
+      };
+    } catch {
       const hasAudioInAllSegments = segmentPaths.every((segmentPath) => probeHasAudioStream(segmentPath));
       execFileSync(ffmpegBinary, [
         '-y',
@@ -261,16 +326,24 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
         ...(hasAudioInAllSegments ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '192k'] : []),
         outputPath,
       ], { stdio: 'pipe' });
+      return {
+        mode: 'reencode',
+        videoEncoder: 'libx264',
+        audioEncoder: hasAudioInAllSegments ? 'aac' : null,
+      };
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
+const activeExportWorkers = new Set<any>();
+
 function runWorkerExport(workerPath: string, config: any, onProgress?: (payload: any) => void) {
   return new Promise<any>((resolve, reject) => {
     let workerStdErr = '';
     let workerStdOut = '';
+    let settled = false;
 
     const workerCwd = app.getPath('userData');
     fs.mkdirSync(workerCwd, { recursive: true });
@@ -283,6 +356,7 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
         VITE_PUBLIC: process.env.VITE_PUBLIC || '',
       },
     });
+    activeExportWorkers.add(worker);
 
     worker.stdout?.on('data', (chunk) => {
       workerStdOut += chunk.toString();
@@ -293,9 +367,25 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
     });
 
     const timeout = setTimeout(() => {
+      finishReject(new Error('Export timeout: operation took too long'));
       worker.kill();
-      reject(new Error('Export timeout: operation took too long'));
     }, 5 * 60 * 60 * 1000);
+
+    const finishResolve = (value: any) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      activeExportWorkers.delete(worker);
+      resolve(value);
+    };
+
+    const finishReject = (error: Error & { cancelled?: boolean }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      activeExportWorkers.delete(worker);
+      reject(error);
+    };
 
     worker.on('message', (message: any) => {
       if (!message) return;
@@ -305,8 +395,7 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
       }
 
       if (message.type === 'result') {
-        clearTimeout(timeout);
-        resolve({
+        finishResolve({
           ...message.payload,
           workerDetails: {
             stdout: workerStdOut.trim() || null,
@@ -318,36 +407,54 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
       }
 
       if (message.type === 'error') {
-        clearTimeout(timeout);
         const detail = [message.payload?.message, workerStdErr.trim() || '', workerStdOut.trim() || ''].filter(Boolean).join('\n');
-        reject(new Error(detail || 'Export failed'));
+        const error = new Error(detail || 'Export failed') as Error & { cancelled?: boolean };
+        error.cancelled = message.payload?.cancelled === true;
+        finishReject(error);
         worker.kill();
       }
     });
 
     worker.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      finishReject(error as Error & { cancelled?: boolean });
     });
 
     worker.on('exit', (code) => {
-      clearTimeout(timeout);
-      if (code && code !== 0) {
-        const detail = [
-          `Export worker exited with code ${code}`,
-          workerStdErr.trim() || '',
-          workerStdOut.trim() || '',
-        ].filter(Boolean).join('\n');
-        reject(new Error(detail));
-      }
+      if (settled) return;
+      const detail = code && code !== 0
+        ? [
+            `Export worker exited with code ${code}`,
+            workerStdErr.trim() || '',
+            workerStdOut.trim() || '',
+          ].filter(Boolean).join('\n')
+        : 'Export worker exited before returning a result';
+      finishReject(new Error(detail));
     });
 
-    worker.send({
-      type: 'render',
-      payload: config,
-    });
+    try {
+      worker.send({
+        type: 'render',
+        payload: config,
+      });
+    } catch (error) {
+      finishReject(error instanceof Error ? error : new Error(String(error)));
+      worker.kill();
+    }
   });
 }
+
+ipcMain.handle('cancel-export', () => {
+  let cancelledWorkers = 0;
+  for (const worker of activeExportWorkers) {
+    try {
+      worker.send({ type: 'cancel' });
+      cancelledWorkers += 1;
+    } catch {
+      // The worker may have exited between the set iteration and send().
+    }
+  }
+  return cancelledWorkers > 0;
+});
 
 function getPomchatRemotionTempEntries() {
   const tempDir = os.tmpdir();
@@ -1088,7 +1195,15 @@ ipcMain.handle('export-video', async (_event, config) => {
     };
   }
 
+  let temporaryOutputPath: string | null = null;
+
   try {
+    const outputExtension = path.extname(outputPath) || (config?.exportFormat === 'mov-alpha' ? '.mov' : config?.exportFormat === 'webm-alpha' ? '.webm' : '.mp4');
+    temporaryOutputPath = path.join(
+      path.dirname(outputPath),
+      `.${path.basename(outputPath)}.${process.pid}.${exportStartedAt}.part${outputExtension}`,
+    );
+    const workerConfig = { ...config, outputPath: temporaryOutputPath };
     const exportMetaBase = {
       outputPath,
       outputFilename: path.basename(outputPath),
@@ -1124,7 +1239,7 @@ ipcMain.handle('export-video', async (_event, config) => {
     let result: any = null;
 
     if (canUseParallelSegments) {
-      const totalFrames = Math.max(1, Math.round((exportRange.end - exportRange.start) * fps));
+      const totalFrames = Math.max(1, Math.ceil(Math.max(0.1, exportRange.end - exportRange.start) * fps));
       const firstSegmentFrames = Math.floor(totalFrames / 2);
 
       if (firstSegmentFrames >= 1 && totalFrames - firstSegmentFrames >= 1) {
@@ -1150,7 +1265,7 @@ ipcMain.handle('export-video', async (_event, config) => {
 
           const segmentResults = await Promise.allSettled([
             runWorkerExport(workerPath, {
-              ...config,
+              ...workerConfig,
               outputPath: segmentAPath,
               exportRange: {
                 start: exportRange.start,
@@ -1159,7 +1274,7 @@ ipcMain.handle('export-video', async (_event, config) => {
               renderConcurrency,
             }, (payload) => aggregateProgress(0, payload)),
             runWorkerExport(workerPath, {
-              ...config,
+              ...workerConfig,
               outputPath: segmentBPath,
               exportRange: {
                 start: splitTime,
@@ -1182,29 +1297,47 @@ ipcMain.handle('export-video', async (_event, config) => {
           });
 
           const concatStartedAt = Date.now();
-          runConcatMp4([segmentAPath, segmentBPath], outputPath);
+          const concatResult = runConcatMp4([segmentAPath, segmentBPath], temporaryOutputPath as string);
           const concatMs = Date.now() - concatStartedAt;
+          const outputMedia = probeOutputMedia(temporaryOutputPath as string);
           const elapsedMs = Date.now() - exportStartedAt;
-          const durationSeconds = Math.max(0.1, exportRange.end - exportRange.start);
           const segmentDiagnostics = segmentResults
             .filter((entry): entry is PromiseFulfilledResult<any> => entry.status === 'fulfilled')
             .map((entry) => entry.value?.renderDiagnostics)
             .filter(Boolean);
+          const renderedDurationSeconds = segmentDiagnostics.reduce((total: number, diagnostics: any) => (
+            total + (typeof diagnostics.renderedDurationSeconds === 'number' ? diagnostics.renderedDurationSeconds : 0)
+          ), 0);
+          const durationSeconds = Math.max(0.1, renderedDurationSeconds || (exportRange.end - exportRange.start));
           const actualEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.actualEncoder).filter(Boolean))];
           const expectedEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.expectedEncoder).filter(Boolean))];
           const hardwareStates = segmentDiagnostics.map((diagnostics: any) => diagnostics.hardwareAccelerated).filter((value: unknown): value is boolean => typeof value === 'boolean');
+          const segmentHardwareAccelerated = hardwareStates.length === 2 ? hardwareStates.every(Boolean) : null;
+          const finalEncoder = concatResult.videoEncoder || actualEncoders[0] || expectedEncoders[0] || null;
+          const finalHardwareAccelerated = concatResult.mode === 'reencode' ? false : segmentHardwareAccelerated;
           const renderDiagnostics = {
             mode: 'parallel-segments',
             requestedHardware: config?.exportHardware || 'auto',
             actualEncoders,
             expectedEncoders,
-            hardwareAccelerated: hardwareStates.length === 2 ? hardwareStates.every(Boolean) : null,
+            finalEncoder,
+            finalEncoderSource: concatResult.mode === 'reencode' ? 'parallelConcat' : 'segmentCopy',
+            encoderSources: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.encoderSource).filter(Boolean))],
+            ffmpegVideoEncoders: [...new Set(segmentDiagnostics.flatMap((diagnostics: any) => diagnostics.ffmpegVideoEncoders || []))],
+            hardwareAccelerated: finalHardwareAccelerated,
             browserGls: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.browserGl).filter(Boolean))],
             fallbackUsed: segmentDiagnostics.some((diagnostics: any) => diagnostics.fallbackUsed),
+            concatMode: concatResult.mode,
+            concatVideoEncoder: concatResult.videoEncoder,
+            concatAudioEncoder: concatResult.audioEncoder,
+            audioPipelines: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.audioPipeline).filter(Boolean))],
+            audioMuxModes: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.audioMuxMode).filter(Boolean))],
+            outputMedia,
             concatMs,
+            renderedDurationSeconds: durationSeconds,
             segments: segmentDiagnostics,
           };
-          const encoderLabel = actualEncoders.join(', ') || expectedEncoders.join(', ') || 'unknown';
+          const encoderLabel = finalEncoder || 'unknown';
           const accelerationLabel = renderDiagnostics.hardwareAccelerated === true
             ? 'hardware'
             : renderDiagnostics.hardwareAccelerated === false
@@ -1229,10 +1362,13 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
 
     if (!result) {
-      result = await runWorkerExport(workerPath, config, (payload) => {
+      result = await runWorkerExport(workerPath, workerConfig, (payload) => {
         win?.webContents.send('export-progress', payload);
       });
     }
+
+    replaceExportOutput(temporaryOutputPath as string, outputPath);
+    result = { ...result, outputPath };
 
     const workerDetails = result?.workerDetails || null;
 
@@ -1260,6 +1396,14 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
     return successPayload;
   } catch (error: any) {
+    if (temporaryOutputPath) {
+      try {
+        fs.rmSync(temporaryOutputPath, { force: true });
+      } catch {
+        // A failed/cancelled export must not mask the original error.
+      }
+    }
+    const cancelled = error?.cancelled === true || error?.message === 'Export cancelled';
     if (config?.exportLogEnabled) {
       writeExportLog({
         outputPath,
@@ -1286,6 +1430,7 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
     return {
       success: false,
+      cancelled,
       error: error?.message || 'Export failed',
     };
   }
