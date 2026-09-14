@@ -279,3 +279,13 @@ On Windows, the workflow produces both:
 - [x] Add a GitHub Pages version with basic subtitle and audio import preview capabilities
 - [x] Add basic mobile portrait-oriented layout support for the static web version with a collapsible bottom panel
 - [ ] Add an update-checking feature
+
+---
+
+## Support the author
+
+If this project helps you, consider buying me a coffee ☕️
+
+<p align="center">
+  <img src="./buy-me-a-coffee.png" alt="Buy me a coffee" width="580">
+</p>
