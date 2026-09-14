@@ -1318,7 +1318,14 @@ ipcMain.handle('export-video', async (_event, config) => {
     let result: any = null;
 
     if (canUseParallelSegments) {
-      const totalFrames = Math.max(1, Math.ceil(Math.max(0.1, exportRange.end - exportRange.start) * fps));
+      const requestedFrames = Math.max(0.1, exportRange.end - exportRange.start) * fps;
+      const nearestRequestedFrames = Math.round(requestedFrames);
+      const totalFrames = Math.max(
+        1,
+        Math.abs(requestedFrames - nearestRequestedFrames) < 1e-7
+          ? nearestRequestedFrames
+          : Math.ceil(requestedFrames),
+      );
       const firstSegmentFrames = Math.floor(totalFrames / 2);
 
       if (firstSegmentFrames >= 1 && totalFrames - firstSegmentFrames >= 1) {
