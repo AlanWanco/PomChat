@@ -600,6 +600,9 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
   };
 };
 
+const ENCODING_PROGRESS_START = 0.1;
+const ENCODING_PROGRESS_END = 0.95;
+
 const getRenderConcurrency = (requestedConcurrency) => {
   const cpuCount = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
   const maxConcurrency = Math.max(1, cpuCount);
@@ -898,7 +901,7 @@ const runRender = async (config) => {
       diagnostics.attempts.push(attempt);
       activeAttempt = attempt;
 
-      sendProgress(0.12, 'Resolving composition');
+      sendProgress(0.08, 'Resolving composition');
       const compositionStartedAt = Date.now();
       const composition = await selectComposition({
         serveUrl,
@@ -915,7 +918,7 @@ const runRender = async (config) => {
       });
       attempt.phaseMs.composition = Date.now() - compositionStartedAt;
 
-      sendProgress(0.2, isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)');
+      sendProgress(ENCODING_PROGRESS_START, isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)');
       const qualityOptions = strategy.hardwareAcceleration === 'disable' && !isAlphaExport
         ? {
             x264Preset: config.x264Preset || 'veryfast',
@@ -982,11 +985,11 @@ const runRender = async (config) => {
           let stage = isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)';
           // Use normalized progress as baseline to avoid long stalls
           // when encodedFrames updates are sparse on some platforms.
-          let weightedProgress = 0.2 + Math.max(renderedRatio, normalized * 0.55) * 0.35;
+          let weightedProgress = ENCODING_PROGRESS_START + Math.max(renderedRatio, normalized * 0.55) * (ENCODING_PROGRESS_END - ENCODING_PROGRESS_START) * 0.5;
 
           if (stitchStage === 'encoding') {
             stage = isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)';
-            weightedProgress = 0.55 + Math.max(encodedRatio, normalized) * 0.4;
+            weightedProgress = ENCODING_PROGRESS_START + Math.max(encodedRatio, normalized) * (ENCODING_PROGRESS_END - ENCODING_PROGRESS_START);
           } else if (stitchStage === 'muxing') {
             stage = 'Muxing audio/video';
             weightedProgress = 0.95 + normalized * 0.03;
@@ -995,7 +998,7 @@ const runRender = async (config) => {
             weightedProgress = 0.98;
           }
 
-          sendProgress(Math.max(0.2, Math.min(0.99, weightedProgress)), stage);
+          sendProgress(Math.max(ENCODING_PROGRESS_START, Math.min(0.99, weightedProgress)), stage);
         },
       });
       attempt.phaseMs.render = Date.now() - renderStartedAt;

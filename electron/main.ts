@@ -1390,7 +1390,9 @@ ipcMain.handle('export-video', async (_event, config) => {
             const combined = (workerProgress[0] + workerProgress[1]) / 2;
             sendExportProgress({
               ...payload,
-              progress: Math.min(0.94, combined * 0.94),
+              // The worker already reserves 0–10% for preparation and 10–95%
+              // for encoding. Keep that allocation when aggregating two workers.
+              progress: Math.min(0.95, combined),
               stage: `Parallel render ${segmentIndex + 1}/2: ${payload?.stage || 'Rendering'}`,
             });
           };
