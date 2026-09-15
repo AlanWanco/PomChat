@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
+
+const temporary = mkdtempSync(path.join(tmpdir(), 'pomchat-history-test-'));
+try {
+  const outfile = path.join(temporary, 'controller.mjs');
+  await build({ entryPoints: ['src/history/HistoryController.ts'], outfile, bundle: true, platform: 'node', format: 'esm' });
+  const { HistoryController, MediaUrlRegistry } = await import(pathToFileURL(outfile).href);
+  const revoked = [];
+  const history = new HistoryController({ value: 0 });
+  assert.equal(history.commit({ value: 0 }), false);
+  for (let value = 1; value <= 90; value++) history.commit({ value });
+  assert.equal(history.past.length, 80);
+  assert.equal(history.undo().value, 89);
+  assert.equal(history.redo().value, 90);
+  history.undo();
+  history.commit({ value: 89 });
+  assert.equal(history.canRedo, true, 'unchanged action retains redo');
+  history.preview('slider', { value: 91 });
+  history.preview('slider', { value: 92 });
+  assert.equal(history.canRedo, false);
+  assert.equal(history.undo().value, 89, 'pending preview can be undone immediately');
+  history.preview('first', { value: 100 });
+  history.preview('second', { value: 101 });
+  assert.equal(history.undo().value, 100, 'independent controls have separate baselines');
+  const save = history.saveToken();
+  history.preview('typing', { value: 102 });
+  assert.equal(history.isSaveCurrent(save), false);
+  history.reset({ value: 0 });
+  assert.equal(history.canUndo, false);
+  assert.equal(history.isSaveCurrent(save), false);
+  const media = new MediaUrlRegistry(url => revoked.push(url));
+  media.add('blob:past'); media.add('blob:future'); media.add('blob:unused');
+  media.retain([{ audio: 'blob:past' }, { audio: 'blob:future' }]);
+  assert(revoked.includes('blob:unused'));
+  assert(!revoked.includes('blob:past'));
+  media.dispose();
+  assert(revoked.includes('blob:future'));
+  const mediaHistory = new HistoryController({ audio: 'blob:evicted' }, 2);
+  media.add('blob:evicted');
+  mediaHistory.commit({ audio: 'one' }); mediaHistory.commit({ audio: 'two' });
+  media.retain(mediaHistory.snapshots);
+  assert(!revoked.includes('blob:evicted'));
+  mediaHistory.commit({ audio: 'three' }); media.retain(mediaHistory.snapshots);
+  assert(revoked.includes('blob:evicted'), 'eviction releases the last reference');
+  console.log('History controller and media URL tests passed.');
+} finally {
+  rmSync(temporary, { recursive: true, force: true });
+}

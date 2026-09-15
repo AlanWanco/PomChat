@@ -26,7 +26,10 @@ const FONT_OPTIONS = [
 interface SettingsPanelProps {
   config: any;
   onConfigChange: (newConfig: any) => void;
-  onConfigPreviewChange?: (newConfig: any) => void;
+  onHistoryInteractionStart?: () => void;
+  onHistoryInteractionEnd?: () => void;
+  onConfigAndPresetsChange?: (newConfig: any, updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any>; fontPresets?: FontPresetMap }) => void;
+  onConfigPreviewChange?: (newConfig: any, controlKey?: string) => void;
   isDarkMode: boolean;
   language: Language;
   themeColor: string;
@@ -117,7 +120,7 @@ function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement
 }
 
 export function SettingsPanel({ 
-  config, onConfigChange, onConfigPreviewChange,
+  config, onConfigChange, onConfigPreviewChange, onHistoryInteractionStart, onHistoryInteractionEnd, onConfigAndPresetsChange,
   isDarkMode, language, themeColor, secondaryThemeColor, autoSaveProject, uiFontScale, proxy, onThemeColorChange, onSecondaryThemeColorChange, onAutoSaveProjectChange, onUiFontScaleChange, onProxyChange, onLanguageChange, onThemeChange, 
   onProjectAssetsCacheEnabledChange,
   onClose, onSave, showToast, presets, onPresetsChange, activeTab, setActiveTab,
@@ -452,7 +455,7 @@ export function SettingsPanel({
     (onConfigPreviewChange || onConfigChange)({
       ...config,
       background: { ...config.background, [key]: value }
-    });
+    }, `background.${key}`);
   };
 
   const updateBackgroundSlides = (slides: any[]) => {
@@ -628,7 +631,7 @@ export function SettingsPanel({
     (onConfigPreviewChange || onConfigChange)({
       ...config,
       chatLayout: { ...config.chatLayout, [key]: value }
-    });
+    }, `chatLayout.${key}`);
   };
 
   const updateSpeakerStyle = (speakerKey: string, styleKey: string, value: any) => {
@@ -650,7 +653,7 @@ export function SettingsPanel({
     if (newSpeakers[speakerKey].preset && newSpeakers[speakerKey].lockPreset !== true) {
       newSpeakers[speakerKey].preset = "";
     }
-    (onConfigPreviewChange || onConfigChange)({ ...config, speakers: newSpeakers });
+    (onConfigPreviewChange || onConfigChange)({ ...config, speakers: newSpeakers }, `speaker.${speakerKey}.${styleKey}`);
   };
 
   const updateSpeaker = (speakerKey: string, updater: (speaker: any) => any, options?: { preservePreset?: boolean }) => {
@@ -845,23 +848,18 @@ export function SettingsPanel({
     const preset = fontPresets?.[id];
     const next = { ...(fontPresets || {}) };
     delete next[id];
-    onFontPresetsChange(next);
     setActiveFontPresetId((prev) => (prev === id ? '' : prev));
-    if (preset?.family) {
-      onConfigChange(replaceFontPresetFamilyReferences({ ...config }, [formatFontFamilyValue(preset.family), preset.family]));
-    }
+    const nextConfig = preset?.family
+      ? replaceFontPresetFamilyReferences({ ...config }, [formatFontFamilyValue(preset.family), preset.family])
+      : config;
+    if (onConfigAndPresetsChange) onConfigAndPresetsChange(nextConfig, { fontPresets: next });
+    else { onFontPresetsChange(next); onConfigChange(nextConfig); }
   };
 
   const handleRemovePreset = (presetName: string, scope: 'speaker' | 'annotation' = 'speaker') => {
     if (!presetName) return;
     const existing = scope === 'annotation' ? { ...annotationPresets } : { ...presets };
     delete existing[presetName];
-    if (scope === 'annotation') {
-      onAnnotationPresetsChange(existing);
-    } else {
-      onPresetsChange(existing);
-    }
-    
     const newSpeakers = { ...config.speakers };
     let changed = false;
     Object.keys(newSpeakers).forEach(k => {
@@ -871,7 +869,14 @@ export function SettingsPanel({
         changed = true;
       }
     });
-    if (changed) updateConfig('speakers', newSpeakers);
+    const nextConfig = changed ? { ...config, speakers: newSpeakers } : config;
+    if (onConfigAndPresetsChange) {
+      onConfigAndPresetsChange(nextConfig, scope === 'annotation' ? { annotationPresets: existing } : { presets: existing });
+    } else {
+      if (scope === 'annotation') onAnnotationPresetsChange(existing);
+      else onPresetsChange(existing);
+      onConfigChange(nextConfig);
+    }
     
     showToast(`Preset "${presetName}" removed`);
   };
@@ -1150,7 +1155,7 @@ export function SettingsPanel({
   };
 
   return (
-    <div className={`relative h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
+    <div onPointerDownCapture={onHistoryInteractionStart} onPointerUpCapture={onHistoryInteractionEnd} onPointerCancelCapture={onHistoryInteractionEnd} onBlurCapture={onHistoryInteractionEnd} className={`relative h-full flex flex-col overflow-hidden ${bgClass} [&_.text-xs]:text-sm`} style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.textMuted, borderColor: uiTheme.border }}>
       {!hideHeader && (
       <div className={`${compactHeader ? 'p-2.5' : 'p-4'} border-b flex items-center justify-between shrink-0 ${headerClass}`} style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
         <h2 className={`${hideHeaderTitle ? 'opacity-0 pointer-events-none select-none' : ''} font-bold flex items-center gap-2 text-sm`}>
@@ -2904,15 +2909,14 @@ export function SettingsPanel({
                                   delete existing[oldName];
                                 }
                                 existing[newName] = payload;
-                                onPresetsChange(existing);
-
                                 const nextSpeakers = Object.fromEntries(
                                   Object.entries(config.speakers || {}).map(([sid, sp]: [string, any]) => [
                                     sid,
                                     sp?.preset === oldName ? { ...sp, preset: newName } : sp,
                                   ])
                                 );
-                                updateConfig('speakers', nextSpeakers);
+                                if (onConfigAndPresetsChange) onConfigAndPresetsChange({ ...config, speakers: nextSpeakers }, { presets: existing });
+                                else { onPresetsChange(existing); updateConfig('speakers', nextSpeakers); }
                                 showToast(t('speakers.presetRenamed', { oldName, newName }));
                               } else {
                                 const existing = { ...presets };
@@ -3341,8 +3345,6 @@ export function SettingsPanel({
                                 delete existing[oldName];
                               }
                               existing[newName] = payload;
-                              onAnnotationPresetsChange(existing);
-
                               const nextSpeakers = {
                                 ...config.speakers,
                                 ANNOTATION: {
@@ -3350,7 +3352,8 @@ export function SettingsPanel({
                                   preset: newName,
                                 }
                               };
-                              updateConfig('speakers', nextSpeakers);
+                              if (onConfigAndPresetsChange) onConfigAndPresetsChange({ ...config, speakers: nextSpeakers }, { annotationPresets: existing });
+                              else { onAnnotationPresetsChange(existing); updateConfig('speakers', nextSpeakers); }
                               showToast(t('speakers.presetRenamed', { oldName, newName }));
                             } else {
                               const existing = { ...annotationPresets };

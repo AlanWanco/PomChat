@@ -13,7 +13,9 @@ import { StyleManagerModal } from './components/StyleManagerModal';
 import { BubbleSnapshotModal } from './components/BubbleSnapshotModal';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
 import { getBubbleAnimationWindow, getBubbleMotionState } from './components/chat/SharedChatBubbles';
-import { useAssSubtitle } from './hooks/useAssSubtitle';
+import { HistoryController, MediaUrlRegistry, usesNativeTextUndo } from './history/HistoryController';
+import { useLiveState } from './hooks/useLiveState';
+import { useAssSubtitle, parseSubtitleSource } from './hooks/useAssSubtitle';
 import { translate, type Language } from './i18n';
 import { createThemeTokens, rgba } from './theme';
 import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId, formatFontFamilyValue, replaceFontPresetFamilyReferences, withCjkFontFallback, type FontPresetMap } from './fontPresets';
@@ -50,6 +52,9 @@ type HistorySnapshot = {
   config: any;
   subtitles: any[];
   webAssContent: string | null;
+  webAudioObjectUrl: string;
+  exportHardware: 'auto' | 'gpu' | 'cpu';
+  filenameDrafts: { simple: string; advanced: string };
   exportRange: { start: number; end: number };
   exportRangeTouched: boolean;
   exportQuality: 'fast' | 'balance' | 'high';
@@ -1174,7 +1179,7 @@ function App() {
   const [recentProject, setRecentProject] = useState<string | null>(() => isDesktopMode ? null : localStorage.getItem(STORAGE_KEY + '_recent_project'));
 
   // Load initial from localStorage if available
-  const [config, setConfig] = useState(() => {
+  const [config, setConfig, configRef] = useLiveState(() => {
     if (!isDesktopMode) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -1195,23 +1200,23 @@ function App() {
   const [loop, setLoop] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   
-  const [isDarkMode, setIsDarkMode] = useState(() => getSystemPrefersDark());
-  const [themeColorState, setThemeColorState] = useState(() => config.ui?.themeColor ?? DEFAULT_UI_CONFIG.themeColor);
-  const [secondaryThemeColorState, setSecondaryThemeColorState] = useState(() => config.ui?.secondaryThemeColor ?? DEFAULT_UI_CONFIG.secondaryThemeColor);
-  const [autoSaveProject, setAutoSaveProject] = useState(() => config.ui?.autoSaveProject ?? DEFAULT_UI_CONFIG.autoSaveProject);
-  const [projectAssetsCacheEnabled, setProjectAssetsCacheEnabled] = useState(() => config.ui?.projectAssetsCacheEnabled ?? DEFAULT_UI_CONFIG.projectAssetsCacheEnabled);
-  const [proxyState, setProxyState] = useState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
+  const [isDarkMode, setIsDarkMode, isDarkModeRef] = useLiveState(() => getSystemPrefersDark());
+  const [themeColorState, setThemeColorState, themeColorStateRef] = useLiveState(() => config.ui?.themeColor ?? DEFAULT_UI_CONFIG.themeColor);
+  const [secondaryThemeColorState, setSecondaryThemeColorState, secondaryThemeColorStateRef] = useLiveState(() => config.ui?.secondaryThemeColor ?? DEFAULT_UI_CONFIG.secondaryThemeColor);
+  const [autoSaveProject, setAutoSaveProject, autoSaveProjectRef] = useLiveState(() => config.ui?.autoSaveProject ?? DEFAULT_UI_CONFIG.autoSaveProject);
+  const [projectAssetsCacheEnabled, setProjectAssetsCacheEnabled, projectAssetsCacheEnabledRef] = useLiveState(() => config.ui?.projectAssetsCacheEnabled ?? DEFAULT_UI_CONFIG.projectAssetsCacheEnabled);
+  const [proxyState, setProxyState, proxyStateRef] = useLiveState(() => config.ui?.proxy ?? DEFAULT_UI_CONFIG.proxy);
   const persistedAudioVolume = Number(config.ui?.audioVolume ?? DEFAULT_UI_CONFIG.audioVolume);
   const persistedWaveformZoomLevel = Number(config.ui?.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel);
-  const [uiFontScale, setUiFontScale] = useState(() => Number(config.ui?.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale));
-  const [exportFilenameEditorMode, setExportFilenameEditorMode] = useState<'simple' | 'advanced'>(() => config.ui?.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple');
-  const [audioVolume, setAudioVolume] = useState(() => persistedAudioVolume);
-  const [waveformZoomLevel, setWaveformZoomLevel] = useState(() => Number(config.ui?.waveformZoomLevel ?? 50));
+  const [uiFontScale, setUiFontScale, uiFontScaleRef] = useLiveState(() => Number(config.ui?.uiFontScale ?? DEFAULT_UI_CONFIG.uiFontScale));
+  const [exportFilenameEditorMode, setExportFilenameEditorMode, exportFilenameEditorModeRef] = useLiveState<'simple' | 'advanced'>(() => config.ui?.exportFilenameEditorMode === 'advanced' ? 'advanced' : 'simple');
+  const [audioVolume, setAudioVolume, audioVolumeRef] = useLiveState(() => persistedAudioVolume);
+  const [waveformZoomLevel, setWaveformZoomLevel, waveformZoomLevelRef] = useLiveState(() => Number(config.ui?.waveformZoomLevel ?? 50));
   const [showSettings, setShowSettings] = useState(false);
   const [showSubtitlePanel, setShowSubtitlePanel] = useState(true);
-  const [subtitlePanelCompactMode, setSubtitlePanelCompactMode] = useState(() => Boolean(config.ui?.subtitlePanelCompactMode));
+  const [subtitlePanelCompactMode, setSubtitlePanelCompactMode, subtitlePanelCompactModeRef] = useLiveState(() => Boolean(config.ui?.subtitlePanelCompactMode));
   
-  const [settingsPosition, setSettingsPosition] = useState<'left'|'right'>(() => config.ui?.settingsPosition ?? DEFAULT_UI_CONFIG.settingsPosition);
+  const [settingsPosition, setSettingsPosition, settingsPositionRef] = useLiveState<'left'|'right'>(() => config.ui?.settingsPosition ?? DEFAULT_UI_CONFIG.settingsPosition);
 
   // Panel Widths
   const [subtitleWidth, setSubtitleWidth] = useState(320);
@@ -1229,7 +1234,7 @@ function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [quickSavePath, setQuickSavePath] = useState('');
   const [exportOutputPath, setExportOutputPath] = useState('');
-  const [exportRange, setExportRange] = useState({ start: 0, end: 0 });
+  const [exportRange, setExportRange, exportRangeRef] = useLiveState({ start: 0, end: 0 });
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgressState | null>(null);
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
@@ -1245,32 +1250,32 @@ function App() {
   const [projectResourceActionBusy, setProjectResourceActionBusy] = useState<'remote-copy' | 'local-copy' | 'refresh' | null>(null);
   const [projectResourceActionReport, setProjectResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
   const [bubbleSnapshotSubtitleIds, setBubbleSnapshotSubtitleIds] = useState<string[]>([]);
-  const [bubbleSnapshotBackgroundMode, setBubbleSnapshotBackgroundMode] = useState<'project' | 'transparent' | 'solid' | 'custom-image'>(() => config.ui?.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode);
-  const [bubbleSnapshotBackgroundColor, setBubbleSnapshotBackgroundColor] = useState(() => String(config.ui?.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor));
-  const [bubbleSnapshotCustomBackgroundImage, setBubbleSnapshotCustomBackgroundImage] = useState(() => String(config.ui?.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage));
-  const [bubbleSnapshotBackgroundImageSizing, setBubbleSnapshotBackgroundImageSizing] = useState<'fit-width' | 'tile'>(() => config.ui?.bubbleSnapshotBackgroundImageSizing ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing);
-  const [bubbleSnapshotTileAlign, setBubbleSnapshotTileAlign] = useState<'left' | 'center' | 'right'>(() => config.ui?.bubbleSnapshotTileAlign ?? DEFAULT_UI_CONFIG.bubbleSnapshotTileAlign);
-  const [bubbleSnapshotBackgroundBlur, setBubbleSnapshotBackgroundBlur] = useState(() => Number(config.ui?.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur));
-  const [bubbleSnapshotBackgroundBrightness, setBubbleSnapshotBackgroundBrightness] = useState(() => Number(config.ui?.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness));
-  const [bubbleSnapshotSidePadding, setBubbleSnapshotSidePadding] = useState(() => Number(config.ui?.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding));
-  const [bubbleSnapshotBubbleWidthPercent, setBubbleSnapshotBubbleWidthPercent] = useState(() => Number(config.ui?.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent));
-  const [bubbleSnapshotExportScale, setBubbleSnapshotExportScale] = useState(() => Number(config.ui?.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale));
-  const [exportQuality, setExportQuality] = useState<'fast' | 'balance' | 'high'>('balance');
-  const [exportHardware, setExportHardware] = useState<'auto' | 'gpu' | 'cpu'>('auto');
-  const [exportParallelSegments, setExportParallelSegments] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'mp4' | 'mov-alpha' | 'webm-alpha'>('mp4');
-  const [exportLogEnabled, setExportLogEnabled] = useState(() => Boolean(config.exportLogEnabled));
-  const [filenameTemplate, setFilenameTemplate] = useState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
-  const [customFilename, setCustomFilename] = useState('');
-  const [persistedCustomFilename, setPersistedCustomFilename] = useState('');
+  const [bubbleSnapshotBackgroundMode, setBubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundModeRef] = useLiveState<'project' | 'transparent' | 'solid' | 'custom-image'>(() => config.ui?.bubbleSnapshotBackgroundMode ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundMode);
+  const [bubbleSnapshotBackgroundColor, setBubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundColorRef] = useLiveState(() => String(config.ui?.bubbleSnapshotBackgroundColor ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundColor));
+  const [bubbleSnapshotCustomBackgroundImage, setBubbleSnapshotCustomBackgroundImage, bubbleSnapshotCustomBackgroundImageRef] = useLiveState(() => String(config.ui?.bubbleSnapshotCustomBackgroundImage ?? DEFAULT_UI_CONFIG.bubbleSnapshotCustomBackgroundImage));
+  const [bubbleSnapshotBackgroundImageSizing, setBubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundImageSizingRef] = useLiveState<'fit-width' | 'tile'>(() => config.ui?.bubbleSnapshotBackgroundImageSizing ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundImageSizing);
+  const [bubbleSnapshotTileAlign, setBubbleSnapshotTileAlign, bubbleSnapshotTileAlignRef] = useLiveState<'left' | 'center' | 'right'>(() => config.ui?.bubbleSnapshotTileAlign ?? DEFAULT_UI_CONFIG.bubbleSnapshotTileAlign);
+  const [bubbleSnapshotBackgroundBlur, setBubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBlurRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotBackgroundBlur ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBlur));
+  const [bubbleSnapshotBackgroundBrightness, setBubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundBrightnessRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotBackgroundBrightness ?? DEFAULT_UI_CONFIG.bubbleSnapshotBackgroundBrightness));
+  const [bubbleSnapshotSidePadding, setBubbleSnapshotSidePadding, bubbleSnapshotSidePaddingRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding));
+  const [bubbleSnapshotBubbleWidthPercent, setBubbleSnapshotBubbleWidthPercent, bubbleSnapshotBubbleWidthPercentRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent));
+  const [bubbleSnapshotExportScale, setBubbleSnapshotExportScale, bubbleSnapshotExportScaleRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale));
+  const [exportQuality, setExportQuality, exportQualityRef] = useLiveState<'fast' | 'balance' | 'high'>('balance');
+  const [exportHardware, setExportHardware, exportHardwareRef] = useLiveState<'auto' | 'gpu' | 'cpu'>('auto');
+  const [exportParallelSegments, setExportParallelSegments, exportParallelSegmentsRef] = useLiveState(false);
+  const [exportFormat, setExportFormat, exportFormatRef] = useLiveState<'mp4' | 'mov-alpha' | 'webm-alpha'>('mp4');
+  const [exportLogEnabled, setExportLogEnabled, exportLogEnabledRef] = useLiveState(() => Boolean(config.exportLogEnabled));
+  const [filenameTemplate, setFilenameTemplate, filenameTemplateRef] = useLiveState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
+  const [customFilename, setCustomFilename, customFilenameRef] = useLiveState('');
+  const [persistedCustomFilename, setPersistedCustomFilename, persistedCustomFilenameRef] = useLiveState('');
   const [cachedRemoteAssets, setCachedRemoteAssets] = useState<Record<string, string>>({});
-  const [presets, setPresets] = useState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
-  const [annotationPresets, setAnnotationPresets] = useState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
-  const [fontPresets, setFontPresets] = useState<FontPresetMap>(() => config.ui?.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets);
-  const [webAudioObjectUrl, setWebAudioObjectUrl] = useState('');
+  const [presets, setPresets, presetsRef] = useLiveState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
+  const [annotationPresets, setAnnotationPresets, annotationPresetsRef] = useLiveState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
+  const [fontPresets, setFontPresets, fontPresetsRef] = useLiveState<FontPresetMap>(() => config.ui?.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets);
+  const [webAudioObjectUrl, setWebAudioObjectUrl, webAudioObjectUrlRef] = useLiveState('');
   const [desktopAudioBlob, setDesktopAudioBlob] = useState<Blob | null>(null);
   const [desktopAudioObjectUrl, setDesktopAudioObjectUrl] = useState('');
-  const [webAssContent, setWebAssContent] = useState<string | null>(null);
+  const [webAssContent, setWebAssContent, webAssContentRef] = useLiveState<string | null>(null);
   const webPresetInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [seekTick, setSeekTick] = useState(0);
@@ -1280,9 +1285,11 @@ function App() {
   const isApplyingConfigExportRangeRef = useRef(false);
   const lastPlaybackPersistAtRef = useRef(0);
   const lastUiFrameAtRef = useRef(0);
-  const historyPastRef = useRef<HistorySnapshot[]>([]);
-  const historyFutureRef = useRef<HistorySnapshot[]>([]);
-  const isRestoringHistoryRef = useRef(false);
+  const historyRef = useRef<HistoryController<HistorySnapshot> | null>(null);
+  const mediaUrlsRef = useRef(new MediaUrlRegistry());
+  const transactionRevisionRef = useRef(0);
+  const renderTransactionRevision = transactionRevisionRef.current;
+  const pointerInteractionRef = useRef(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isProjectDirty, setIsProjectDirty] = useState(false);
@@ -1304,7 +1311,7 @@ function App() {
   const pendingElectronAppCloseRef = useRef(false);
   const advancedModeCustomFilenameRef = useRef('');
   const debouncedConfigCommitTimerRef = useRef<number | null>(null);
-  const debouncedConfigSnapshotRef = useRef<HistorySnapshot | null>(null);
+
   const waveformZoomPersistTimeoutRef = useRef<number | null>(null);
   
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -1315,170 +1322,267 @@ function App() {
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const previewBackgroundVideoRef = useRef<HTMLVideoElement>(null);
   const subtitleFormat = (config.subtitleFormat || 'ass') as SubtitleFormat;
-  const { subtitles, setSubtitles, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat);
+  const { subtitles, setSubtitles, subtitlesRef, restoreSubtitles, invalidateSubtitleLoads, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat);
   const latestSubtitleEnd = useMemo(() => subtitles.reduce((max, item) => Math.max(max, item.end || 0), 0), [subtitles]);
   const previewTimelineDuration = useMemo(
     () => Math.max(0, duration || 0, latestSubtitleEnd || 0, exportRange.end || 0),
     [duration, latestSubtitleEnd, exportRange.end]
   );
   const hasAudioSource = Boolean(webAudioObjectUrl || config.audioPath);
-  const cloneHistorySnapshot = useCallback((snapshot: HistorySnapshot): HistorySnapshot => JSON.parse(JSON.stringify(snapshot)), []);
   const createHistorySnapshot = useCallback((): HistorySnapshot => ({
-    config: JSON.parse(JSON.stringify(config)),
-    subtitles: JSON.parse(JSON.stringify(subtitles)),
-    webAssContent,
-    exportRange: JSON.parse(JSON.stringify(exportRange)),
+    config: { ...configRef.current, ui: { ...configRef.current.ui,
+        isDarkMode: isDarkModeRef.current,
+        autoSaveProject: autoSaveProjectRef.current,
+        projectAssetsCacheEnabled: projectAssetsCacheEnabledRef.current,
+        settingsPosition: settingsPositionRef.current,
+        uiFontScale: uiFontScaleRef.current,
+        audioVolume: audioVolumeRef.current,
+        waveformZoomLevel: waveformZoomLevelRef.current,
+        exportFilenameEditorMode: exportFilenameEditorModeRef.current,
+        subtitlePanelCompactMode: subtitlePanelCompactModeRef.current,
+        presets: presetsRef.current,
+        annotationPresets: annotationPresetsRef.current,
+        fontPresets: fontPresetsRef.current,
+        bubbleSnapshotBackgroundMode: bubbleSnapshotBackgroundModeRef.current,
+        bubbleSnapshotBackgroundColor: bubbleSnapshotBackgroundColorRef.current,
+        bubbleSnapshotCustomBackgroundImage: bubbleSnapshotCustomBackgroundImageRef.current,
+        bubbleSnapshotBackgroundImageSizing: bubbleSnapshotBackgroundImageSizingRef.current,
+        bubbleSnapshotTileAlign: bubbleSnapshotTileAlignRef.current,
+        bubbleSnapshotBackgroundBlur: bubbleSnapshotBackgroundBlurRef.current,
+        bubbleSnapshotBackgroundBrightness: bubbleSnapshotBackgroundBrightnessRef.current,
+        bubbleSnapshotSidePadding: bubbleSnapshotSidePaddingRef.current,
+        bubbleSnapshotBubbleWidthPercent: bubbleSnapshotBubbleWidthPercentRef.current,
+        bubbleSnapshotExportScale: bubbleSnapshotExportScaleRef.current,
+        themeColor: themeColorStateRef.current,
+        secondaryThemeColor: secondaryThemeColorStateRef.current,
+        proxy: proxyStateRef.current
+      }, exportRange: exportRangeRef.current, exportQuality: exportQualityRef.current, exportHardware: exportHardwareRef.current, exportParallelSegments: exportParallelSegmentsRef.current, exportFormat: exportFormatRef.current, exportLogEnabled: exportLogEnabledRef.current, filenameTemplate: filenameTemplateRef.current, customFilename: customFilenameRef.current,
+      exportRangeCustomized: exportRangeTouchedRef.current },
+    subtitles: subtitlesRef.current,
+    webAssContent: webAssContentRef.current,
+    webAudioObjectUrl: webAudioObjectUrlRef.current,
+    exportRange: exportRangeRef.current, exportQuality: exportQualityRef.current, exportHardware: exportHardwareRef.current, exportParallelSegments: exportParallelSegmentsRef.current, exportFormat: exportFormatRef.current, exportLogEnabled: exportLogEnabledRef.current, filenameTemplate: filenameTemplateRef.current, customFilename: customFilenameRef.current,
     exportRangeTouched: exportRangeTouchedRef.current,
-    exportQuality,
-    exportParallelSegments,
-    exportFormat,
-    exportLogEnabled,
-    filenameTemplate,
-    customFilename,
-    persistedCustomFilename,
-  }), [config, subtitles, webAssContent, exportRange, exportQuality, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, persistedCustomFilename]);
+    persistedCustomFilename: persistedCustomFilenameRef.current,
+    filenameDrafts: { simple: simpleModeCustomFilenameRef.current, advanced: advancedModeCustomFilenameRef.current },
+  }), []);
+  const getHistory = useCallback(() => {
+    if (!historyRef.current) historyRef.current = new HistoryController(createHistorySnapshot(), HISTORY_LIMIT);
+    return historyRef.current;
+  }, [createHistorySnapshot]);
   const syncHistoryAvailability = useCallback(() => {
-    setCanUndo(historyPastRef.current.length > 0);
-    setCanRedo(historyFutureRef.current.length > 0);
-  }, []);
+    const history = getHistory();
+    setCanUndo(history.canUndo);
+    setCanRedo(history.canRedo);
+  }, [getHistory]);
   const markProjectDirty = useCallback(() => {
-    if (autoSavedTitleTimeoutRef.current !== null) {
-      window.clearTimeout(autoSavedTitleTimeoutRef.current);
-      autoSavedTitleTimeoutRef.current = null;
+    const history = getHistory();
+    const nextSource = configRef.current;
+    if (history.pending && JSON.stringify([history.current.config.assPath, history.current.config.content, history.current.webAssContent, history.current.config.subtitleFormat]) !==
+        JSON.stringify([nextSource.assPath, nextSource.content, webAssContentRef.current, nextSource.subtitleFormat])) {
+      const source = { assPath: nextSource.assPath, projectContent: nextSource.content,
+        assContentOverride: webAssContentRef.current, subtitleFormat: nextSource.subtitleFormat || 'ass' };
+      const items = parseSubtitleSource(source, nextSource.speakers);
+      if (items) restoreSubtitles(items, source);
     }
+    const changed = history.pending
+      ? history.preview('discrete', createHistorySnapshot())
+      : false;
+    if (!insertImageDragRef.current) history.finish();
+    syncHistoryAvailability();
+    if (!changed) return;
+    if (autoSavedTitleTimeoutRef.current !== null) window.clearTimeout(autoSavedTitleTimeoutRef.current);
     setShowAutoSavedTitle(false);
+    isProjectDirtyRef.current = true;
     setIsProjectDirty(true);
     setProjectChangeTick((prev) => prev + 1);
-  }, []);
+  }, [createHistorySnapshot, getHistory, syncHistoryAvailability]);
   const clearProjectDirty = useCallback(() => {
+    isProjectDirtyRef.current = false;
     setIsProjectDirty(false);
   }, []);
-  useEffect(() => {
-    isProjectDirtyRef.current = isProjectDirty;
-  }, [isProjectDirty]);
+  const cancelPendingTimers = useCallback(() => {
+    transactionRevisionRef.current++;
+    for (const timer of [debouncedConfigCommitTimerRef, customFilenamePersistTimeoutRef, audioVolumePersistTimeoutRef, waveformZoomPersistTimeoutRef]) {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
   const flushPendingDebouncedConfigCommit = useCallback(() => {
-    if (debouncedConfigCommitTimerRef.current !== null) {
-      window.clearTimeout(debouncedConfigCommitTimerRef.current);
-      debouncedConfigCommitTimerRef.current = null;
-    }
-    const snapshot = debouncedConfigSnapshotRef.current;
-    if (!snapshot) {
-      return;
-    }
-    debouncedConfigSnapshotRef.current = null;
-    historyPastRef.current.push(snapshot);
-    if (historyPastRef.current.length > HISTORY_LIMIT) {
-      historyPastRef.current.shift();
-    }
-    historyFutureRef.current = [];
+    if (debouncedConfigCommitTimerRef.current !== null) window.clearTimeout(debouncedConfigCommitTimerRef.current);
+    debouncedConfigCommitTimerRef.current = null;
+    getHistory().finish();
     syncHistoryAvailability();
-    markProjectDirty();
-  }, [markProjectDirty, syncHistoryAvailability]);
+  }, [getHistory, syncHistoryAvailability]);
   const clearHistory = useCallback(() => {
-    historyPastRef.current = [];
-    historyFutureRef.current = [];
-    if (debouncedConfigCommitTimerRef.current !== null) {
-      window.clearTimeout(debouncedConfigCommitTimerRef.current);
-      debouncedConfigCommitTimerRef.current = null;
-    }
-    debouncedConfigSnapshotRef.current = null;
-    syncHistoryAvailability();
-  }, [syncHistoryAvailability]);
+    cancelPendingTimers();
+    invalidateSubtitleLoads();
+    setWebAudioObjectUrl('');
+    insertImageDragRef.current = null;
+    pointerInteractionRef.current = false;
+    setEditingSub(null);
+    setImportAssData(null);
+    setImportAssDataIncremental(false);
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    getHistory().reset(createHistorySnapshot());
+    setCanUndo(false);
+    setCanRedo(false);
+  }, [cancelPendingTimers, createHistorySnapshot, getHistory, invalidateSubtitleLoads]);
   const pushHistorySnapshot = useCallback(() => {
-    if (isRestoringHistoryRef.current) {
-      return;
-    }
-
     flushPendingDebouncedConfigCommit();
-
-    historyPastRef.current.push(createHistorySnapshot());
-    if (historyPastRef.current.length > HISTORY_LIMIT) {
-      historyPastRef.current.shift();
-    }
-    historyFutureRef.current = [];
-    syncHistoryAvailability();
-  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, syncHistoryAvailability]);
+    const history = getHistory();
+    history.sync(createHistorySnapshot());
+    history.begin('discrete');
+  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory]);
   const restoreHistorySnapshot = useCallback((snapshot: HistorySnapshot) => {
-    isRestoringHistoryRef.current = true;
-    if (debouncedConfigCommitTimerRef.current !== null) {
-      window.clearTimeout(debouncedConfigCommitTimerRef.current);
-      debouncedConfigCommitTimerRef.current = null;
-    }
-    debouncedConfigSnapshotRef.current = null;
-    setConfig(sanitizeProjectConfig(snapshot.config));
+    cancelPendingTimers();
+    setConfig(snapshot.config);
     setWebAssContent(snapshot.webAssContent);
-    setSubtitles(JSON.parse(JSON.stringify(snapshot.subtitles)));
-    exportRangeTouchedRef.current = snapshot.exportRangeTouched;
+    setWebAudioObjectUrl(snapshot.webAudioObjectUrl);
+    restoreSubtitles(snapshot.subtitles, { assPath: snapshot.config.assPath, assContentOverride: snapshot.webAssContent, projectContent: snapshot.config.content, subtitleFormat: snapshot.config.subtitleFormat || 'ass' });
+    setIsDarkMode(snapshot.config.ui.isDarkMode);
+    setAutoSaveProject(snapshot.config.ui.autoSaveProject);
+    setProjectAssetsCacheEnabled(snapshot.config.ui.projectAssetsCacheEnabled);
+    setSettingsPosition(snapshot.config.ui.settingsPosition);
+    setUiFontScale(snapshot.config.ui.uiFontScale);
+    setAudioVolume(snapshot.config.ui.audioVolume);
+    setWaveformZoomLevel(snapshot.config.ui.waveformZoomLevel);
+    setExportFilenameEditorMode(snapshot.config.ui.exportFilenameEditorMode);
+    setSubtitlePanelCompactMode(snapshot.config.ui.subtitlePanelCompactMode);
+    setPresets(snapshot.config.ui.presets);
+    setAnnotationPresets(snapshot.config.ui.annotationPresets);
+    setFontPresets(snapshot.config.ui.fontPresets);
+    setBubbleSnapshotBackgroundMode(snapshot.config.ui.bubbleSnapshotBackgroundMode);
+    setBubbleSnapshotBackgroundColor(snapshot.config.ui.bubbleSnapshotBackgroundColor);
+    setBubbleSnapshotCustomBackgroundImage(snapshot.config.ui.bubbleSnapshotCustomBackgroundImage);
+    setBubbleSnapshotBackgroundImageSizing(snapshot.config.ui.bubbleSnapshotBackgroundImageSizing);
+    setBubbleSnapshotTileAlign(snapshot.config.ui.bubbleSnapshotTileAlign);
+    setBubbleSnapshotBackgroundBlur(snapshot.config.ui.bubbleSnapshotBackgroundBlur);
+    setBubbleSnapshotBackgroundBrightness(snapshot.config.ui.bubbleSnapshotBackgroundBrightness);
+    setBubbleSnapshotSidePadding(snapshot.config.ui.bubbleSnapshotSidePadding);
+    setBubbleSnapshotBubbleWidthPercent(snapshot.config.ui.bubbleSnapshotBubbleWidthPercent);
+    setBubbleSnapshotExportScale(snapshot.config.ui.bubbleSnapshotExportScale);
+    setThemeColorState(snapshot.config.ui.themeColor);
+    setSecondaryThemeColorState(snapshot.config.ui.secondaryThemeColor);
+    setProxyState(snapshot.config.ui.proxy);
     setExportRange(snapshot.exportRange);
     setExportQuality(snapshot.exportQuality);
+    setExportHardware(snapshot.exportHardware);
     setExportParallelSegments(snapshot.exportParallelSegments);
     setExportFormat(snapshot.exportFormat);
     setExportLogEnabled(snapshot.exportLogEnabled);
     setFilenameTemplate(snapshot.filenameTemplate);
     setCustomFilename(snapshot.customFilename);
+    exportRangeTouchedRef.current = snapshot.exportRangeTouched;
     setPersistedCustomFilename(snapshot.persistedCustomFilename);
+    simpleModeCustomFilenameRef.current = snapshot.filenameDrafts.simple;
+    advancedModeCustomFilenameRef.current = snapshot.filenameDrafts.advanced;
     insertImageDragRef.current = null;
+    pointerInteractionRef.current = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
     setSlideEditBoxes({});
     setIsInsertImageEditMode(false);
     setEditingSub(null);
-    markProjectDirty();
-    window.setTimeout(() => {
-      isRestoringHistoryRef.current = false;
-    }, 0);
-  }, [markProjectDirty, setSubtitles]);
+    isProjectDirtyRef.current = true;
+    setIsProjectDirty(true);
+    setProjectChangeTick((prev) => prev + 1);
+  }, [cancelPendingTimers, restoreSubtitles]);
   const applyTrackedConfigChange = useCallback((nextConfig: any) => {
     pushHistorySnapshot();
+    if (nextConfig.audioPath !== configRef.current.audioPath) setWebAudioObjectUrl('');
     setConfig(nextConfig);
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
   const applyTrackedConfigUpdater = useCallback((updater: (prev: any) => any) => {
+    applyTrackedConfigChange(updater(configRef.current));
+  }, [applyTrackedConfigChange]);
+  const handleConfigAndPresetsChange = useCallback((nextConfig: any, updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any>; fontPresets?: FontPresetMap }) => {
     pushHistorySnapshot();
-    setConfig((prev: any) => updater(prev));
+    setConfig(nextConfig);
+    if (updates.presets) setPresets(updates.presets);
+    if (updates.annotationPresets) setAnnotationPresets(updates.annotationPresets);
+    if (updates.fontPresets) setFontPresets(updates.fontPresets);
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
-  const applyDebouncedConfigChange = useCallback((nextConfig: any) => {
-    if (isRestoringHistoryRef.current) {
+  const previewHistoryChange = useCallback((key: string, edit: () => void) => {
+    const history = getHistory();
+    if (!history.pending) history.sync(createHistorySnapshot());
+    history.begin(key);
+    edit();
+    if (history.preview(key, createHistorySnapshot())) {
+      isProjectDirtyRef.current = true;
+      setIsProjectDirty(true);
+      setShowAutoSavedTitle(false);
+      setProjectChangeTick((prev) => prev + 1);
+    }
+    syncHistoryAvailability();
+    if (debouncedConfigCommitTimerRef.current !== null) window.clearTimeout(debouncedConfigCommitTimerRef.current);
+    if (!pointerInteractionRef.current) {
+      const revision = transactionRevisionRef.current;
+      debouncedConfigCommitTimerRef.current = window.setTimeout(() => {
+        if (revision === transactionRevisionRef.current) flushPendingDebouncedConfigCommit();
+      }, 1000);
+    }
+  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory, syncHistoryAvailability]);
+  const applyDebouncedConfigChange = useCallback((nextConfig: any, controlKey = 'config') => {
+    previewHistoryChange(controlKey, () => {
+      if (nextConfig.audioPath !== configRef.current.audioPath) setWebAudioObjectUrl('');
       setConfig(nextConfig);
-      return;
-    }
-
-    if (!debouncedConfigSnapshotRef.current) {
-      debouncedConfigSnapshotRef.current = createHistorySnapshot();
-    }
-
-    setConfig(nextConfig);
-    if (debouncedConfigCommitTimerRef.current !== null) {
-      window.clearTimeout(debouncedConfigCommitTimerRef.current);
-    }
-    debouncedConfigCommitTimerRef.current = window.setTimeout(() => {
-      debouncedConfigCommitTimerRef.current = null;
-      flushPendingDebouncedConfigCommit();
-    }, 1000);
-  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit]);
+    });
+  }, [previewHistoryChange]);
+  const settingsControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
+  const nextSettingsControlKeyRef = useRef(0);
+  const handleSettingsConfigChange = useCallback((nextConfig: any) => {
+    const control = document.activeElement;
+    if (control instanceof HTMLElement && usesNativeTextUndo(control)) {
+      let key = settingsControlKeysRef.current.get(control);
+      if (!key) {
+        key = `settings-text-${++nextSettingsControlKeyRef.current}`;
+        settingsControlKeysRef.current.set(control, key);
+      }
+      applyDebouncedConfigChange(nextConfig, key);
+    } else applyTrackedConfigChange(nextConfig);
+  }, [applyDebouncedConfigChange, applyTrackedConfigChange]);
   const undoProjectChange = useCallback(() => {
     flushPendingDebouncedConfigCommit();
-    const previousSnapshot = historyPastRef.current.pop();
-    if (!previousSnapshot) {
-      syncHistoryAvailability();
-      return;
-    }
-
-    historyFutureRef.current.unshift(createHistorySnapshot());
-    restoreHistorySnapshot(cloneHistorySnapshot(previousSnapshot));
+    const snapshot = getHistory().undo();
+    if (snapshot) restoreHistorySnapshot(snapshot);
     syncHistoryAvailability();
-  }, [cloneHistorySnapshot, createHistorySnapshot, flushPendingDebouncedConfigCommit, restoreHistorySnapshot, syncHistoryAvailability]);
+  }, [flushPendingDebouncedConfigCommit, getHistory, restoreHistorySnapshot, syncHistoryAvailability]);
   const redoProjectChange = useCallback(() => {
     flushPendingDebouncedConfigCommit();
-    const nextSnapshot = historyFutureRef.current.shift();
-    if (!nextSnapshot) {
-      syncHistoryAvailability();
-      return;
-    }
-
-    historyPastRef.current.push(createHistorySnapshot());
-    restoreHistorySnapshot(cloneHistorySnapshot(nextSnapshot));
+    const snapshot = getHistory().redo();
+    if (snapshot) restoreHistorySnapshot(snapshot);
     syncHistoryAvailability();
-  }, [cloneHistorySnapshot, createHistorySnapshot, flushPendingDebouncedConfigCommit, restoreHistorySnapshot, syncHistoryAvailability]);
+  }, [flushPendingDebouncedConfigCommit, getHistory, restoreHistorySnapshot, syncHistoryAvailability]);
+  useLayoutEffect(() => {
+    // Source loads and existing compound actions settle into the same transaction.
+    const history = getHistory();
+    if (history.pending && !debouncedConfigCommitTimerRef.current && !pointerInteractionRef.current && !insertImageDragRef.current) markProjectDirty();
+    else if (!history.pending) history.sync(createHistorySnapshot());
+    mediaUrlsRef.current.retain(history.snapshots);
+  });
+  useEffect(() => {
+    const down = () => { pointerInteractionRef.current = true; };
+    const end = () => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); };
+    const blur = () => { if (!pointerInteractionRef.current) flushPendingDebouncedConfigCommit(); };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+    window.addEventListener('focusout', blur);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('blur', end);
+      window.removeEventListener('focusout', blur);
+      cancelPendingTimers();
+      mediaUrlsRef.current.dispose();
+    };
+  }, [cancelPendingTimers, flushPendingDebouncedConfigCommit]);
   const activePlaybackSubtitle = useMemo(
     () => subtitles.find((sub) => currentTime >= sub.start && currentTime <= sub.end) ?? null,
     [subtitles, currentTime]
@@ -1756,7 +1860,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleUpdateSubtitle = async (id: string, updates: Partial<any>) => {
     pushHistorySnapshot();
-    const nextSubtitles = subtitles.map((subtitle: any) => {
+    const nextSubtitles = subtitlesRef.current.map((subtitle: any) => {
       if (subtitle.id !== id) {
         return subtitle;
       }
@@ -1772,7 +1876,7 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleDeleteSubtitle = async (id: string) => {
     try {
       pushHistorySnapshot();
-      const nextSubtitles = subtitles.filter((sub: any) => sub.id !== id);
+      const nextSubtitles = subtitlesRef.current.filter((sub: any) => sub.id !== id);
       setSubtitles(nextSubtitles);
       if (editingSub?.id === id) {
         setEditingSub(null);
@@ -1786,7 +1890,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleDuplicateSubtitle = async (id: string) => {
     try {
-      const sourceSubtitle = subtitles.find((sub: any) => sub.id === id);
+      const sourceSubtitle = subtitlesRef.current.find((sub: any) => sub.id === id);
       if (!sourceSubtitle) {
         return;
       }
@@ -1796,7 +1900,7 @@ const [previewScale, setPreviewScale] = useState(1);
         ...sourceSubtitle,
         id: `sub-copy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       };
-      const nextSubtitles = [...subtitles, duplicatedSubtitle].sort((a: any, b: any) => a.start - b.start || a.end - b.end);
+      const nextSubtitles = [...subtitlesRef.current, duplicatedSubtitle].sort((a: any, b: any) => a.start - b.start || a.end - b.end);
       setSubtitles(nextSubtitles);
       markProjectDirty();
       showToast(t('app.subtitleDuplicated'));
@@ -1810,7 +1914,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       pushHistorySnapshot();
       const idSet = new Set(ids);
-      const nextSubtitles = subtitles.filter((sub: any) => !idSet.has(sub.id));
+      const nextSubtitles = subtitlesRef.current.filter((sub: any) => !idSet.has(sub.id));
       setSubtitles(nextSubtitles);
       if (editingSub?.id && idSet.has(editingSub.id)) {
         setEditingSub(null);
@@ -1818,7 +1922,7 @@ const [previewScale, setPreviewScale] = useState(1);
       markProjectDirty();
       showToast(t('app.subtitleBatchDeleted', { count: ids.length }));
     } catch (e) {
-      console.error('Failed to delete subtitles:', e);
+      console.error('Failed to delete subtitlesRef.current:', e);
     }
   };
 
@@ -1826,7 +1930,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (ids.length === 0 || !speakerId) return;
     pushHistorySnapshot();
     const idSet = new Set(ids);
-    const nextSubtitles = subtitles.map((subtitle: any) => {
+    const nextSubtitles = subtitlesRef.current.map((subtitle: any) => {
       if (!idSet.has(subtitle.id)) {
         return subtitle;
       }
@@ -1841,7 +1945,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (ids.length === 0) return;
     pushHistorySnapshot();
     const idSet = new Set(ids);
-    const nextSubtitles = subtitles.map((subtitle: any) => {
+    const nextSubtitles = subtitlesRef.current.map((subtitle: any) => {
       if (!idSet.has(subtitle.id)) {
         return subtitle;
       }
@@ -1858,7 +1962,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const start = Number(currentTime.toFixed(2));
     const end = Number(Math.max(start + 2, start + 0.5).toFixed(2));
     const newSubtitle = normalizeSubtitleSpeakerFields({
-      id: `sub-new-${Date.now()}`,
+      id: `sub-new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       start,
       end,
       duration: Number((end - start).toFixed(2)),
@@ -1870,7 +1974,7 @@ const [previewScale, setPreviewScale] = useState(1);
       sourceLineIndex: -1
     });
 
-    const nextSubtitles = [...subtitles, newSubtitle].sort((a, b) => a.start - b.start || a.end - b.end);
+    const nextSubtitles = [...subtitlesRef.current, newSubtitle].sort((a, b) => a.start - b.start || a.end - b.end);
     setSubtitles(nextSubtitles);
     const createdSubtitle = nextSubtitles.find((subtitle: any) => subtitle.start === newSubtitle.start && subtitle.end === newSubtitle.end && subtitle.text === newSubtitle.text && subtitle.speakerId === newSubtitle.speakerId);
 
@@ -1884,7 +1988,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const handleSortSubtitles = async () => {
     pushHistorySnapshot();
-    const nextSubtitles = [...subtitles].sort((a, b) => a.start - b.start || a.end - b.end);
+    const nextSubtitles = [...subtitlesRef.current].sort((a, b) => a.start - b.start || a.end - b.end);
     setSubtitles(nextSubtitles);
     markProjectDirty();
     showToast(t('app.subtitleSorted'));
@@ -1960,8 +2064,10 @@ const [previewScale, setPreviewScale] = useState(1);
         return;
       }
 
+      pushHistorySnapshot();
       setPresets({ ...existing, ...imported });
       setAnnotationPresets({ ...existingAnnotationPresets, ...importedAnnotations });
+      markProjectDirty();
       showToast(t('app.presetsImported'));
     } catch (error) {
       console.error('Failed to import presets:', error);
@@ -2342,7 +2448,9 @@ const [previewScale, setPreviewScale] = useState(1);
   }, []);
 
   useEffect(() => {
+    if (renderTransactionRevision !== transactionRevisionRef.current) return;
     const ui = config.ui || DEFAULT_UI_CONFIG;
+    setIsDarkMode(Boolean(ui.isDarkMode));
     lastUiSyncSnapshotRef.current = JSON.stringify({
       isDarkMode: ui.isDarkMode,
       themeColor: ui.themeColor,
@@ -2420,6 +2528,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [config.ui]);
 
   useEffect(() => {
+    if (renderTransactionRevision !== transactionRevisionRef.current) return;
     if (!hasHydratedElectronConfigRef.current) {
       return;
     }
@@ -2549,7 +2658,9 @@ const [previewScale, setPreviewScale] = useState(1);
       window.clearTimeout(audioVolumePersistTimeoutRef.current);
     }
 
+    const revision = transactionRevisionRef.current;
     audioVolumePersistTimeoutRef.current = window.setTimeout(() => {
+      if (revision !== transactionRevisionRef.current) return;
       audioVolumePersistTimeoutRef.current = null;
       setConfig((prev: any) => {
         const prevUi = prev.ui || DEFAULT_UI_CONFIG;
@@ -2596,7 +2707,9 @@ const [previewScale, setPreviewScale] = useState(1);
       window.clearTimeout(waveformZoomPersistTimeoutRef.current);
     }
 
+    const revision = transactionRevisionRef.current;
     waveformZoomPersistTimeoutRef.current = window.setTimeout(() => {
+      if (revision !== transactionRevisionRef.current) return;
       waveformZoomPersistTimeoutRef.current = null;
       setConfig((prev: any) => {
         const prevUi = prev.ui || DEFAULT_UI_CONFIG;
@@ -2639,22 +2752,16 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [proxyState]);
 
   const handleThemeColorChangeTracked = useCallback((color: string) => {
-    pushHistorySnapshot();
-    setThemeColorState(color);
-    markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+    previewHistoryChange('themeColor', () => setThemeColorState(color));
+  }, [previewHistoryChange]);
 
   const handleSecondaryThemeColorChangeTracked = useCallback((color: string) => {
-    pushHistorySnapshot();
-    setSecondaryThemeColorState(color);
-    markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+    previewHistoryChange('secondaryThemeColor', () => setSecondaryThemeColorState(color));
+  }, [previewHistoryChange]);
 
   const handleProxyChangeTracked = useCallback((nextProxy: string) => {
-    pushHistorySnapshot();
-    setProxyState(nextProxy);
-    markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+    previewHistoryChange('proxy', () => setProxyState(nextProxy));
+  }, [previewHistoryChange]);
 
   const handleProjectAssetsCacheEnabledChangeTracked = useCallback((enabled: boolean) => {
     pushHistorySnapshot();
@@ -2698,11 +2805,13 @@ const [previewScale, setPreviewScale] = useState(1);
 
    // Save config explicitly
    const handleSaveConfig = () => {
+     flushPendingDebouncedConfigCommit();
+     const latestConfig = { ...createHistorySnapshot().config, ...getProjectConfig() };
      if (!window.electron) {
-       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+       localStorage.setItem(STORAGE_KEY, JSON.stringify(latestConfig));
      }
       if (window.electron) {
-        window.electron.saveConfig(config).catch((err: any) => console.error('Failed to save config to file:', err));
+        window.electron.saveConfig(latestConfig).catch((err: any) => console.error('Failed to save config to file:', err));
       }
       showToast(t('app.configSaved'));
     };
@@ -2764,7 +2873,7 @@ const [previewScale, setPreviewScale] = useState(1);
     
     // Save to file in background without blocking
     const saveTimer = setTimeout(() => {
-      window.electron.saveConfig(config).catch((err: any) => 
+      window.electron.saveConfig(configRef.current).catch((err: any) =>
         console.error('Failed to save config to file:', err)
       );
     }, 500);
@@ -3120,10 +3229,10 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const getProjectConfig = () => {
-    const restConfig: any = Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'ui'));
+    const restConfig: any = Object.fromEntries(Object.entries(createHistorySnapshot().config).filter(([key]) => key !== 'ui'));
     return {
       ...restConfig,
-      content: [...subtitles].sort((a, b) => a.start - b.start || a.end - b.end).map(s => ({
+      content: [...subtitlesRef.current].sort((a, b) => a.start - b.start || a.end - b.end).map(s => ({
         start: s.start,
         end: s.end,
         speaker: s.speakerId,
@@ -3280,20 +3389,20 @@ const [previewScale, setPreviewScale] = useState(1);
   const isSameRange = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start === b.start && a.end === b.end;
 
   const updateExportRange = useCallback((updates: { start?: number; end?: number }, markTouched = true) => {
-    pushHistorySnapshot();
-    if (markTouched) {
-      exportRangeTouchedRef.current = true;
-    }
+    previewHistoryChange(`exportRange.${Object.keys(updates).sort().join('.')}`, () => {
+      if (markTouched) {
+        exportRangeTouchedRef.current = true;
+      }
 
-    setExportRange((prev) => {
-      const rawStart = updates.start ?? prev.start;
-      const rawEnd = updates.end ?? prev.end;
-      const nextStart = Number(Math.max(0, Math.min(rawStart, rawEnd)).toFixed(2));
-      const nextEnd = Number(Math.max(nextStart, rawEnd).toFixed(2));
-      return { start: nextStart, end: nextEnd };
+      setExportRange((prev) => {
+        const rawStart = updates.start ?? prev.start;
+        const rawEnd = updates.end ?? prev.end;
+        const nextStart = Number(Math.max(0, Math.min(rawStart, rawEnd)).toFixed(2));
+        const nextEnd = Number(Math.max(nextStart, rawEnd).toFixed(2));
+        return { start: nextStart, end: nextEnd };
+      });
     });
-    markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+  }, [previewHistoryChange]);
 
   useEffect(() => {
     if (!audioRef.current || duration <= 0) return;
@@ -3330,6 +3439,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [filenameTemplate, markProjectDirty, pushHistorySnapshot]);
 
   const handleFilenameEditorModeChange = useCallback((nextMode: 'simple' | 'advanced') => {
+    pushHistorySnapshot();
     if (exportFilenameEditorMode === 'simple' && filenameTemplate === 'custom') {
       simpleModeCustomFilenameRef.current = customFilename;
     }
@@ -3341,19 +3451,22 @@ const [previewScale, setPreviewScale] = useState(1);
     if (nextMode === 'advanced') {
       setFilenameTemplate((prev) => (prev === 'custom' ? prev : 'custom'));
       setCustomFilename((prev) => (prev === advancedModeCustomFilenameRef.current ? prev : advancedModeCustomFilenameRef.current));
+      markProjectDirty();
       return;
     }
 
     if (simpleModeCustomFilenameRef.current.trim()) {
       setFilenameTemplate('custom');
       setCustomFilename((prev) => (prev === simpleModeCustomFilenameRef.current ? prev : simpleModeCustomFilenameRef.current));
+      markProjectDirty();
       return;
     }
 
     if (filenameTemplate === 'custom') {
       setFilenameTemplate('default');
     }
-  }, [customFilename, exportFilenameEditorMode, filenameTemplate]);
+    markProjectDirty();
+  }, [customFilename, exportFilenameEditorMode, filenameTemplate, markProjectDirty, pushHistorySnapshot]);
 
   const handleExportFormatChange = useCallback((nextFormat: 'mp4' | 'mov-alpha' | 'webm-alpha') => {
     if (exportFormat === nextFormat) {
@@ -3383,16 +3496,13 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [exportParallelSegments, markProjectDirty, pushHistorySnapshot]);
 
   const handleCustomFilenameChange = useCallback((nextFilename: string) => {
-    if (customFilename === nextFilename) {
-      return;
-    }
-    if (exportFilenameEditorMode === 'advanced') {
-      advancedModeCustomFilenameRef.current = nextFilename;
-    } else {
-      simpleModeCustomFilenameRef.current = nextFilename;
-    }
-    setCustomFilename(nextFilename);
-  }, [customFilename, exportFilenameEditorMode]);
+    previewHistoryChange('filename', () => {
+      if (exportFilenameEditorModeRef.current === 'advanced') advancedModeCustomFilenameRef.current = nextFilename;
+      else simpleModeCustomFilenameRef.current = nextFilename;
+      setCustomFilename(nextFilename);
+      setPersistedCustomFilename(nextFilename);
+    });
+  }, [previewHistoryChange]);
 
   const loadExportPaths = useCallback(async () => {
     if (!window.electron) {
@@ -3462,34 +3572,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [config.exportQuality, config.filenameTemplate, config.customFilename, config.exportHardware, config.exportParallelSegments, config.exportFormat, config.exportLogEnabled]);
 
   useEffect(() => {
-    if (customFilename === persistedCustomFilename) {
-      if (customFilenamePersistTimeoutRef.current !== null) {
-        window.clearTimeout(customFilenamePersistTimeoutRef.current);
-        customFilenamePersistTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    if (customFilenamePersistTimeoutRef.current !== null) {
-      window.clearTimeout(customFilenamePersistTimeoutRef.current);
-    }
-
-    customFilenamePersistTimeoutRef.current = window.setTimeout(() => {
-      customFilenamePersistTimeoutRef.current = null;
-      pushHistorySnapshot();
-      setPersistedCustomFilename((prev) => (prev === customFilename ? prev : customFilename));
-      markProjectDirty();
-    }, 1000);
-
-    return () => {
-      if (customFilenamePersistTimeoutRef.current !== null) {
-        window.clearTimeout(customFilenamePersistTimeoutRef.current);
-        customFilenamePersistTimeoutRef.current = null;
-      }
-    };
-  }, [customFilename, persistedCustomFilename, markProjectDirty, pushHistorySnapshot]);
-
-  useEffect(() => {
+    if (renderTransactionRevision !== transactionRevisionRef.current) return;
     if (!hasHydratedElectronConfigRef.current) {
       return;
     }
@@ -4211,6 +4294,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     pushHistorySnapshot();
     syncProjectResourceConfigState(nextConfig);
+    markProjectDirty();
     setProjectResourceCheckDialog(null);
     clearProjectDirty();
     showToast(t(toastKey));
@@ -4318,7 +4402,6 @@ const [previewScale, setPreviewScale] = useState(1);
         unlockedCount += 1;
       });
       if (unlockedCount > 0) {
-        pushHistorySnapshot();
         nextConfig = { ...nextConfig, speakers: nextSpeakers };
       }
       const resources = collectProjectResources(nextConfig);
@@ -5221,7 +5304,6 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) {
       setWebAssContent(null);
       if (webAudioObjectUrl) {
-        URL.revokeObjectURL(webAudioObjectUrl);
         setWebAudioObjectUrl('');
       }
     }
@@ -5281,21 +5363,23 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) {
       setWebAssContent(null);
       if (webAudioObjectUrl) {
-        URL.revokeObjectURL(webAudioObjectUrl);
         setWebAudioObjectUrl('');
       }
     }
+    setConfig(createBlankProjectConfig(t('app.newProject')));
+    setSubtitles([]);
     document.title = 'PomChat Studio';
   };
 
   async function saveProjectInternal(options?: { silent?: boolean; source?: 'manual' | 'autosave' | 'guard' }) {
     flushPendingDebouncedConfigCommit();
+    const saveToken = getHistory().saveToken();
+    const finalConfig = getProjectConfig();
 
     if (!window.electron || !projectPath || projectPath === 'web-demo') {
-      const finalConfig = getProjectConfig();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
       rememberRecentProject(finalConfig.projectTitle || 'web-demo');
-      clearProjectDirty();
+      if (getHistory().isSaveCurrent(saveToken)) clearProjectDirty();
       if (options?.source === 'autosave' && projectPath) {
         setShowAutoSavedTitle(true);
         if (autoSavedTitleTimeoutRef.current !== null) {
@@ -5314,11 +5398,10 @@ const [previewScale, setPreviewScale] = useState(1);
 
     try {
       await backupAssIfSpeakerNamesChanged();
-      const finalConfig = getProjectConfig();
       await window.electron.writeFile(projectPath, JSON.stringify(finalConfig, null, 2));
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(config.speakers);
-      clearProjectDirty();
-      if (options?.source === 'autosave') {
+      if (getHistory().isSaveCurrent(saveToken)) clearProjectDirty();
+      if (options?.source === 'autosave' && getHistory().isSaveCurrent(saveToken)) {
         setShowAutoSavedTitle(true);
         if (autoSavedTitleTimeoutRef.current !== null) {
           window.clearTimeout(autoSavedTitleTimeoutRef.current);
@@ -5391,6 +5474,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleSetSubtitle = async () => {
+    const lifecycle = getHistory().epoch;
     if (!window.electron) {
       webSubtitleInputRef.current?.click();
       return;
@@ -5404,6 +5488,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (!res.canceled && res.filePaths.length > 0) {
         const selectedPath = res.filePaths[0];
         const content = await window.electron.readFile(selectedPath);
+        if (lifecycle !== getHistory().epoch) return;
         const lower = selectedPath.toLowerCase();
         if (lower.endsWith('.ass')) {
           setImportAssData({ path: selectedPath, content });
@@ -5426,6 +5511,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleIncrementalImportSubtitle = async () => {
+    const lifecycle = getHistory().epoch;
     if (!window.electron) {
       alert('Incremental import is only available in the desktop app.');
       return;
@@ -5439,6 +5525,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (!res.canceled && res.filePaths.length > 0) {
         const selectedPath = res.filePaths[0];
         const fileContent = await window.electron.readFile(selectedPath);
+        if (lifecycle !== getHistory().epoch) return;
         const lower = selectedPath.toLowerCase();
         if (lower.endsWith('.ass')) {
           setImportAssData({ path: selectedPath, content: fileContent });
@@ -5446,7 +5533,7 @@ const [previewScale, setPreviewScale] = useState(1);
         } else {
           const rows = lower.endsWith('.srt') ? parseSrtSubtitles(fileContent) : parseLrcSubtitles(fileContent);
           const newContent = buildPlainSubtitleProjectContent(rows, config.speakers);
-          const existingContent = Array.isArray(config.content) ? [...config.content] : [];
+          const existingContent = getProjectConfig().content;
           const mergedContent = [...existingContent, ...newContent];
           applyTrackedConfigUpdater((prev: any) => ({
             ...prev,
@@ -5475,7 +5562,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleClearAudio = useCallback(() => {
-    const previousWebAudioObjectUrl = webAudioObjectUrl;
+
 
     setIsPlaying(false);
     setCurrentTime(0);
@@ -5487,21 +5574,24 @@ const [previewScale, setPreviewScale] = useState(1);
       audioRef.current.load();
     }
 
+    pushHistorySnapshot();
     setWebAudioObjectUrl('');
-    applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: '' }));
-    if (previousWebAudioObjectUrl) {
-      window.setTimeout(() => URL.revokeObjectURL(previousWebAudioObjectUrl), 0);
-    }
+    setConfig((prev: any) => ({ ...prev, audioPath: '' }));
+    markProjectDirty();
+
     showToast(t('app.audioCleared'));
   }, [applyTrackedConfigUpdater, showToast, t, webAudioObjectUrl]);
 
   const handleClearSubtitle = useCallback(() => {
+    pushHistorySnapshot();
     setWebAssContent(null);
-    applyTrackedConfigUpdater((prev: any) => ({
+    setConfig((prev: any) => ({
       ...prev,
       assPath: '',
       content: []
     }));
+    setSubtitles([]);
+    markProjectDirty();
     showToast(t('app.subtitleCleared'));
   }, [applyTrackedConfigUpdater, showToast, t]);
 
@@ -5626,6 +5716,7 @@ const [previewScale, setPreviewScale] = useState(1);
         content: projectContent
       }));
       setWebAssContent(null);
+      markProjectDirty();
       showToast(t('app.subtitleImported'));
       return;
     }
@@ -5700,9 +5791,11 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const loadProjectFromPath = async (filePath: string) => {
+    const lifecycle = getHistory().epoch;
     try {
       setProjectResourceCheckDialog(null);
       const content = await window.electron.readFile(filePath);
+      if (lifecycle !== getHistory().epoch) return;
       const parsed = JSON.parse(content);
       const validatedConfig = validateProjectConfig(parsed);
       const normalizedConfig = validatedConfig.subtitleFormat
@@ -5711,6 +5804,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (window.electron) {
         const resources = collectProjectResources(normalizedConfig);
         const inspection = await window.electron.inspectProjectResources({ projectFilePath: filePath, resources: resources.map(({ id, value }) => ({ id, value })) });
+        if (lifecycle !== getHistory().epoch) return;
         let checkedConfig = normalizedConfig;
         const updated: UpdatedProjectResource[] = [];
         const missing: MissingProjectResource[] = [];
@@ -5919,27 +6013,28 @@ const [previewScale, setPreviewScale] = useState(1);
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const nextObjectUrl = URL.createObjectURL(file);
-    if (webAudioObjectUrl) {
-      URL.revokeObjectURL(webAudioObjectUrl);
-    }
+    const nextObjectUrl = mediaUrlsRef.current.add(URL.createObjectURL(file));
 
     if (!projectPath) {
       setProjectPath('web-demo');
       setShowSettings(true);
     }
 
+    pushHistorySnapshot();
     setWebAudioObjectUrl(nextObjectUrl);
-    applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: nextObjectUrl }));
+    setConfig((prev: any) => ({ ...prev, audioPath: nextObjectUrl }));
+    markProjectDirty();
     showToast(t('app.audioImported'));
     event.target.value = '';
   };
 
   const handleWebSubtitleSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const lifecycle = getHistory().epoch;
     const file = event.target.files?.[0];
     if (!file) return;
 
     const content = await file.text();
+    if (lifecycle !== getHistory().epoch) return;
     if (!projectPath) {
       setProjectPath('web-demo');
       setShowSettings(true);
@@ -5958,6 +6053,7 @@ const [previewScale, setPreviewScale] = useState(1);
         content: projectContent
       }));
       setWebAssContent(null);
+      markProjectDirty();
       showToast(t('app.subtitleImported'));
     } else {
       showToast(t('app.dropUnsupported'));
@@ -6040,6 +6136,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const importWebFile = useCallback(async (file: File, currentProjectPath: string | null) => {
+    const lifecycle = getHistory().epoch;
     const normalizedName = file.name.toLowerCase();
     const isJson = normalizedName.endsWith('.json') || normalizedName.endsWith('.pomchat');
     const isAss = normalizedName.endsWith('.ass');
@@ -6053,6 +6150,7 @@ const [previewScale, setPreviewScale] = useState(1);
       try {
         await runWithUnsavedProjectGuard(async () => {
           const content = await file.text();
+          if (lifecycle !== getHistory().epoch) return;
           const parsed = JSON.parse(content);
           const validatedConfig = validateProjectConfig(parsed);
           const normalizedConfig = validatedConfig.subtitleFormat
@@ -6088,6 +6186,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
     if (isAss) {
       const content = await file.text();
+      if (lifecycle !== getHistory().epoch) return;
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
@@ -6098,12 +6197,14 @@ const [previewScale, setPreviewScale] = useState(1);
 
     if (isSrt || isLrc) {
       const content = await file.text();
+      if (lifecycle !== getHistory().epoch) return;
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
       }
       const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
       const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      pushHistorySnapshot();
       setConfig((prev: any) => ({
         ...prev,
         subtitleFormat: isSrt ? 'srt' : 'lrc',
@@ -6111,27 +6212,27 @@ const [previewScale, setPreviewScale] = useState(1);
         content: projectContent
       }));
       setWebAssContent(null);
+      markProjectDirty();
       showToast(t('app.subtitleImported'));
       return;
     }
 
     if (isAudio) {
-      const nextObjectUrl = URL.createObjectURL(file);
-      if (webAudioObjectUrl) {
-        URL.revokeObjectURL(webAudioObjectUrl);
-      }
+      const nextObjectUrl = mediaUrlsRef.current.add(URL.createObjectURL(file));
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
       }
+      pushHistorySnapshot();
       setWebAudioObjectUrl(nextObjectUrl);
-      applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: nextObjectUrl }));
+      setConfig((prev: any) => ({ ...prev, audioPath: nextObjectUrl }));
+      markProjectDirty();
       showToast(t('app.audioImported'));
       return;
     }
 
     if (isImage) {
-      const mediaObjectUrl = URL.createObjectURL(file);
+      const mediaObjectUrl = mediaUrlsRef.current.add(URL.createObjectURL(file));
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
@@ -6150,7 +6251,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     if (isVideo) {
-      const mediaObjectUrl = URL.createObjectURL(file);
+      const mediaObjectUrl = mediaUrlsRef.current.add(URL.createObjectURL(file));
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
@@ -6346,32 +6447,25 @@ const [previewScale, setPreviewScale] = useState(1);
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [activeInsertImageBounds, markProjectDirty, previewScale]);
 
   useEffect(() => {
-    const isEditableTarget = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) {
-        return false;
-      }
-
-      const tag = target.tagName;
-      return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-    };
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) {
+      if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey)) {
         return;
       }
 
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) {
-        if (isEditableTarget(event.target)) {
+        if (usesNativeTextUndo(event.target)) {
           return;
         }
         event.preventDefault();
@@ -6380,7 +6474,7 @@ const [previewScale, setPreviewScale] = useState(1);
       }
 
       if (key === 'y' || (key === 'z' && event.shiftKey)) {
-        if (isEditableTarget(event.target)) {
+        if (usesNativeTextUndo(event.target)) {
           return;
         }
         event.preventDefault();
@@ -6777,8 +6871,11 @@ const [previewScale, setPreviewScale] = useState(1);
             <div style={{ width: shouldHideSidePanels ? Math.min(windowWidth - 24, 420) : settingsWidth }} className="relative h-full shrink-0 flex flex-col min-h-0 overflow-hidden shadow-2xl">
               <SettingsPanel
                 config={config}
-                onConfigChange={applyTrackedConfigChange}
+                onConfigChange={handleSettingsConfigChange}
+                onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
+                onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -6795,9 +6892,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 }}
                 uiFontScale={uiFontScale}
                 onUiFontScaleChange={(value: number) => {
-                  pushHistorySnapshot();
-                  setUiFontScale(value);
-                  markProjectDirty();
+                  previewHistoryChange('uiFontScale', () => setUiFontScale(value));
                 }}
                 onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                 onProxyChange={handleProxyChangeTracked}
@@ -7006,7 +7101,8 @@ const [previewScale, setPreviewScale] = useState(1);
             <div style={{ width: settingsWidth }} className="h-full shrink-0 flex flex-col min-h-0 overflow-hidden">
               <SettingsPanel 
                 config={config} 
-                onConfigChange={applyTrackedConfigChange} 
+                onConfigChange={handleSettingsConfigChange}
+                onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -7023,9 +7119,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   }}
                     uiFontScale={uiFontScale}
                     onUiFontScaleChange={(value: number) => {
-                      pushHistorySnapshot();
-                      setUiFontScale(value);
-                      markProjectDirty();
+                      previewHistoryChange('uiFontScale', () => setUiFontScale(value));
                     }}
                     onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                    onProxyChange={handleProxyChangeTracked}
@@ -7210,8 +7304,11 @@ const [previewScale, setPreviewScale] = useState(1);
               >
                 <SettingsPanel
                   config={config}
-                  onConfigChange={applyTrackedConfigChange}
+                  onConfigChange={handleSettingsConfigChange}
+                onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
+                onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
                   isDarkMode={isDarkMode}
                    language={language}
                    themeColor={themeColor}
@@ -7228,9 +7325,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     }}
                     uiFontScale={uiFontScale}
                     onUiFontScaleChange={(value: number) => {
-                      pushHistorySnapshot();
-                      setUiFontScale(value);
-                      markProjectDirty();
+                      previewHistoryChange('uiFontScale', () => setUiFontScale(value));
                     }}
                      onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                     onProxyChange={handleProxyChangeTracked}
@@ -7809,8 +7904,11 @@ const [previewScale, setPreviewScale] = useState(1);
             <div style={{ width: settingsWidth }} className="h-full shrink-0 flex flex-col min-h-0 overflow-hidden">
               <SettingsPanel 
                   config={config}
-                  onConfigChange={applyTrackedConfigChange}
+                  onConfigChange={handleSettingsConfigChange}
+                onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
+                onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -7827,9 +7925,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 }}
                 uiFontScale={uiFontScale}
                 onUiFontScaleChange={(value: number) => {
-                  pushHistorySnapshot();
-                  setUiFontScale(value);
-                  markProjectDirty();
+                  previewHistoryChange('uiFontScale', () => setUiFontScale(value));
                 }}
                 onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
                 onProxyChange={handleProxyChangeTracked}
@@ -7976,8 +8072,11 @@ const [previewScale, setPreviewScale] = useState(1);
           )}
           <SettingsPanel
                 config={config}
-                onConfigChange={applyTrackedConfigChange}
+                onConfigChange={handleSettingsConfigChange}
+                onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
+                onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
             isDarkMode={isDarkMode}
             language={language}
             themeColor={themeColor}
@@ -7994,9 +8093,7 @@ const [previewScale, setPreviewScale] = useState(1);
             }}
             uiFontScale={uiFontScale}
             onUiFontScaleChange={(value: number) => {
-              pushHistorySnapshot();
-              setUiFontScale(value);
-              markProjectDirty();
+              previewHistoryChange('uiFontScale', () => setUiFontScale(value));
             }}
             onProjectAssetsCacheEnabledChange={handleProjectAssetsCacheEnabledChangeTracked}
             onProxyChange={handleProxyChangeTracked}
@@ -8144,7 +8241,7 @@ const [previewScale, setPreviewScale] = useState(1);
          onQuickSave={() => setExportOutputPath(quickSavePath)}
          onRangeChange={updateExportRange}
          onQualityChange={handleExportQualityChange}
-         onHardwareChange={setExportHardware}
+         onHardwareChange={(value) => { pushHistorySnapshot(); setExportHardware(value); markProjectDirty(); }}
          onExportParallelSegmentsChange={handleExportParallelSegmentsChange}
          onExportFormatChange={handleExportFormatChange}
          onExportLogEnabledChange={handleExportLogEnabledChange}
@@ -8188,9 +8285,12 @@ const [previewScale, setPreviewScale] = useState(1);
         onSelectImage={handleSelectImage}
         onSpeakerPresetsChange={setPresets}
         onAnnotationPresetsChange={setAnnotationPresets}
-        onSave={(nextSpeakers) => {
+        onSave={(nextSpeakers, nextPresets, nextAnnotations) => {
           pushHistorySnapshot();
           setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
+          if (nextPresets) setPresets(nextPresets);
+          if (nextAnnotations) setAnnotationPresets(nextAnnotations);
+          markProjectDirty();
           showToast(t('speakers.presetSaved', { name: '' }));
         }}
         onClose={() => { setShowStyleManager(false); setStyleManagerPresetTarget(null); }}
@@ -8557,7 +8657,7 @@ const [previewScale, setPreviewScale] = useState(1);
               }
 
               const mergedContent = isIncremental
-                ? [...(Array.isArray(prev?.content) ? prev.content : []), ...buildPlainSubtitleProjectContent(parseAssDialogueLines(sanitizedContent), nextSpeakers)]
+                ? [...getProjectConfig().content, ...buildPlainSubtitleProjectContent(parseAssDialogueLines(sanitizedContent), nextSpeakers)]
                 : [];
 
               return {
@@ -8580,9 +8680,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 ...importedAnnotationPresets
               }));
             }
-            if (!window.electron) {
-              setWebAssContent(sanitizedContent);
-            }
+            setWebAssContent(sanitizedContent);
             markProjectDirty();
             setImportAssData(null);
             showToast(t('app.subtitleImported'));
