@@ -1308,7 +1308,6 @@ ipcMain.handle('export-video', async (_event, config) => {
     // rather than stream-copy/AAC so the end of the clip has no codec padding.
     const shouldPcmTranscodeClippedAudio = Boolean(
       config?.exportRangeCustomized === true &&
-      config?.exportFormat !== 'mov-alpha' &&
       config?.exportFormat !== 'webm-alpha'
     );
     const singleWorkerConfig = shouldPcmTranscodeClippedAudio
