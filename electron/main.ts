@@ -738,6 +738,39 @@ let allowWindowClose = false;
 let pendingWindowCloseRequest = false;
 let appCloseListenerReady = false;
 
+function updateNativeExportProgress(progress: unknown) {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  const numericProgress = typeof progress === 'number' && Number.isFinite(progress) ? progress : 0;
+  const normalizedProgress = Math.max(0, Math.min(1, numericProgress));
+  try {
+    // Electron maps this to the Windows taskbar and macOS Dock. Linux support
+    // is desktop-environment dependent, so keep it best-effort as well.
+    win.setProgressBar(normalizedProgress);
+  } catch {
+    // Unsupported desktop integrations must not affect exporting.
+  }
+}
+
+function clearNativeExportProgress() {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  try {
+    win.setProgressBar(-1);
+  } catch {
+    // Unsupported desktop integrations must not affect exporting.
+  }
+}
+
+function sendExportProgress(payload: any) {
+  updateNativeExportProgress(payload?.progress);
+  win?.webContents.send('export-progress', payload);
+}
+
 function resolveAppFilePath(filePath: string) {
   if (!filePath) {
     return filePath;
@@ -1258,6 +1291,7 @@ ipcMain.handle('export-video', async (_event, config) => {
     };
   }
 
+  updateNativeExportProgress(0);
   let temporaryOutputPath: string | null = null;
 
   try {
@@ -1354,7 +1388,7 @@ ipcMain.handle('export-video', async (_event, config) => {
           const aggregateProgress = (segmentIndex: number, payload: any) => {
             workerProgress[segmentIndex] = Math.max(0, Math.min(1, payload?.progress || 0));
             const combined = (workerProgress[0] + workerProgress[1]) / 2;
-            win?.webContents.send('export-progress', {
+            sendExportProgress({
               ...payload,
               progress: Math.min(0.94, combined * 0.94),
               stage: `Parallel render ${segmentIndex + 1}/2: ${payload?.stage || 'Rendering'}`,
@@ -1387,7 +1421,7 @@ ipcMain.handle('export-video', async (_event, config) => {
             throw firstRejected.reason;
           }
 
-          win?.webContents.send('export-progress', {
+          sendExportProgress({
             progress: 0.97,
             elapsedMs: Date.now() - exportStartedAt,
             estimatedRemainingMs: null,
@@ -1411,7 +1445,7 @@ ipcMain.handle('export-video', async (_event, config) => {
           let parallelAudioMuxResult: { audioMode: string; audioEncoder: string } | null = null;
           let audioMuxMs = 0;
           if (shouldPcmMuxParallelAudio) {
-            win?.webContents.send('export-progress', {
+            sendExportProgress({
               progress: 0.985,
               elapsedMs: Date.now() - exportStartedAt,
               estimatedRemainingMs: null,
@@ -1495,7 +1529,7 @@ ipcMain.handle('export-video', async (_event, config) => {
 
     if (!result) {
       result = await runWorkerExport(workerPath, singleWorkerConfig, (payload) => {
-        win?.webContents.send('export-progress', payload);
+        sendExportProgress(payload);
       });
     }
 
@@ -1565,6 +1599,8 @@ ipcMain.handle('export-video', async (_event, config) => {
       cancelled,
       error: error?.message || 'Export failed',
     };
+  } finally {
+    clearNativeExportProgress();
   }
 });
 
