@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { stripVTControlCharacters } from 'node:util';
 import { registerBiliup } from './biliup';
 
 const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
@@ -379,6 +380,25 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
 }
 
 const activeExportWorkers = new Set<any>();
+const MAX_WORKER_LOG_CHARS = 64 * 1024;
+const WORKER_LOG_TRUNCATION_MARKER = '\n...[worker log truncated]...\n';
+
+function compactWorkerLog(text: string) {
+  return stripVTControlCharacters(text)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter((line) => !/Setting the current frame to \d+|delayRender\(\).*handle was cleared after \d+ms/.test(line))
+    .join('\n');
+}
+
+function appendWorkerLog(current: string, chunk: Buffer | string) {
+  const combined = compactWorkerLog(current + chunk.toString());
+  if (combined.length <= MAX_WORKER_LOG_CHARS) return combined;
+  const available = Math.max(0, MAX_WORKER_LOG_CHARS - WORKER_LOG_TRUNCATION_MARKER.length);
+  const headLength = Math.ceil(available * 0.4);
+  const tailLength = Math.max(0, available - headLength);
+  return `${combined.slice(0, headLength)}${WORKER_LOG_TRUNCATION_MARKER}${combined.slice(-tailLength)}`;
+}
 
 function runWorkerExport(workerPath: string, config: any, onProgress?: (payload: any) => void) {
   return new Promise<any>((resolve, reject) => {
@@ -400,11 +420,11 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
     activeExportWorkers.add(worker);
 
     worker.stdout?.on('data', (chunk) => {
-      workerStdOut += chunk.toString();
+      workerStdOut = appendWorkerLog(workerStdOut, chunk);
     });
 
     worker.stderr?.on('data', (chunk) => {
-      workerStdErr += chunk.toString();
+      workerStdErr = appendWorkerLog(workerStdErr, chunk);
     });
 
     const timeout = setTimeout(() => {

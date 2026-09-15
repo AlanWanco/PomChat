@@ -946,20 +946,39 @@ const runRender = async (config) => {
         inputProps,
         cancelSignal,
         overwrite: true,
-        logLevel: 'verbose',
+        // Warnings and errors remain useful for diagnostics, while verbose frame
+        // progress would otherwise make long-export logs grow by tens of MB.
+        logLevel: 'warn',
         onLog: collectRemotionLog,
-        ffmpegOverride: ({ args }) => {
+        ffmpegOverride: ({ type, args }) => {
           if (Array.isArray(args)) {
+            let videoEncoder = '';
             for (let index = 0; index < args.length - 1; index += 1) {
               if (!['-c:v', '-vcodec', '-codec:v'].includes(args[index])) continue;
               const encoder = args[index + 1];
               if (typeof encoder !== 'string' || encoder === 'copy') continue;
+              videoEncoder = encoder;
               if (!attempt.ffmpegVideoEncoders.includes(encoder)) {
                 attempt.ffmpegVideoEncoders.push(encoder);
               }
               attempt.actualEncoder = encoder;
               attempt.hardwareAccelerated = isHardwareVideoEncoder(encoder);
               attempt.encoderSource = 'ffmpegArgs';
+            }
+
+            // NVENC/VideoToolbox may prepend encoder delay through B-frames.
+            // The resulting first PTS can be 100 ms, even though the render
+            // starts at frame 0. Disable B-frames for hardware H.264 so the
+            // encoded stream and the final container both start at timestamp 0.
+            if (type === 'pre-stitcher' && renderCodec === 'h264' && isHardwareVideoEncoder(videoEncoder)) {
+              const nextArgs = [...args];
+              const bFrameIndex = nextArgs.findIndex((arg) => arg === '-bf');
+              if (bFrameIndex >= 0 && bFrameIndex + 1 < nextArgs.length) {
+                nextArgs[bFrameIndex + 1] = '0';
+              } else {
+                nextArgs.splice(Math.max(0, nextArgs.length - 1), 0, '-bf', '0');
+              }
+              return nextArgs;
             }
           }
           return args;
