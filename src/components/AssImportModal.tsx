@@ -166,6 +166,7 @@ const getImportedSpeakerStyle = (assStyle: ParsedAssStyle | undefined, isAnnotat
     bgColor: outlineColor?.hex || (isAnnotation ? '#111827' : '#2563eb'),
     textColor: primaryColor?.hex || (isAnnotation ? '#ffffff' : '#ffffff'),
     nameColor: primaryColor?.hex || '#ffffff',
+    avatarBorderColor: outlineColor?.hex || '#ffffff',
     nameStrokeColor: outlineColor?.hex || '#000000',
     nameStrokeWidth: Number.isFinite(outlineWidth) && outlineWidth > 0 ? Math.round(outlineWidth) : 0,
     borderColor: backColor?.hex || '#ffffff',

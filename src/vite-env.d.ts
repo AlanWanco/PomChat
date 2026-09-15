@@ -21,7 +21,8 @@ interface Window {
   electron: {
     biliup: import('./biliup').BiliupApi;
     ping: () => Promise<string>;
-    exportVideo: (config: any) => Promise<{ success: boolean; error?: string; message?: string; placeholder?: boolean; outputPath?: string; manifestPath?: string | null; elapsedMs?: number; realTimeFactor?: number }>;
+    exportVideo: (config: any) => Promise<{ success: boolean; cancelled?: boolean; error?: string; message?: string; placeholder?: boolean; outputPath?: string; manifestPath?: string | null; elapsedMs?: number; realTimeFactor?: number }>;
+    cancelExport: () => Promise<boolean>;
     getExportPaths: (options: any) => Promise<{ runtimeDir: string; quickSavePath: string; suggestedPath: string }>;
     showOpenDialog: (options: any) => Promise<any>;
     getRenderCacheInfo: () => Promise<{

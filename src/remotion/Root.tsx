@@ -22,6 +22,14 @@ const defaultProps: PodchatExportInput = {
   },
 };
 
+const getDurationInFrames = (start: number, end: number, fps: number) => {
+  const durationInFrames = Math.max(0.1, end - start) * fps;
+  const nearestInteger = Math.round(durationInFrames);
+  // Decimal export ranges can produce values such as 333.00000000000006.
+  // Do not let floating-point noise make Math.ceil() add an extra frame.
+  return Math.max(1, Math.abs(durationInFrames - nearestInteger) < 1e-7 ? nearestInteger : Math.ceil(durationInFrames));
+};
+
 const RemotionRoot: React.FC = () => {
   return (
     <Composition
@@ -37,7 +45,7 @@ const RemotionRoot: React.FC = () => {
         const safeFps = Math.max(1, Math.round(input.fps || 60));
         const width = Math.max(16, Math.round(input.dimensions?.width || 1920));
         const height = Math.max(16, Math.round(input.dimensions?.height || 1080));
-        const durationInFrames = Math.max(1, Math.ceil(Math.max(0.1, input.exportRange.end - input.exportRange.start) * safeFps));
+        const durationInFrames = getDurationInFrames(input.exportRange.start, input.exportRange.end, safeFps);
         return {
           fps: safeFps,
           width,

@@ -64,6 +64,7 @@ interface ExportModalProps {
   filenameEditorMode?: 'simple' | 'advanced';
   customFilename?: string;
   onClose: () => void;
+  onCancelExport: () => void | Promise<void>;
   onOutputPathChange: (value: string) => void;
   onChoosePath: () => void | Promise<void>;
   onQuickSave: () => void;
@@ -232,6 +233,7 @@ export function ExportModal({
   filenameEditorMode = 'simple',
   customFilename = '',
   onClose,
+  onCancelExport,
   onOutputPathChange,
   onChoosePath,
   onQuickSave,
@@ -858,12 +860,17 @@ export function ExportModal({
                <div className="mt-5 flex gap-2">
                  <button
                    type="button"
-                   onClick={onClose}
-                   disabled={isExporting}
+                   onClick={() => {
+                     if (isExporting) {
+                       void onCancelExport();
+                     } else {
+                       onClose();
+                     }
+                   }}
                    className="flex-1 rounded-2xl px-4 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                    style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: uiTheme.text, border: `1px solid ${uiTheme.border}` }}
                  >
-                   {t('common.cancel')}
+                   {isExporting ? t('export.cancel') : t('common.cancel')}
                  </button>
                  <button
                    type="button"

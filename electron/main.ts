@@ -194,7 +194,7 @@ function resolveRemotionBinary(binaryName: 'ffmpeg' | 'ffprobe') {
     if (fs.existsSync(binaryPath)) {
       return binaryPath;
     }
-  } catch (_error) {
+  } catch {
     // Fall back to PATH below.
   }
 
@@ -211,9 +211,109 @@ function probeHasAudioStream(inputPath: string) {
       inputPath,
     ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
     return output.length > 0;
-  } catch (_error) {
+  } catch {
     return false;
   }
+}
+
+function probeOutputMedia(outputPath: string) {
+  if (!outputPath || !fs.existsSync(outputPath)) {
+    return null;
+  }
+  try {
+    const raw = execFileSync(resolveRemotionBinary('ffprobe'), [
+      '-v', 'error',
+      '-show_entries', 'stream=index,codec_type,codec_name,pix_fmt:stream_tags=encoder,alpha_mode:format=duration',
+      '-of', 'json',
+      outputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    const parsed = JSON.parse(raw);
+    const streams = Array.isArray(parsed?.streams)
+      ? parsed.streams.map((stream: any) => {
+          const tags = stream.tags || {};
+          return {
+            index: stream.index,
+            codecType: stream.codec_type || null,
+            codecName: stream.codec_name || null,
+            pixelFormat: stream.pix_fmt || null,
+            encoder: tags.encoder || tags.ENCODER || null,
+            alphaMode: tags.alpha_mode || tags.ALPHA_MODE || null,
+          };
+        })
+      : [];
+    const duration = Number(parsed?.format?.duration);
+    return {
+      durationSeconds: Number.isFinite(duration) ? duration : null,
+      streams,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function replaceExportOutput(sourcePath: string, outputPath: string) {
+  if (path.resolve(sourcePath) === path.resolve(outputPath)) {
+    return;
+  }
+
+  if (process.platform !== 'win32' || !fs.existsSync(outputPath)) {
+    fs.renameSync(sourcePath, outputPath);
+    return;
+  }
+
+  const backupPath = `${outputPath}.pomchat-previous-${process.pid}-${Date.now()}`;
+  fs.renameSync(outputPath, backupPath);
+  try {
+    fs.renameSync(sourcePath, outputPath);
+    fs.rmSync(backupPath, { force: true });
+  } catch (error) {
+    try {
+      if (fs.existsSync(outputPath)) fs.rmSync(outputPath, { force: true });
+      if (fs.existsSync(backupPath)) fs.renameSync(backupPath, outputPath);
+    } catch {
+      // Preserve the original error; the failed replacement is reported to the user.
+    }
+    throw error;
+  }
+}
+
+function muxPcmAudioIntoVideo({
+  silentVideoPath,
+  audioSourcePath,
+  outputPath,
+  startTime,
+  duration,
+}: {
+  silentVideoPath: string;
+  audioSourcePath: string;
+  outputPath: string;
+  startTime: number;
+  duration: number;
+}) {
+  const ffmpegBinary = resolveRemotionBinary('ffmpeg');
+  const exportDuration = Math.max(0.1, Number.isFinite(duration) ? duration : 0.1);
+  const baseArgs = [
+    '-y',
+    '-i', silentVideoPath,
+    ...(startTime > 0 ? ['-ss', String(startTime)] : []),
+    '-t', String(exportDuration),
+    '-i', audioSourcePath,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-c:a', 'pcm_s16le',
+    '-af', 'aresample=async=1:first_pts=0',
+    '-movflags', '+faststart',
+    '-avoid_negative_ts', 'make_zero',
+    '-t', String(exportDuration),
+    outputPath,
+  ];
+
+  execFileSync(ffmpegBinary, baseArgs, { stdio: 'pipe' });
+  return {
+    audioMode: 'pcm-transcode',
+    audioEncoder: 'pcm_s16le',
+  };
 }
 
 function runConcatMp4(segmentPaths: string[], outputPath: string) {
@@ -242,8 +342,12 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
         '-avoid_negative_ts', 'make_zero',
         outputPath,
       ], { stdio: 'pipe' });
-      return;
-    } catch (_copyError) {
+      return {
+        mode: 'copy',
+        videoEncoder: null,
+        audioEncoder: null,
+      };
+    } catch {
       const hasAudioInAllSegments = segmentPaths.every((segmentPath) => probeHasAudioStream(segmentPath));
       execFileSync(ffmpegBinary, [
         '-y',
@@ -258,19 +362,29 @@ function runConcatMp4(segmentPaths: string[], outputPath: string) {
         '-crf', '20',
         '-pix_fmt', 'yuv420p',
         '-movflags', '+faststart',
-        ...(hasAudioInAllSegments ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '192k'] : []),
+        ...(hasAudioInAllSegments
+          ? ['-map', '[outa]', '-c:a', 'pcm_s16le', '-af', 'aresample=async=1:first_pts=0']
+          : []),
         outputPath,
       ], { stdio: 'pipe' });
+      return {
+        mode: 'reencode',
+        videoEncoder: 'libx264',
+        audioEncoder: hasAudioInAllSegments ? 'pcm_s16le' : null,
+      };
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
+const activeExportWorkers = new Set<any>();
+
 function runWorkerExport(workerPath: string, config: any, onProgress?: (payload: any) => void) {
   return new Promise<any>((resolve, reject) => {
     let workerStdErr = '';
     let workerStdOut = '';
+    let settled = false;
 
     const workerCwd = app.getPath('userData');
     fs.mkdirSync(workerCwd, { recursive: true });
@@ -283,6 +397,7 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
         VITE_PUBLIC: process.env.VITE_PUBLIC || '',
       },
     });
+    activeExportWorkers.add(worker);
 
     worker.stdout?.on('data', (chunk) => {
       workerStdOut += chunk.toString();
@@ -293,9 +408,25 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
     });
 
     const timeout = setTimeout(() => {
+      finishReject(new Error('Export timeout: operation took too long'));
       worker.kill();
-      reject(new Error('Export timeout: operation took too long'));
     }, 5 * 60 * 60 * 1000);
+
+    const finishResolve = (value: any) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      activeExportWorkers.delete(worker);
+      resolve(value);
+    };
+
+    const finishReject = (error: Error & { cancelled?: boolean }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      activeExportWorkers.delete(worker);
+      reject(error);
+    };
 
     worker.on('message', (message: any) => {
       if (!message) return;
@@ -305,8 +436,7 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
       }
 
       if (message.type === 'result') {
-        clearTimeout(timeout);
-        resolve({
+        finishResolve({
           ...message.payload,
           workerDetails: {
             stdout: workerStdOut.trim() || null,
@@ -318,36 +448,54 @@ function runWorkerExport(workerPath: string, config: any, onProgress?: (payload:
       }
 
       if (message.type === 'error') {
-        clearTimeout(timeout);
         const detail = [message.payload?.message, workerStdErr.trim() || '', workerStdOut.trim() || ''].filter(Boolean).join('\n');
-        reject(new Error(detail || 'Export failed'));
+        const error = new Error(detail || 'Export failed') as Error & { cancelled?: boolean };
+        error.cancelled = message.payload?.cancelled === true;
+        finishReject(error);
         worker.kill();
       }
     });
 
     worker.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      finishReject(error as Error & { cancelled?: boolean });
     });
 
     worker.on('exit', (code) => {
-      clearTimeout(timeout);
-      if (code && code !== 0) {
-        const detail = [
-          `Export worker exited with code ${code}`,
-          workerStdErr.trim() || '',
-          workerStdOut.trim() || '',
-        ].filter(Boolean).join('\n');
-        reject(new Error(detail));
-      }
+      if (settled) return;
+      const detail = code && code !== 0
+        ? [
+            `Export worker exited with code ${code}`,
+            workerStdErr.trim() || '',
+            workerStdOut.trim() || '',
+          ].filter(Boolean).join('\n')
+        : 'Export worker exited before returning a result';
+      finishReject(new Error(detail));
     });
 
-    worker.send({
-      type: 'render',
-      payload: config,
-    });
+    try {
+      worker.send({
+        type: 'render',
+        payload: config,
+      });
+    } catch (error) {
+      finishReject(error instanceof Error ? error : new Error(String(error)));
+      worker.kill();
+    }
   });
 }
+
+ipcMain.handle('cancel-export', () => {
+  let cancelledWorkers = 0;
+  for (const worker of activeExportWorkers) {
+    try {
+      worker.send({ type: 'cancel' });
+      cancelledWorkers += 1;
+    } catch {
+      // The worker may have exited between the set iteration and send().
+    }
+  }
+  return cancelledWorkers > 0;
+});
 
 function getPomchatRemotionTempEntries() {
   const tempDir = os.tmpdir();
@@ -590,6 +738,39 @@ let allowWindowClose = false;
 let pendingWindowCloseRequest = false;
 let appCloseListenerReady = false;
 
+function updateNativeExportProgress(progress: unknown) {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  const numericProgress = typeof progress === 'number' && Number.isFinite(progress) ? progress : 0;
+  const normalizedProgress = Math.max(0, Math.min(1, numericProgress));
+  try {
+    // Electron maps this to the Windows taskbar and macOS Dock. Linux support
+    // is desktop-environment dependent, so keep it best-effort as well.
+    win.setProgressBar(normalizedProgress);
+  } catch {
+    // Unsupported desktop integrations must not affect exporting.
+  }
+}
+
+function clearNativeExportProgress() {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  try {
+    win.setProgressBar(-1);
+  } catch {
+    // Unsupported desktop integrations must not affect exporting.
+  }
+}
+
+function sendExportProgress(payload: any) {
+  updateNativeExportProgress(payload?.progress);
+  win?.webContents.send('export-progress', payload);
+}
+
 function resolveAppFilePath(filePath: string) {
   if (!filePath) {
     return filePath;
@@ -601,6 +782,28 @@ function resolveAppFilePath(filePath: string) {
   }
 
   return filePath;
+}
+
+function resolveLocalMediaPath(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (/^file:/i.test(trimmed)) {
+    try {
+      const filePath = urlToPath(trimmed);
+      return path.isAbsolute(filePath) ? filePath : null;
+    } catch {
+      return null;
+    }
+  }
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) {
+    return null;
+  }
+
+  const resolved = resolveAppFilePath(trimmed);
+  return path.isAbsolute(resolved) ? resolved : null;
 }
 
 function resolveProjectResourcePath(projectFilePath: string, resourcePath: string) {
@@ -1088,7 +1291,16 @@ ipcMain.handle('export-video', async (_event, config) => {
     };
   }
 
+  updateNativeExportProgress(0);
+  let temporaryOutputPath: string | null = null;
+
   try {
+    const outputExtension = path.extname(outputPath) || (config?.exportFormat === 'mov-alpha' ? '.mov' : config?.exportFormat === 'webm-alpha' ? '.webm' : '.mp4');
+    temporaryOutputPath = path.join(
+      path.dirname(outputPath),
+      `.${path.basename(outputPath)}.${process.pid}.${exportStartedAt}.part${outputExtension}`,
+    );
+    const workerConfig = { ...config, outputPath: temporaryOutputPath };
     const exportMetaBase = {
       outputPath,
       outputFilename: path.basename(outputPath),
@@ -1120,11 +1332,33 @@ ipcMain.handle('export-video', async (_event, config) => {
       typeof exportRange.end === 'number' &&
       exportRange.end > exportRange.start
     );
+    const localAudioSourcePath = resolveLocalMediaPath(config?.audioPath);
+    const shouldPcmMuxParallelAudio = Boolean(
+      canUseParallelSegments &&
+      localAudioSourcePath &&
+      fs.existsSync(localAudioSourcePath)
+    );
+    // A manually selected export range is a clip operation. Use lossless PCM
+    // rather than stream-copy/AAC so the end of the clip has no codec padding.
+    const shouldPcmTranscodeClippedAudio = Boolean(
+      config?.exportRangeCustomized === true &&
+      config?.exportFormat !== 'webm-alpha'
+    );
+    const singleWorkerConfig = shouldPcmTranscodeClippedAudio
+      ? { ...workerConfig, audioTranscodeCodec: 'pcm-16' }
+      : workerConfig;
 
     let result: any = null;
 
     if (canUseParallelSegments) {
-      const totalFrames = Math.max(1, Math.round((exportRange.end - exportRange.start) * fps));
+      const requestedFrames = Math.max(0.1, exportRange.end - exportRange.start) * fps;
+      const nearestRequestedFrames = Math.round(requestedFrames);
+      const totalFrames = Math.max(
+        1,
+        Math.abs(requestedFrames - nearestRequestedFrames) < 1e-7
+          ? nearestRequestedFrames
+          : Math.ceil(requestedFrames),
+      );
       const firstSegmentFrames = Math.floor(totalFrames / 2);
 
       if (firstSegmentFrames >= 1 && totalFrames - firstSegmentFrames >= 1) {
@@ -1132,25 +1366,40 @@ ipcMain.handle('export-video', async (_event, config) => {
         const tempRoot = fs.realpathSync.native ? fs.realpathSync.native(os.tmpdir()) : fs.realpathSync(os.tmpdir());
         const tempDir = fs.mkdtempSync(path.join(tempRoot, 'pomchat-parallel-export-'));
         const outputExt = path.extname(outputPath) || '.mp4';
-        const segmentAPath = path.join(tempDir, `segment-a${outputExt}`);
-        const segmentBPath = path.join(tempDir, `segment-b${outputExt}`);
+        const shouldPcmTranscodeParallelRenderedAudio = Boolean(
+          canUseParallelSegments &&
+          config?.audioPath &&
+          !shouldPcmMuxParallelAudio
+        );
+        // Remotion only permits H.264 + PCM when the intermediate file uses a
+        // MOV/MKV extension. The final file remains the requested MP4.
+        const segmentOutputExt = shouldPcmTranscodeParallelRenderedAudio ? '.mov' : outputExt;
+        const segmentAPath = path.join(tempDir, `segment-a${segmentOutputExt}`);
+        const segmentBPath = path.join(tempDir, `segment-b${segmentOutputExt}`);
         const renderConcurrency = Math.max(1, Math.floor(getCpuCount() / 2));
         const workerProgress = [0, 0];
+        const parallelSegmentConfig = shouldPcmMuxParallelAudio
+          ? { ...workerConfig, audioPath: '' }
+          : shouldPcmTranscodeParallelRenderedAudio
+            ? { ...workerConfig, audioTranscodeCodec: 'pcm-16' }
+            : workerConfig;
 
         try {
           const aggregateProgress = (segmentIndex: number, payload: any) => {
             workerProgress[segmentIndex] = Math.max(0, Math.min(1, payload?.progress || 0));
             const combined = (workerProgress[0] + workerProgress[1]) / 2;
-            win?.webContents.send('export-progress', {
+            sendExportProgress({
               ...payload,
-              progress: Math.min(0.94, combined * 0.94),
+              // The worker already reserves 0–10% for preparation and 10–95%
+              // for encoding. Keep that allocation when aggregating two workers.
+              progress: Math.min(0.95, combined),
               stage: `Parallel render ${segmentIndex + 1}/2: ${payload?.stage || 'Rendering'}`,
             });
           };
 
           const segmentResults = await Promise.allSettled([
             runWorkerExport(workerPath, {
-              ...config,
+              ...parallelSegmentConfig,
               outputPath: segmentAPath,
               exportRange: {
                 start: exportRange.start,
@@ -1159,7 +1408,7 @@ ipcMain.handle('export-video', async (_event, config) => {
               renderConcurrency,
             }, (payload) => aggregateProgress(0, payload)),
             runWorkerExport(workerPath, {
-              ...config,
+              ...parallelSegmentConfig,
               outputPath: segmentBPath,
               exportRange: {
                 start: splitTime,
@@ -1174,22 +1423,101 @@ ipcMain.handle('export-video', async (_event, config) => {
             throw firstRejected.reason;
           }
 
-          win?.webContents.send('export-progress', {
+          sendExportProgress({
             progress: 0.97,
             elapsedMs: Date.now() - exportStartedAt,
             estimatedRemainingMs: null,
             stage: 'Concatenating parallel segments',
           });
 
-          runConcatMp4([segmentAPath, segmentBPath], outputPath);
+          const concatenatedVideoPath = shouldPcmMuxParallelAudio
+            ? path.join(tempDir, `concatenated${outputExt}`)
+            : temporaryOutputPath as string;
+          const concatStartedAt = Date.now();
+          const concatResult = runConcatMp4([segmentAPath, segmentBPath], concatenatedVideoPath);
+          const concatMs = Date.now() - concatStartedAt;
+          const segmentDiagnostics = segmentResults
+            .filter((entry): entry is PromiseFulfilledResult<any> => entry.status === 'fulfilled')
+            .map((entry) => entry.value?.renderDiagnostics)
+            .filter(Boolean);
+          const renderedDurationSeconds = segmentDiagnostics.reduce((total: number, diagnostics: any) => (
+            total + (typeof diagnostics.renderedDurationSeconds === 'number' ? diagnostics.renderedDurationSeconds : 0)
+          ), 0);
+          const durationSeconds = Math.max(0.1, renderedDurationSeconds || (exportRange.end - exportRange.start));
+          let parallelAudioMuxResult: { audioMode: string; audioEncoder: string } | null = null;
+          let audioMuxMs = 0;
+          if (shouldPcmMuxParallelAudio) {
+            sendExportProgress({
+              progress: 0.985,
+              elapsedMs: Date.now() - exportStartedAt,
+              estimatedRemainingMs: null,
+              stage: 'Muxing PCM audio',
+            });
+            const audioMuxStartedAt = Date.now();
+            parallelAudioMuxResult = muxPcmAudioIntoVideo({
+              silentVideoPath: concatenatedVideoPath,
+              audioSourcePath: localAudioSourcePath as string,
+              outputPath: temporaryOutputPath as string,
+              startTime: Math.max(0, exportRange.start || 0),
+              duration: durationSeconds,
+            });
+            audioMuxMs = Date.now() - audioMuxStartedAt;
+          }
+          const outputMedia = probeOutputMedia(temporaryOutputPath as string);
           const elapsedMs = Date.now() - exportStartedAt;
-          const durationSeconds = Math.max(0.1, exportRange.end - exportRange.start);
+          const actualEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.actualEncoder).filter(Boolean))];
+          const expectedEncoders = [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.expectedEncoder).filter(Boolean))];
+          const hardwareStates = segmentDiagnostics.map((diagnostics: any) => diagnostics.hardwareAccelerated).filter((value: unknown): value is boolean => typeof value === 'boolean');
+          const segmentHardwareAccelerated = hardwareStates.length === 2 ? hardwareStates.every(Boolean) : null;
+          const finalEncoder = concatResult.videoEncoder || actualEncoders[0] || expectedEncoders[0] || null;
+          const finalHardwareAccelerated = concatResult.mode === 'reencode' ? false : segmentHardwareAccelerated;
+          const audioPipelines = [
+            ...segmentDiagnostics.map((diagnostics: any) => diagnostics.audioPipeline),
+            ...(parallelAudioMuxResult ? ['ffmpeg-postmux'] : []),
+          ].filter(Boolean);
+          const audioMuxModes = [
+            ...segmentDiagnostics.map((diagnostics: any) => diagnostics.audioMuxMode),
+            parallelAudioMuxResult?.audioMode,
+          ].filter(Boolean);
+          const renderDiagnostics = {
+            mode: 'parallel-segments',
+            requestedHardware: config?.exportHardware || 'auto',
+            actualEncoders,
+            expectedEncoders,
+            finalEncoder,
+            finalEncoderSource: concatResult.mode === 'reencode' ? 'parallelConcat' : 'segmentCopy',
+            encoderSources: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.encoderSource).filter(Boolean))],
+            ffmpegVideoEncoders: [...new Set(segmentDiagnostics.flatMap((diagnostics: any) => diagnostics.ffmpegVideoEncoders || []))],
+            hardwareAccelerated: finalHardwareAccelerated,
+            browserGls: [...new Set(segmentDiagnostics.map((diagnostics: any) => diagnostics.browserGl).filter(Boolean))],
+            fallbackUsed: segmentDiagnostics.some((diagnostics: any) => diagnostics.fallbackUsed),
+            concatMode: concatResult.mode,
+            concatVideoEncoder: concatResult.videoEncoder,
+            concatAudioEncoder: concatResult.audioEncoder,
+            audioPipelines: [...new Set(audioPipelines)],
+            audioMuxModes: [...new Set(audioMuxModes)],
+            audioTranscodeCodec: parallelAudioMuxResult?.audioEncoder
+              || segmentDiagnostics.map((diagnostics: any) => diagnostics.audioTranscodeCodec).find(Boolean)
+              || null,
+            audioMuxMs: parallelAudioMuxResult ? audioMuxMs : null,
+            outputMedia,
+            concatMs,
+            renderedDurationSeconds: durationSeconds,
+            segments: segmentDiagnostics,
+          };
+          const encoderLabel = finalEncoder || 'unknown';
+          const accelerationLabel = renderDiagnostics.hardwareAccelerated === true
+            ? 'hardware'
+            : renderDiagnostics.hardwareAccelerated === false
+              ? 'software'
+              : 'unconfirmed';
           result = {
             success: true,
             outputPath,
             elapsedMs,
             realTimeFactor: elapsedMs / (durationSeconds * 1000),
-            message: `Exported with parallel segments in ${(elapsedMs / 1000).toFixed(2)}s`,
+            renderDiagnostics,
+            message: `Exported with parallel segments in ${(elapsedMs / 1000).toFixed(2)}s, encoder ${encoderLabel} (${accelerationLabel}), concat ${(concatMs / 1000).toFixed(2)}s`,
             workerDetails: {
               stdout: null,
               stderr: null,
@@ -1202,10 +1530,13 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
 
     if (!result) {
-      result = await runWorkerExport(workerPath, config, (payload) => {
-        win?.webContents.send('export-progress', payload);
+      result = await runWorkerExport(workerPath, singleWorkerConfig, (payload) => {
+        sendExportProgress(payload);
       });
     }
+
+    replaceExportOutput(temporaryOutputPath as string, outputPath);
+    result = { ...result, outputPath };
 
     const workerDetails = result?.workerDetails || null;
 
@@ -1215,6 +1546,7 @@ ipcMain.handle('export-video', async (_event, config) => {
       outputPath: result.outputPath,
       elapsedMs: result.elapsedMs,
       realTimeFactor: result.realTimeFactor,
+      renderDiagnostics: result.renderDiagnostics || null,
       message: result.message,
     };
     if (config?.exportLogEnabled) {
@@ -1225,12 +1557,21 @@ ipcMain.handle('export-video', async (_event, config) => {
         elapsedMs: result.elapsedMs ?? Date.now() - exportStartedAt,
         realTimeFactor: result.realTimeFactor ?? null,
         resultMessage: result.message || '',
+        renderDiagnostics: result.renderDiagnostics || null,
         workerStdOut: workerDetails?.stdout ?? null,
         workerStdErr: workerDetails?.stderr ?? null,
       });
     }
     return successPayload;
   } catch (error: any) {
+    if (temporaryOutputPath) {
+      try {
+        fs.rmSync(temporaryOutputPath, { force: true });
+      } catch {
+        // A failed/cancelled export must not mask the original error.
+      }
+    }
+    const cancelled = error?.cancelled === true || error?.message === 'Export cancelled';
     if (config?.exportLogEnabled) {
       writeExportLog({
         outputPath,
@@ -1257,8 +1598,11 @@ ipcMain.handle('export-video', async (_event, config) => {
     }
     return {
       success: false,
+      cancelled,
       error: error?.message || 'Export failed',
     };
+  } finally {
+    clearNativeExportProgress();
   }
 });
 

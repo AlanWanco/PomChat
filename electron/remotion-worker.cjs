@@ -8,6 +8,8 @@ const { fileURLToPath } = require('node:url');
 
 let cachedBundle = null;
 let cachedPatchedBinariesDir = null;
+let activeCancel = null;
+let cancelRequested = false;
 
 const getBundledBrowserExecutable = () => {
   const manifestPaths = [
@@ -222,13 +224,59 @@ const resolveFfmpegBinary = (binariesDirectory) => {
   );
 };
 
-const muxAudioIntoMp4 = ({
+const resolveFfprobeBinary = (binariesDirectory) => {
+  const ffmpegBinary = resolveFfmpegBinary(binariesDirectory);
+  const ffprobeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const siblingPath = path.join(path.dirname(ffmpegBinary), ffprobeName);
+  if (isRegularFile(siblingPath)) {
+    return siblingPath;
+  }
+  return ffprobeName;
+};
+
+const probeOutputMedia = (outputPath, binariesDirectory) => {
+  if (!outputPath || !isRegularFile(outputPath)) {
+    return null;
+  }
+  try {
+    const raw = execFileSync(resolveFfprobeBinary(binariesDirectory), [
+      '-v', 'error',
+      '-show_entries', 'stream=index,codec_type,codec_name,pix_fmt:stream_tags=encoder,alpha_mode:format=duration',
+      '-of', 'json',
+      outputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    const parsed = JSON.parse(raw);
+    const streams = Array.isArray(parsed?.streams)
+      ? parsed.streams.map((stream) => {
+          const tags = stream.tags || {};
+          return {
+            index: stream.index,
+            codecType: stream.codec_type || null,
+            codecName: stream.codec_name || null,
+            pixelFormat: stream.pix_fmt || null,
+            encoder: tags.encoder || tags.ENCODER || null,
+            alphaMode: tags.alpha_mode || tags.ALPHA_MODE || null,
+          };
+        })
+      : [];
+    const duration = Number(parsed?.format?.duration);
+    return {
+      durationSeconds: Number.isFinite(duration) ? duration : null,
+      streams,
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
+const muxAudioIntoVideo = ({
   binariesDirectory,
   silentVideoPath,
   audioSourcePath,
   outputPath,
   startTime,
   duration,
+  audioCodec,
 }) => {
   const ffmpegBinary = resolveFfmpegBinary(binariesDirectory);
   const baseArgs = [
@@ -239,28 +287,43 @@ const muxAudioIntoMp4 = ({
     '-i', audioSourcePath,
     '-map', '0:v:0',
     '-map', '1:a:0',
-    '-c:v', 'copy',
     '-movflags', '+faststart',
     '-avoid_negative_ts', 'make_zero',
     '-t', String(duration),
   ];
+  const usePcmTranscode = audioCodec === 'pcm-16' || audioCodec === 'pcm_s16le';
 
+  if (usePcmTranscode) {
+    execFileSync(ffmpegBinary, [
+      ...baseArgs,
+      '-c:v', 'copy',
+      '-c:a', 'pcm_s16le',
+      '-af', 'aresample=async=1:first_pts=0',
+      outputPath,
+    ], { stdio: 'pipe' });
+    return { audioMode: 'pcm-transcode' };
+  }
+
+  // Preserve the source audio stream whenever the selected container accepts it.
   try {
     execFileSync(ffmpegBinary, [
       ...baseArgs,
-      '-c:a', 'copy',
+      '-c', 'copy',
       outputPath,
     ], { stdio: 'pipe' });
     return { audioMode: 'copy' };
   } catch (_copyError) {
+    // Some containers cannot carry the source audio codec. Retry with lossless
+    // PCM instead of AAC so clipped exports do not gain encoder delay/padding
+    // at the end of the selected range.
     execFileSync(ffmpegBinary, [
       ...baseArgs,
-      '-c:a', 'aac',
-      '-b:a', '192k',
+      '-c:v', 'copy',
+      '-c:a', 'pcm_s16le',
       '-af', 'aresample=async=1:first_pts=0',
       outputPath,
     ], { stdio: 'pipe' });
-    return { audioMode: 'aac-transcode' };
+    return { audioMode: 'pcm-transcode-fallback' };
   }
 };
 
@@ -537,6 +600,9 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
   };
 };
 
+const ENCODING_PROGRESS_START = 0.1;
+const ENCODING_PROGRESS_END = 0.95;
+
 const getRenderConcurrency = (requestedConcurrency) => {
   const cpuCount = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
   const maxConcurrency = Math.max(1, cpuCount);
@@ -635,7 +701,12 @@ const getBundle = async (bundleFn) => {
 const runRender = async (config) => {
   const startedAt = Date.now();
   const { bundle } = requirePackagedModule('@remotion/bundler', 'dist/index.js');
-  const { renderMedia, selectComposition } = requirePackagedModule('@remotion/renderer', 'dist/index.js');
+  const { renderMedia, selectComposition, makeCancelSignal } = requirePackagedModule('@remotion/renderer', 'dist/index.js');
+  const { cancelSignal, cancel } = makeCancelSignal();
+  activeCancel = cancel;
+  if (cancelRequested) {
+    cancel();
+  }
   const mediaServer = await createLocalMediaServer();
   const binariesDirectory = patchMacCompositorBinaries();
   const browserExecutable = getBundledBrowserExecutable();
@@ -651,8 +722,8 @@ const runRender = async (config) => {
 
     if (mode === 'gpu') {
       if (process.platform === 'win32') {
-        // Remotion h264 on Windows does not support "required".
-        // Keep GPU preference but allow fallback.
+        // Remotion 4.0.484+ supports NVIDIA NVENC on Windows.
+        // Keep GPU preference but allow the software retry below.
         return { hardwareAcceleration: 'if-possible', gl: 'angle' };
       }
       if (process.platform === 'darwin') {
@@ -677,6 +748,10 @@ const runRender = async (config) => {
     const message = (error && error.message ? error.message : '').toLowerCase();
     return (
       message.includes('hardware acceleration') ||
+      message.includes('nvenc') ||
+      message.includes('nvcuda') ||
+      message.includes('libcuda') ||
+      message.includes('videotoolbox') ||
       message.includes('gpu process') ||
       message.includes('angle') ||
       message.includes('swiftshader')
@@ -690,9 +765,19 @@ const runRender = async (config) => {
     const isMovAlpha = exportFormat === 'mov-alpha';
     const isWebmAlpha = exportFormat === 'webm-alpha';
     const isAlphaExport = isMovAlpha || isWebmAlpha;
-    const shouldPostMuxLocalAudio = exportFormat === 'mp4' && Boolean(localAudioSourcePath);
+    const shouldPostMuxLocalAudio = (exportFormat === 'mp4' || exportFormat === 'mov-alpha') && Boolean(localAudioSourcePath);
     const renderCodec = isMovAlpha ? 'prores' : isWebmAlpha ? 'vp8' : 'h264';
-    const renderAudioCodec = isMovAlpha || shouldPostMuxLocalAudio ? null : isWebmAlpha ? 'opus' : 'aac';
+    const shouldTranscodeRenderedAudio = config.audioTranscodeCodec === 'pcm-16';
+    const renderAudioCodec = shouldPostMuxLocalAudio
+      ? null
+      : config.audioPath
+        ? (isWebmAlpha ? 'opus' : shouldTranscodeRenderedAudio ? 'pcm-16' : 'aac')
+        : null;
+    if (shouldPostMuxLocalAudio) {
+      // Keep local audio out of Remotion's stitch step. FFmpeg post-muxing below
+      // applies the export-range offset and preserves the source track when possible.
+      inputProps.audioPath = '';
+    }
     const renderPixelFormat = isMovAlpha ? 'yuva444p10le' : isWebmAlpha ? 'yuva420p' : 'yuv420p';
     const renderImageFormat = isAlphaExport ? 'png' : 'jpeg';
     const renderJpegQuality = isAlphaExport ? undefined : 92;
@@ -704,9 +789,66 @@ const runRender = async (config) => {
         image: '',
         blur: 0,
         brightness: 1,
+        slides: Array.isArray(inputProps.background?.slides)
+          ? inputProps.background.slides.filter((slide) => slide?.layer === 'overlay')
+          : [],
       };
     }
     const durationSeconds = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
+    const expectedEncoderForStrategy = (strategy) => {
+      if (renderCodec === 'h264') {
+        if (strategy.hardwareAcceleration !== 'disable') {
+          if (process.platform === 'darwin') return 'h264_videotoolbox';
+          if (process.platform === 'win32' || process.platform === 'linux') return 'h264_nvenc';
+        }
+        return 'libx264';
+      }
+      if (renderCodec === 'prores') {
+        return strategy.hardwareAcceleration !== 'disable' && process.platform === 'darwin' ? 'prores_videotoolbox' : 'prores_ks';
+      }
+      if (renderCodec === 'vp8') return 'libvpx';
+      return null;
+    };
+    const isHardwareVideoEncoder = (encoder) => /(?:_nvenc|_videotoolbox|_qsv|_amf|_vaapi|_mediacodec)$/i.test(encoder);
+    const diagnostics = {
+      requestedHardware: config.exportHardware || 'auto',
+      codec: renderCodec,
+      exportFormat,
+      dimensions: config.dimensions || null,
+      fps: config.fps || null,
+      durationSeconds,
+      renderConcurrency: getRenderConcurrency(config.renderConcurrency),
+      audioSource: config.audioPath ? (localAudioSourcePath ? 'local' : 'remote') : 'none',
+      audioPipeline: shouldPostMuxLocalAudio
+        ? 'ffmpeg-postmux'
+        : shouldTranscodeRenderedAudio
+          ? 'remotion-pcm-transcode'
+          : config.audioPath
+            ? 'remotion'
+            : 'none',
+      audioTranscodeCodec: shouldTranscodeRenderedAudio ? 'pcm_s16le' : null,
+      audioMuxMode: null,
+      attempts: [],
+      fallbackUsed: false,
+      fallbackReason: null,
+      logMessages: [],
+    };
+    let activeAttempt = null;
+    const collectRemotionLog = ({ previewString }) => {
+      const message = typeof previewString === 'string' ? previewString : '';
+      const encoderMatch = message.match(/Encoder:\s*([^,]+),\s*hardware accelerated:\s*(true|false)/i);
+      if (encoderMatch && activeAttempt) {
+        activeAttempt.actualEncoder = encoderMatch[1].trim();
+        activeAttempt.hardwareAccelerated = encoderMatch[2].toLowerCase() === 'true';
+        return;
+      }
+      if (/Hardware encoder ".+" not available|Hardware accelerated encoding disabled/i.test(message)) {
+        const safeMessage = message.replace(/\s+/g, ' ').trim();
+        if (safeMessage && diagnostics.logMessages.length < 8 && !diagnostics.logMessages.includes(safeMessage)) {
+          diagnostics.logMessages.push(safeMessage);
+        }
+      }
+    };
 
     let lastProgressSentAt = 0;
     let lastProgressValue = -1;
@@ -737,32 +879,63 @@ const runRender = async (config) => {
   };
 
     sendProgress(0.02, 'Bundling Remotion composition', true);
+    const bundleStartedAt = Date.now();
     const serveUrl = await getBundle(bundle);
+    diagnostics.bundleMs = Date.now() - bundleStartedAt;
 
     const renderOnce = async (strategy) => {
-      sendProgress(0.12, 'Resolving composition');
+      const effectiveHardwareAcceleration = isAlphaExport ? 'disable' : strategy.hardwareAcceleration;
+      const attempt = {
+        strategy: strategy.hardwareAcceleration,
+        effectiveHardwareAcceleration,
+        browserGl: strategy.gl,
+        expectedEncoder: expectedEncoderForStrategy({ ...strategy, hardwareAcceleration: effectiveHardwareAcceleration }),
+        actualEncoder: null,
+        hardwareAccelerated: null,
+        encoderSource: null,
+        ffmpegVideoEncoders: [],
+        quality: null,
+        phaseMs: {},
+        success: false,
+      };
+      diagnostics.attempts.push(attempt);
+      activeAttempt = attempt;
+
+      sendProgress(0.08, 'Resolving composition');
+      const compositionStartedAt = Date.now();
       const composition = await selectComposition({
         serveUrl,
         id: 'PodchatRender',
         inputProps,
         logLevel: 'error',
+        onLog: collectRemotionLog,
         binariesDirectory,
         browserExecutable,
         chromiumOptions: {
           disableWebSecurity: true,
           gl: strategy.gl,
-          hardwareAcceleration: strategy.hardwareAcceleration,
         },
       });
+      attempt.phaseMs.composition = Date.now() - compositionStartedAt;
 
-      sendProgress(0.2, isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)');
+      sendProgress(ENCODING_PROGRESS_START, isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)');
       const qualityOptions = strategy.hardwareAcceleration === 'disable' && !isAlphaExport
         ? {
             x264Preset: config.x264Preset || 'veryfast',
             crf: config.crf || 20,
           }
-        : {};
+        : !isAlphaExport
+          ? {
+              videoBitrate: `${Math.max(2, Math.round(
+                ({ fast: 6, balance: 10, high: 16 }[config.exportQuality] || 10)
+                * (composition.width * composition.height / (1920 * 1080))
+                * (composition.fps / 30),
+              ))}M`,
+            }
+          : {};
+      attempt.quality = { ...qualityOptions };
 
+      const renderStartedAt = Date.now();
       await renderMedia({
         serveUrl,
         composition,
@@ -771,8 +944,26 @@ const runRender = async (config) => {
         audioCodec: renderAudioCodec,
         outputLocation: config.outputPath,
         inputProps,
+        cancelSignal,
         overwrite: true,
-        logLevel: 'error',
+        logLevel: 'verbose',
+        onLog: collectRemotionLog,
+        ffmpegOverride: ({ args }) => {
+          if (Array.isArray(args)) {
+            for (let index = 0; index < args.length - 1; index += 1) {
+              if (!['-c:v', '-vcodec', '-codec:v'].includes(args[index])) continue;
+              const encoder = args[index + 1];
+              if (typeof encoder !== 'string' || encoder === 'copy') continue;
+              if (!attempt.ffmpegVideoEncoders.includes(encoder)) {
+                attempt.ffmpegVideoEncoders.push(encoder);
+              }
+              attempt.actualEncoder = encoder;
+              attempt.hardwareAccelerated = isHardwareVideoEncoder(encoder);
+              attempt.encoderSource = 'ffmpegArgs';
+            }
+          }
+          return args;
+        },
         concurrency: getRenderConcurrency(config.renderConcurrency),
         imageFormat: renderImageFormat,
         jpegQuality: renderJpegQuality,
@@ -783,7 +974,6 @@ const runRender = async (config) => {
         chromiumOptions: {
           disableWebSecurity: true,
           gl: strategy.gl,
-          hardwareAcceleration: strategy.hardwareAcceleration,
         },
         hardwareAcceleration: isAlphaExport ? 'disable' : strategy.hardwareAcceleration,
         onProgress: ({ progress, stitchStage, renderedFrames, encodedFrames }) => {
@@ -795,11 +985,11 @@ const runRender = async (config) => {
           let stage = isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)';
           // Use normalized progress as baseline to avoid long stalls
           // when encodedFrames updates are sparse on some platforms.
-          let weightedProgress = 0.2 + Math.max(renderedRatio, normalized * 0.55) * 0.35;
+          let weightedProgress = ENCODING_PROGRESS_START + Math.max(renderedRatio, normalized * 0.55) * (ENCODING_PROGRESS_END - ENCODING_PROGRESS_START) * 0.5;
 
           if (stitchStage === 'encoding') {
             stage = isMovAlpha ? 'Encoding MOV alpha (FFmpeg)' : isWebmAlpha ? 'Encoding WebM alpha (FFmpeg)' : 'Encoding video (FFmpeg)';
-            weightedProgress = 0.55 + Math.max(encodedRatio, normalized) * 0.4;
+            weightedProgress = ENCODING_PROGRESS_START + Math.max(encodedRatio, normalized) * (ENCODING_PROGRESS_END - ENCODING_PROGRESS_START);
           } else if (stitchStage === 'muxing') {
             stage = 'Muxing audio/video';
             weightedProgress = 0.95 + normalized * 0.03;
@@ -808,21 +998,28 @@ const runRender = async (config) => {
             weightedProgress = 0.98;
           }
 
-          sendProgress(Math.max(0.2, Math.min(0.99, weightedProgress)), stage);
+          sendProgress(Math.max(ENCODING_PROGRESS_START, Math.min(0.99, weightedProgress)), stage);
         },
       });
+      attempt.phaseMs.render = Date.now() - renderStartedAt;
+      attempt.success = true;
 
       return composition;
     };
 
     let composition;
     let muxedAudioMode = null;
+    if (cancelRequested) {
+      throw new Error('Export cancelled');
+    }
     let usedStrategy = hardwareStrategy;
     try {
       composition = await renderOnce(usedStrategy);
     } catch (error) {
       if (usedStrategy.hardwareAcceleration !== 'disable' && isHardwareAccelerationError(error)) {
         console.warn('GPU strategy failed, retrying CPU fallback:', error && error.message ? error.message : error);
+        diagnostics.fallbackUsed = true;
+        diagnostics.fallbackReason = 'GPU or hardware encoder unavailable';
         sendProgress(0.15, 'GPU unavailable, retrying with CPU');
         usedStrategy = cpuFallbackStrategy;
         composition = await renderOnce(usedStrategy);
@@ -831,31 +1028,66 @@ const runRender = async (config) => {
       }
     }
 
+    const renderedDurationSeconds = composition
+      ? Math.max(0.1, composition.durationInFrames / composition.fps)
+      : durationSeconds;
+    diagnostics.renderedDurationSeconds = renderedDurationSeconds;
+
     if (shouldPostMuxLocalAudio) {
+      if (cancelRequested) {
+        throw new Error('Export cancelled');
+      }
       sendProgress(0.97, 'Muxing audio/video', true);
+      const muxStartedAt = Date.now();
 
       const tempDir = fs.mkdtempSync(path.join(path.dirname(config.outputPath), '.pomchat-postmux-'));
       const silentVideoPath = path.join(tempDir, path.basename(config.outputPath));
 
       try {
         fs.renameSync(config.outputPath, silentVideoPath);
-        const exportDuration = Math.max(0.1, inputProps.exportRange.end - inputProps.exportRange.start);
-        const muxResult = muxAudioIntoMp4({
+        const exportDuration = renderedDurationSeconds;
+        const muxResult = muxAudioIntoVideo({
           binariesDirectory,
           silentVideoPath,
           audioSourcePath: localAudioSourcePath,
           outputPath: config.outputPath,
           startTime: Math.max(0, inputProps.exportRange.start || 0),
           duration: exportDuration,
+          audioCodec: config.audioTranscodeCodec,
         });
         muxedAudioMode = muxResult.audioMode;
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
+      diagnostics.audioMuxMode = muxedAudioMode;
+      diagnostics.audioMuxMs = Date.now() - muxStartedAt;
     }
 
+    if (cancelRequested) {
+      throw new Error('Export cancelled');
+    }
+
+    diagnostics.outputMedia = probeOutputMedia(config.outputPath, binariesDirectory);
+    const finalAttempt = diagnostics.attempts[diagnostics.attempts.length - 1] || null;
+    diagnostics.final = finalAttempt;
+    diagnostics.expectedEncoder = finalAttempt?.expectedEncoder || null;
+    diagnostics.actualEncoder = finalAttempt?.actualEncoder || null;
+    diagnostics.encoderSource = finalAttempt?.encoderSource || null;
+    diagnostics.ffmpegVideoEncoders = finalAttempt?.ffmpegVideoEncoders || [];
+    diagnostics.hardwareAccelerated = finalAttempt?.hardwareAccelerated ?? null;
+    diagnostics.browserGl = finalAttempt?.browserGl || null;
+    diagnostics.strategy = finalAttempt?.strategy || null;
+    diagnostics.effectiveHardwareAcceleration = finalAttempt?.effectiveHardwareAcceleration || null;
+    diagnostics.totalMs = Date.now() - startedAt;
+    const encoderLabel = diagnostics.actualEncoder || diagnostics.expectedEncoder || 'unknown';
+    const accelerationLabel = diagnostics.hardwareAccelerated === true
+      ? 'hardware'
+      : diagnostics.hardwareAccelerated === false
+        ? 'software'
+        : 'unconfirmed';
+
     const elapsedMs = Date.now() - startedAt;
-    const realTimeFactor = elapsedMs / (durationSeconds * 1000);
+    const realTimeFactor = elapsedMs / (renderedDurationSeconds * 1000);
     sendProgress(1, 'Done', true);
     sendMessage({
       type: 'result',
@@ -864,19 +1096,34 @@ const runRender = async (config) => {
         outputPath: config.outputPath,
         elapsedMs,
         realTimeFactor,
-        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime)${muxedAudioMode ? `, audio ${muxedAudioMode}` : ''}`,
+        renderDiagnostics: diagnostics,
+        message: `Exported ${composition.width}x${composition.height} @ ${composition.fps}fps in ${(elapsedMs / 1000).toFixed(2)}s (${realTimeFactor.toFixed(2)}x realtime), encoder ${encoderLabel} (${accelerationLabel}), GL ${diagnostics.browserGl || 'unknown'}${diagnostics.fallbackUsed ? ', CPU fallback' : ''}${muxedAudioMode ? `, audio ${muxedAudioMode}` : ''}`,
       },
     });
   } finally {
+    if (activeCancel === cancel) {
+      activeCancel = null;
+    }
     await mediaServer.close();
   }
 };
 
 process.on('message', (message) => {
-  if (!message || message.type !== 'render' || !message.payload) {
+  if (!message) {
     return;
   }
 
+  if (message.type === 'cancel') {
+    cancelRequested = true;
+    activeCancel?.();
+    return;
+  }
+
+  if (message.type !== 'render' || !message.payload) {
+    return;
+  }
+
+  cancelRequested = false;
   runRender(message.payload).catch((error) => {
     const errorMessage = error && error.message ? error.message : 'Unknown export error';
     const stack = error && error.stack ? error.stack : '';
@@ -885,7 +1132,8 @@ process.on('message', (message) => {
     sendMessage({
       type: 'error',
       payload: {
-        message: errorMessage,
+        message: cancelRequested ? 'Export cancelled' : errorMessage,
+        cancelled: cancelRequested,
       },
     });
   });

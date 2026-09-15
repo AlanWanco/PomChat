@@ -304,7 +304,7 @@ export function BiliupExportControls({ language, isDarkMode, themeColor, seconda
   const selectTemplate = (id: string) => {
     void biliup.save({ ...biliup.preferences, selectedTemplateId: id }).catch((error: Error) => biliup.setError(error.message));
   };
-  return <div className="space-y-3 rounded-lg border p-3 text-sm" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, color: theme.text }}>
+  return <div className="space-y-3 rounded-2xl border p-3 text-sm" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, color: theme.text }}>
     <div className="flex min-w-0 gap-2">
       <select aria-label={t('biliup.templateSettings')} className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-0" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, colorScheme: isDarkMode ? 'dark' : 'light' }} disabled={templateSelectionDisabled} value={biliup.preferences.selectedTemplateId} onChange={(event) => selectTemplate(event.target.value)}>
         <option value="">{t('biliup.newTemplate')}</option>

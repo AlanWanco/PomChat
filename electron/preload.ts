@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   exportVideo: (config: any) => ipcRenderer.invoke('export-video', config),
+  cancelExport: () => ipcRenderer.invoke('cancel-export'),
   getExportPaths: (options: any) => ipcRenderer.invoke('get-export-paths', options),
   showOpenDialog: (options: any) => ipcRenderer.invoke('show-open-dialog', options),
   getRenderCacheInfo: () => ipcRenderer.invoke('get-render-cache-info'),
