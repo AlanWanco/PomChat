@@ -4,6 +4,7 @@ import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { formatFontFamilyValue } from '../fontPresets';
 import { Tooltip } from './ui/Tooltip';
+import { SpeakerDot } from './SpeakerPicker';
 import type { SpeakerConfig, FontPreset } from '../remotion/types';
 
 const FONT_OPTIONS = [
@@ -780,7 +781,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         borderTop: dragOverSpeakerId === id ? `2px solid ${secondaryThemeColor}` : undefined,
                       }}>
                       <input type="checkbox" checked={selectedIds.has(id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(id)} style={{ accentColor: secondaryThemeColor }} />
-                      <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: speaker.style?.textColor || '#fff', borderColor: speaker.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
+                      <SpeakerDot speaker={speaker} accentColor={secondaryThemeColor} />
                       <span className="truncate flex-1">{speaker.name || id}</span>
                       <div
                         draggable
@@ -847,7 +848,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           borderTop: dragOverPresetName === name ? `2px solid ${secondaryThemeColor}` : undefined,
                         }}>
                         <input type="checkbox" checked={selectedPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => togglePresetSelect(name)} style={{ accentColor: secondaryThemeColor }} />
-                        <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: preset?.style?.textColor || '#fff', borderColor: preset?.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
+                        <SpeakerDot speaker={preset} accentColor={secondaryThemeColor} />
                         <span className="truncate flex-1">{name}</span>
                         <div
                           draggable
@@ -874,7 +875,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                   <div className="px-3 py-2 text-[0.625rem] opacity-50 uppercase">当前注释样式</div>
                   <div className="flex items-center gap-2 px-3 py-2 cursor-pointer text-xs" onClick={() => setEditingAnnotPresetName(null)}
                     style={{ backgroundColor: `${themeColor}14`, color: uiTheme.text }}>
-                    <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: annotationSpeaker?.style?.textColor || '#fff', borderColor: annotationSpeaker?.style?.bgColor || '#111827', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
+                    <SpeakerDot speaker={annotationSpeaker} accentColor={secondaryThemeColor} />
                     <span className="truncate flex-1">{annotName}</span>
                   </div>
                   <div className="border-t" style={{ borderColor: uiTheme.border }} />
@@ -935,7 +936,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           else next.add(name);
                           setSelectedAnnotPresetIds(next);
                         }} style={{ accentColor: secondaryThemeColor }} />
-                        <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: preset?.style?.textColor || '#fff', borderColor: preset?.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
+                        <SpeakerDot speaker={preset} accentColor={secondaryThemeColor} />
                         <span className="truncate flex-1">{name}</span>
                         <div
                           draggable
@@ -1013,7 +1014,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 const nameStrokeWidth = Math.round((s?.nameStrokeWidth ?? 0) * PREVIEW_SCALE);
                 const nameStrokeColor = s?.nameStrokeColor || '#000000';
                 
-                const avatarEl = <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} />;
+                const showAvatarForSpeaker = editingSpeaker.showAvatar !== false;
+                const avatarEl = showAvatarForSpeaker ? <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} /> : null;
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%', filter: textShadowFilter }}>
@@ -1053,6 +1055,16 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       </button>
                     </div>
                   </div>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={editingSpeaker.showAvatar !== false}
+                      onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, showAvatar: e.target.checked }), true)}
+                      className="w-3.5 h-3.5"
+                      style={{ accentColor: secondaryThemeColor }}
+                    />
+                    <span>{t('project.showAvatar')}</span>
+                  </label>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设</span>
                     <div className="flex items-center gap-2">
                       <select value={editingSpeaker.preset || ''} onChange={(e) => {

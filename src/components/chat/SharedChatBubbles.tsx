@@ -8,6 +8,7 @@ export interface SharedChatItem {
   end: number;
   text: string;
   speakerId: string;
+  clearBubblesBefore?: boolean;
 }
 
 export interface SharedChatSpeakerStyle {
@@ -50,6 +51,7 @@ export interface SharedChatSpeakerStyle {
 export interface SharedChatSpeaker {
   name?: string;
   avatar?: string;
+  showAvatar?: boolean;
   side?: 'left' | 'right' | 'center';
   type?: 'speaker' | 'annotation';
   theme?: 'dark' | 'light';
@@ -82,6 +84,17 @@ export interface InterruptedMessageRow<T> {
   left?: T;
   right?: T;
 }
+
+/** Keep the latest chronological section after a subtitle reset marker. */
+export const getItemsAfterLastClear = <T extends { clearBubblesBefore?: boolean }>(items: T[]): T[] => {
+  let lastClearIndex = -1;
+  for (let index = 0; index < items.length; index += 1) {
+    if (items[index].clearBubblesBefore === true) {
+      lastClearIndex = index;
+    }
+  }
+  return lastClearIndex >= 0 ? items.slice(lastClearIndex) : items;
+};
 
 const getSpeakerSide = (
   speaker?: { side?: 'left' | 'right' | 'center'; type?: 'speaker' | 'annotation' },
@@ -1089,9 +1102,12 @@ export function ChatMessageBubble({
     : 'none';
   const shouldEnableBlockShadow = currentProgress >= 0.98 || (chatLayout?.animationStyle || 'rise') === 'none';
 
-  // Compact mode: show avatar only on the last message of a consecutive run (isSameAsNext = false)
+  // Compact mode: show avatar only on the last message of a consecutive run (isSameAsNext = false).
+  // A speaker-level setting can hide both the avatar and its reserved layout column.
   const showAvatarGlobal = chatLayout?.showAvatar ?? true;
-  const showAvatarThisBubble = showAvatarGlobal && (!compactMode || !isSameAsNext);
+  const showAvatarForSpeaker = speaker.showAvatar !== false;
+  const showAvatarEnabled = showAvatarGlobal && showAvatarForSpeaker;
+  const showAvatarThisBubble = showAvatarEnabled && (!compactMode || !isSameAsNext);
 
   // Compact mode: show speaker name only below the last message of a run
   const showSpeakerNameGlobal = chatLayout?.showSpeakerName ?? chatLayout?.showMeta ?? true;
@@ -1155,7 +1171,7 @@ export function ChatMessageBubble({
         }}
       >
         {/* Avatar column */}
-        {showAvatarGlobal && renderAvatar ? (
+        {showAvatarEnabled && renderAvatar ? (
           compactMode ? (
             <div
               style={{

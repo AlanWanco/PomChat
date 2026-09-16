@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleAnimationWindow, getBubbleMotionState } from '../components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleAnimationWindow, getBubbleMotionState, getItemsAfterLastClear } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
 import { buildFontFaceCss, withCjkFontFallback } from '../fontPresets';
 
@@ -319,15 +319,24 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     }
   })();
 
-  const appearedMessages = sortedContent.filter((item) => {
+  const appearedBubbleItems = sortedContent.filter((item) => {
     const speaker = props.speakers[item.speaker];
-    if (!speaker || speaker.type === 'annotation') {
+    if (!speaker) {
       return false;
     }
 
-    const appearanceTime = Math.max(0, item.start - ((props.chatLayout?.animationStyle || 'rise') === 'none' ? 0 : animationDuration));
+    const animationStyle = speaker.type === 'annotation'
+      ? (speaker.style?.animationStyle || props.chatLayout?.animationStyle || 'rise')
+      : (props.chatLayout?.animationStyle || 'rise');
+    const { appearanceTime } = getBubbleAnimationWindow({
+      start: item.start,
+      animationStyle,
+      animationDuration,
+    });
     return currentTime >= appearanceTime;
   });
+  const activeBubbleItems = getItemsAfterLastClear(appearedBubbleItems);
+  const appearedMessages = activeBubbleItems.filter((item) => props.speakers[item.speaker]?.type !== 'annotation');
   const visibleMessageRows = ((props.chatLayout?.interruptionEnabled ?? true) ? computeInterruptedMessageRows : computeSimpleMessageRows)(
     appearedMessages.map((item) => ({ ...item, speakerId: item.speaker })),
     Object.fromEntries(Object.entries(props.speakers).map(([key, value]) => [key, { side: value.side, type: value.type }])),
@@ -360,20 +369,19 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
     return { trackCount, tracks };
   })();
 
-  const visibleAnnotations = sortedContent.filter((item) => {
+  const visibleAnnotations = activeBubbleItems.filter((item) => {
     const speaker = props.speakers[item.speaker];
     if (speaker?.type !== 'annotation') {
       return false;
     }
     const animationStyle = speaker.style?.animationStyle || props.chatLayout?.animationStyle || 'rise';
-    const animationDuration = props.chatLayout?.animationDuration ?? 0.2;
-    const { appearanceTime, disappearanceTime } = getBubbleAnimationWindow({
+    const { disappearanceTime } = getBubbleAnimationWindow({
       start: item.start,
       end: item.end,
       animationStyle,
       animationDuration,
     });
-    return currentTime >= appearanceTime && currentTime <= disappearanceTime;
+    return currentTime <= disappearanceTime;
   });
   const topAnnotations = visibleAnnotations.filter((item) => props.speakers[item.speaker]?.style?.annotationPosition === 'top');
   const bottomAnnotations = visibleAnnotations.filter((item) => (props.speakers[item.speaker]?.style?.annotationPosition ?? 'bottom') === 'bottom');

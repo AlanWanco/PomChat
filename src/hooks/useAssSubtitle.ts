@@ -12,6 +12,8 @@ export interface SubtitleItem {
   text: string;
   speakerId: string;
   visible?: boolean;
+  /** Clear previously displayed bubbles when this subtitle appears. */
+  clearBubblesBefore?: boolean;
   sourceLineIndex: number;
 }
 
@@ -70,6 +72,7 @@ type ProjectTextItem = {
   text?: string;
   speaker?: string;
   visible?: boolean;
+  clearBubblesBefore?: boolean;
 };
 const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styleName: string) => {
   const keys = Object.keys(speakerConfig);
@@ -181,7 +184,9 @@ export function parseSubtitleSource(source: SubtitleSource, speakers: SpeakerCon
       actor: item.speaker ? (speakers[item.speaker]?.name || item.speaker) : '',
       text: normalizeSubtitleText(item.text || ''),
       speakerId: item.speaker || Object.keys(speakers)[0] || 'A',
-      visible: item.visible !== false, sourceLineIndex: index,
+      visible: item.visible !== false,
+      clearBubblesBefore: item.clearBubblesBefore === true,
+      sourceLineIndex: index,
     }));
   }
   if (hasOverride) return buildSubtitleItems(parseAssEvents(assContentOverride!), speakers);

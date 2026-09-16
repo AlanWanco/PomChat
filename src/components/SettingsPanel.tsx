@@ -2837,6 +2837,17 @@ export function SettingsPanel({
                         </div>
                       </div>
 
+                      <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={speaker.showAvatar !== false}
+                          onChange={(e) => updateSpeaker(key, (currentSpeaker) => ({ ...currentSpeaker, showAvatar: e.target.checked }), { preservePreset: true })}
+                          className="w-3.5 h-3.5"
+                          style={{ accentColor: secondaryThemeColor }}
+                        />
+                        <span>{t('project.showAvatar')}</span>
+                      </label>
+
                       <div className="flex justify-between items-center pt-1 gap-2">
                         <div className="flex-1 flex items-center gap-1">
                           <select 

@@ -23,10 +23,11 @@ try {
   ]);
   const serializedProjectItems = parseSubtitleSource({
     assPath: '/old/project.ass',
-    projectContent: [{ type: 'text', start: 0, end: 1, text: 'serialized text', speaker: 'A' }],
+    projectContent: [{ type: 'text', start: 0, end: 1, text: 'serialized text', speaker: 'A', clearBubblesBefore: true }],
     subtitleFormat: 'ass',
   }, { A: { name: 'A' } });
   assert.equal(serializedProjectItems?.[0]?.text, 'serialized text', 'web project content must win over an ASS path');
+  assert.equal(serializedProjectItems?.[0]?.clearBubblesBefore, true, 'serialized project content must preserve bubble reset markers');
   assert.deepEqual(parseSubtitleSource({ assPath: '', assContentOverride: null, projectContent: [], subtitleFormat: 'ass' }, { A: { name: 'A' } }), [], 'an emptied ASS project must not reload stale content');
   const revoked = [];
   const mutableInput = { value: 0 };

@@ -49,6 +49,8 @@ export interface SubtitleContentItem {
   type: 'text';
   text: string;
   visible?: boolean;
+  /** Clear previously displayed bubbles when this subtitle appears. */
+  clearBubblesBefore?: boolean;
 }
 
 export interface SpeakerStyle {
@@ -92,6 +94,8 @@ export interface SpeakerStyle {
 export interface SpeakerConfig {
   name?: string;
   avatar?: string;
+  /** Whether this speaker reserves/renders an avatar in chat bubbles. */
+  showAvatar?: boolean;
   side?: 'left' | 'right' | 'center';
   type?: 'speaker' | 'annotation';
   theme?: 'dark' | 'light';

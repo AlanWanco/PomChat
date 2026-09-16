@@ -11,7 +11,7 @@ import { ExportModal } from './components/ExportModal';
 import { AboutModal, type UpdateCheckResult } from './components/AboutModal';
 import { StyleManagerModal } from './components/StyleManagerModal';
 import { BubbleSnapshotModal } from './components/BubbleSnapshotModal';
-import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
+import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, extractMarkdownImageLinks, getItemsAfterLastClear, replaceMarkdownImageLinkSrcAt, replaceMarkdownImageLinkSrcs } from './components/chat/SharedChatBubbles';
 import { getBubbleAnimationWindow, getBubbleMotionState } from './components/chat/SharedChatBubbles';
 import { HistoryController, MediaUrlRegistry, usesNativeTextUndo } from './history/HistoryController';
 import { useLiveState } from './hooks/useLiveState';
@@ -367,6 +367,12 @@ const sanitizeProjectConfig = (parsed: any) => {
     },
     exportRangeCustomized: parsed?.exportRangeCustomized === true,
     dimensions: { ...DEFAULT_PROJECT_CONFIG.dimensions, ...(parsed?.dimensions || {}) },
+    content: Array.isArray(parsed?.content)
+      ? parsed.content.map((item: any) => ({
+          ...item,
+          clearBubblesBefore: item?.clearBubblesBefore === true,
+        }))
+      : DEFAULT_PROJECT_CONFIG.content,
     chatLayout: {
       ...DEFAULT_CHAT_LAYOUT,
       ...DEFAULT_PROJECT_CONFIG.chatLayout,
@@ -427,6 +433,7 @@ const sanitizeProjectConfig = (parsed: any) => {
           speakerId,
           {
             ...speaker,
+            showAvatar: speaker?.showAvatar !== false,
             style: {
               ...DEFAULT_BUBBLE_STYLE,
               ...(speaker?.style || {})
@@ -3220,6 +3227,7 @@ const [previewScale, setPreviewScale] = useState(1);
             type: 'text',
             text: subtitle.text,
             visible: subtitle.visible !== false,
+            clearBubblesBefore: subtitle.clearBubblesBefore === true,
           })),
       };
       void enqueueConfigFileOperation(async () => {
@@ -3261,6 +3269,7 @@ const [previewScale, setPreviewScale] = useState(1);
             type: 'text',
             text: s.text,
             visible: s.visible !== false,
+            clearBubblesBefore: s.clearBubblesBefore === true,
           }))
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(webPersistedConfig));
@@ -3619,6 +3628,7 @@ const [previewScale, setPreviewScale] = useState(1);
         type: 'text',
         text: s.text,
         visible: s.visible !== false,
+        clearBubblesBefore: s.clearBubblesBefore === true,
       }))
     };
   }, [createHistorySnapshot]);
@@ -5660,6 +5670,9 @@ const [previewScale, setPreviewScale] = useState(1);
     if ((existingSpeaker?.avatar || '') !== (importedSpeaker?.avatar || '')) {
       labels.push(t('importSettings.field.avatar'));
     }
+    if ((existingSpeaker?.showAvatar !== false) !== (importedSpeaker?.showAvatar !== false)) {
+      labels.push(t('importSettings.field.showAvatar'));
+    }
     if ((existingSpeaker?.side || 'left') !== (importedSpeaker?.side || 'left')) {
       labels.push(t('importSettings.field.side'));
     }
@@ -7383,30 +7396,42 @@ const [previewScale, setPreviewScale] = useState(1);
   const backgroundSlidesAboveChat = visibleBackgroundSlides
     .filter((slide: BackgroundSlideItem) => slide.layer === 'overlay')
     .sort((a: BackgroundSlideItem, b: BackgroundSlideItem) => (a.overlayOrder ?? 0) - (b.overlayOrder ?? 0));
-  const visibleAnnotations = previewSubtitles.filter((item) => {
+  const appearedBubbleItems = useMemo(() => previewSubtitles.filter((item) => {
     if (item.visible === false) return false;
+    const speaker = config.speakers[item.speakerId];
+    if (!speaker) return false;
+    const animationStyle = speaker.type === 'annotation'
+      ? (speaker.style?.animationStyle || config.chatLayout?.animationStyle || 'rise')
+      : (config.chatLayout?.animationStyle || 'rise');
+    const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
+    const { appearanceTime } = getBubbleAnimationWindow({
+      start: item.start,
+      animationStyle,
+      animationDuration,
+    });
+    return previewRenderTime >= appearanceTime;
+  }), [previewSubtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
+  const activeBubbleItems = useMemo(
+    () => getItemsAfterLastClear(appearedBubbleItems),
+    [appearedBubbleItems]
+  );
+  const appearedMessages = useMemo(
+    () => activeBubbleItems.filter((item) => config.speakers[item.speakerId]?.type !== 'annotation'),
+    [activeBubbleItems, config.speakers]
+  );
+  const visibleAnnotations = useMemo(() => activeBubbleItems.filter((item) => {
     const speaker = config.speakers[item.speakerId];
     if (!speaker || speaker.type !== 'annotation') return false;
     const animationStyle = speaker.style?.animationStyle || config.chatLayout?.animationStyle || 'rise';
     const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
-    const { appearanceTime, disappearanceTime } = getBubbleAnimationWindow({
+    const { disappearanceTime } = getBubbleAnimationWindow({
       start: item.start,
       end: item.end,
       animationStyle,
       animationDuration,
     });
-    return previewRenderTime >= appearanceTime && previewRenderTime <= disappearanceTime;
-  });
-  const appearedMessages = useMemo(() => previewSubtitles.filter((item) => {
-    if (item.visible === false) return false;
-    const speaker = config.speakers[item.speakerId];
-    if (!speaker || speaker.type === 'annotation') return false;
-    const animationStyle = config.chatLayout?.animationStyle || 'rise';
-    const animationDuration = config.chatLayout?.animationDuration ?? 0.2;
-    const animationLeadTime = animationStyle === 'none' ? 0 : animationDuration;
-    const appearanceTime = Math.max(0, item.start - animationLeadTime);
-    return previewRenderTime >= appearanceTime;
-  }), [previewSubtitles, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
+    return previewRenderTime <= disappearanceTime;
+  }), [activeBubbleItems, config.speakers, config.chatLayout?.animationStyle, config.chatLayout?.animationDuration, previewRenderTime]);
   const visibleMessageRows = useMemo(() => {
     const maxVisible = config.chatLayout?.maxVisibleBubbles ?? MESSAGE_FALLBACK_COUNT;
     return (config.chatLayout?.interruptionEnabled ?? true)

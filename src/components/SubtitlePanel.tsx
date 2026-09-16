@@ -1,4 +1,4 @@
-import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square, Eye, EyeOff } from 'lucide-react';
+import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square, Eye, EyeOff, Eraser } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
@@ -7,6 +7,7 @@ import { createThemeTokens, rgba } from '../theme';
 import { withCjkFontFallback } from '../fontPresets';
 import type { SharedChatSpeaker } from './chat/SharedChatBubbles';
 import { Tooltip } from './ui/Tooltip';
+import { SpeakerPicker } from './SpeakerPicker';
 
 interface SubtitlePanelProps {
   subtitles: SubtitleItem[];
@@ -66,7 +67,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [focusedSubtitleId, setFocusedSubtitleId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ start: string; end: string; text: string; speakerId: string; visible: boolean }>({ start: '', end: '', text: '', speakerId: '', visible: true });
+  const [editForm, setEditForm] = useState<{ start: string; end: string; text: string; speakerId: string; visible: boolean; clearBubblesBefore: boolean }>({ start: '', end: '', text: '', speakerId: '', visible: true, clearBubblesBefore: false });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -96,7 +97,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const [contextMenu, setContextMenu] = useState<{ subtitle: SubtitleItem; x: number; y: number } | null>(null);
   const [editModalSubtitleId, setEditModalSubtitleId] = useState<string | null>(null);
   const [speakerModalSubtitleId, setSpeakerModalSubtitleId] = useState<string | null>(null);
-  const [modalEditForm, setModalEditForm] = useState<{ start: string; end: string; text: string; visible: boolean }>({ start: '', end: '', text: '', visible: true });
+  const [modalEditForm, setModalEditForm] = useState<{ start: string; end: string; text: string; visible: boolean; clearBubblesBefore: boolean }>({ start: '', end: '', text: '', visible: true, clearBubblesBefore: false });
   const [modalSpeakerId, setModalSpeakerId] = useState('');
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const modalEditTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -359,13 +360,19 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     e.stopPropagation();
     setFocusedSubtitleId(sub.id);
     setInlineEditingId(sub.id);
-    setEditForm({ start: sub.start.toFixed(2), end: sub.end.toFixed(2), text: sub.text, speakerId: sub.speakerId, visible: sub.visible !== false });
+    setEditForm({ start: sub.start.toFixed(2), end: sub.end.toFixed(2), text: sub.text, speakerId: sub.speakerId, visible: sub.visible !== false, clearBubblesBefore: sub.clearBubblesBefore === true });
   };
 
   const toggleSubtitleVisibility = (sub: SubtitleItem, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     onUpdateSubtitle(sub.id, { visible: sub.visible === false });
+  };
+
+  const toggleClearBubblesBefore = (sub: SubtitleItem, event?: React.MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    onUpdateSubtitle(sub.id, { clearBubblesBefore: sub.clearBubblesBefore !== true });
   };
 
   const openSubtitleContextMenu = (sub: SubtitleItem, event: React.MouseEvent) => {
@@ -383,6 +390,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       end: sub.end.toFixed(2),
       text: sub.text,
       visible: sub.visible !== false,
+      clearBubblesBefore: sub.clearBubblesBefore === true,
     });
     if (setEditingSub) setEditingSub({ id: sub.id, start: sub.start, end: sub.end, text: sub.text });
   };
@@ -448,6 +456,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       duration: Number((newEnd - newStart).toFixed(2)),
       text: modalEditForm.text,
       visible: modalEditForm.visible,
+      clearBubblesBefore: modalEditForm.clearBubblesBefore,
     });
     setEditModalSubtitleId(null);
     if (setEditingSub) setEditingSub(null);
@@ -504,6 +513,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       text: editForm.text,
       speakerId: editForm.speakerId,
       visible: editForm.visible,
+      clearBubblesBefore: editForm.clearBubblesBefore,
     });
     
     setInlineEditingId(null);
@@ -781,16 +791,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </button>
           {showSelectionSpeakerPicker ? (
             <>
-              <select
+              <SpeakerPicker
+                options={subtitleSpeakerOptions}
                 value={effectiveSelectionSpeakerId}
-                onChange={(e) => setSelectionSpeakerId(e.target.value)}
-                className="px-2 py-1 rounded border text-[0.625rem] focus:outline-none"
-                style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
-              >
-                {subtitleSpeakerOptions.map(([speakerId, speaker]) => (
-                  <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
-                ))}
-              </select>
+                onChange={setSelectionSpeakerId}
+                accentColor={secondaryThemeColor}
+                theme={uiTheme}
+                ariaLabel={t('subtitle.selectSpeaker')}
+                buttonClassName="px-2 py-1 rounded text-[0.625rem] focus:outline-none"
+              />
               <button
                 type="button"
                 disabled={!effectiveSelectionSpeakerId}
@@ -804,16 +813,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           ) : null}
           {showBulkSpeakerPicker ? (
             <>
-              <select
+              <SpeakerPicker
+                options={bulkSpeakerOptions}
                 value={effectiveBulkSpeakerId}
-                onChange={(e) => setBulkSpeakerId(e.target.value)}
-                className="px-2 py-1 rounded border text-[0.625rem] focus:outline-none"
-                style={{ backgroundColor: uiTheme.inputBg, borderColor: `${secondaryThemeColor}44`, color: uiTheme.text }}
-              >
-                {bulkSpeakerOptions.map(([speakerId, speaker]) => (
-                  <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
-                ))}
-              </select>
+                onChange={setBulkSpeakerId}
+                accentColor={secondaryThemeColor}
+                theme={uiTheme}
+                ariaLabel={t('subtitle.bulkChangeSpeaker')}
+                buttonClassName="px-2 py-1 rounded text-[0.625rem] focus:outline-none"
+              />
               <button
                 type="button"
                 disabled={validSelectedSubtitleIds.length === 0 || !effectiveBulkSpeakerId}
@@ -892,6 +900,17 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         >
                           {sub.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
+                        <button
+                          type="button"
+                          onClick={(event) => toggleClearBubblesBefore(sub, event)}
+                          className="shrink-0"
+                          aria-pressed={sub.clearBubblesBefore === true}
+                          aria-label={sub.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore')}
+                          title={sub.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore')}
+                          style={{ color: sub.clearBubblesBefore ? secondaryThemeColor : uiTheme.textMuted }}
+                        >
+                          <Eraser size={14} />
+                        </button>
                         <span className="shrink-0 font-mono text-[0.625rem] opacity-65">
                           {subtitleIndex}
                         </span>
@@ -901,21 +920,16 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           </span>
                         ) : null}
                         <span className="font-mono opacity-70 shrink-0">{formatTime(sub.start)}</span>
-                        <select
-                          aria-label={t('subtitle.changeSpeaker')}
+                        <SpeakerPicker
+                          options={allSpeakerOptions}
                           value={sub.speakerId}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => changeSubtitleSpeaker(sub, event.target.value)}
-                          className="max-w-[8rem] px-1 rounded text-[0.625rem] shrink-0 focus:outline-none cursor-pointer"
-                          style={getSpeakerIndicatorStyle(speaker)}
-                        >
-                          {Object.entries(speakers).map(([speakerId, speakerOption]) => (
-                            <option key={speakerId} value={speakerId} style={{ backgroundColor: uiTheme.inputBg, color: uiTheme.text }}>
-                              {speakerOption.name || speakerId}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(speakerId) => changeSubtitleSpeaker(sub, speakerId)}
+                          accentColor={secondaryThemeColor}
+                          theme={uiTheme}
+                          ariaLabel={t('subtitle.changeSpeaker')}
+                          buttonClassName="max-w-[8rem] px-1 rounded text-[0.625rem] shrink-0 focus:outline-none cursor-pointer"
+                          buttonStyle={getSpeakerIndicatorStyle(speaker)}
+                        />
                         <span className="truncate opacity-90">{sub.text}</span>
                       </div>
                     );
@@ -1059,27 +1073,33 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                       >
                         {sub.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
                       </button>
+                      <button
+                        type="button"
+                        onClick={(event) => toggleClearBubblesBefore(sub, event)}
+                        className="shrink-0 self-start mt-0.5"
+                        aria-pressed={sub.clearBubblesBefore === true}
+                        aria-label={sub.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore')}
+                        title={sub.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore')}
+                        style={{ color: sub.clearBubblesBefore ? secondaryThemeColor : uiTheme.textMuted }}
+                      >
+                        <Eraser size={12} />
+                      </button>
                       <span
                         className="self-start shrink-0 font-mono text-[0.625rem] leading-5 opacity-65"
                         title={t('subtitle.count', { count: subtitleIndex })}
                       >
                         {subtitleIndex}
                       </span>
-                      <select
-                        aria-label={t('subtitle.changeSpeaker')}
+                      <SpeakerPicker
+                        options={allSpeakerOptions}
                         value={sub.speakerId}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => changeSubtitleSpeaker(sub, event.target.value)}
-                        className="px-1.5 py-0.5 rounded text-[0.625rem] self-start shrink-0 font-bold focus:outline-none cursor-pointer max-w-[12rem]"
-                        style={getSpeakerIndicatorStyle(speaker)}
-                      >
-                        {Object.entries(speakers).map(([speakerId, speakerOption]) => (
-                          <option key={speakerId} value={speakerId} style={{ backgroundColor: uiTheme.inputBg, color: uiTheme.text }}>
-                            {speakerOption.name || speakerId}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(speakerId) => changeSubtitleSpeaker(sub, speakerId)}
+                        accentColor={secondaryThemeColor}
+                        theme={uiTheme}
+                        ariaLabel={t('subtitle.changeSpeaker')}
+                        buttonClassName="px-1.5 py-0.5 rounded text-[0.625rem] self-start shrink-0 font-bold focus:outline-none cursor-pointer max-w-[12rem]"
+                        buttonStyle={getSpeakerIndicatorStyle(speaker)}
+                      />
                       <p className="leading-relaxed line-clamp-3 whitespace-pre-wrap">{sub.text}</p>
                     </div>
                   </>
@@ -1108,16 +1128,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                           style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                         />
                       </div>
-                      <select
+                      <SpeakerPicker
+                        options={allSpeakerOptions}
                         value={editForm.speakerId}
-                        onChange={(e) => setEditForm({ ...editForm, speakerId: e.target.value })}
-                        className="px-2 py-1 rounded border text-xs focus:outline-none"
-                        style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
-                      >
-                        {Object.entries(speakers).map(([speakerId, speaker]) => (
-                          <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
-                        ))}
-                      </select>
+                        onChange={(speakerId) => setEditForm({ ...editForm, speakerId })}
+                        accentColor={themeColor}
+                        theme={uiTheme}
+                        ariaLabel={t('subtitle.changeSpeaker')}
+                        buttonClassName="px-2 py-1 rounded text-xs focus:outline-none"
+                      />
                     </div>
                     
                     <textarea
@@ -1140,6 +1159,18 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     <div className="mt-1 text-[0.625rem] leading-4" style={{ color: uiTheme.textMuted }}>
                       {t('subtitle.markdownHint')}
                     </div>
+                    <label className="flex items-start gap-2 text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>
+                      <input
+                        type="checkbox"
+                        checked={editForm.clearBubblesBefore}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, clearBubblesBefore: e.target.checked }))}
+                        style={{ accentColor: secondaryThemeColor }}
+                      />
+                      <span>
+                        <span className="block">{t('subtitle.clearBubblesBefore')}</span>
+                        <span className="block text-[0.625rem] opacity-75">{t('subtitle.clearBubblesBeforeHint')}</span>
+                      </span>
+                    </label>
                     
                     <div className="flex justify-end gap-2 mt-1">
                       <button
@@ -1241,6 +1272,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             { key: 'edit', label: t('subtitle.contextEdit'), action: () => openEditModal(contextMenu.subtitle) },
             { key: 'copy-text', label: t('subtitle.contextCopyText'), action: () => { void handleCopySubtitleText(contextMenu.subtitle); } },
             { key: 'speaker', label: t('subtitle.contextChangeSpeaker'), action: () => openSpeakerModal(contextMenu.subtitle) },
+            { key: 'clear-bubbles', label: contextMenu.subtitle.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore'), action: () => { toggleClearBubblesBefore(contextMenu.subtitle); setContextMenu(null); } },
             { key: 'duration', label: t('subtitle.contextAdjustDuration'), action: () => openDurationModal(contextMenu.subtitle) },
           ].map((item, index) => (
             <button
@@ -1288,6 +1320,13 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 <input type="checkbox" checked={modalEditForm.visible} onChange={(e) => setModalEditForm((prev) => ({ ...prev, visible: e.target.checked }))} style={{ accentColor: secondaryThemeColor }} />
                 {t('subtitle.visibleOne')}
               </label>
+              <label className="flex items-start gap-2 text-sm" style={{ color: uiTheme.textMuted }}>
+                <input type="checkbox" checked={modalEditForm.clearBubblesBefore} onChange={(e) => setModalEditForm((prev) => ({ ...prev, clearBubblesBefore: e.target.checked }))} style={{ accentColor: secondaryThemeColor }} />
+                <span>
+                  <span className="block">{t('subtitle.clearBubblesBefore')}</span>
+                  <span className="block text-xs opacity-75">{t('subtitle.clearBubblesBeforeHint')}</span>
+                </span>
+              </label>
             </div>
             <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
               <button type="button" onClick={() => setEditModalSubtitleId(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
@@ -1310,11 +1349,15 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             </div>
             <div className="space-y-4 px-6 py-6">
               <div className="rounded-2xl border p-3 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>{speakerModalSubtitle.text}</div>
-              <select value={modalSpeakerId} onChange={(e) => setModalSpeakerId(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }}>
-                {Object.entries(speakers).map(([speakerId, speaker]) => (
-                  <option key={speakerId} value={speakerId}>{speaker.name || speakerId}</option>
-                ))}
-              </select>
+              <SpeakerPicker
+                options={allSpeakerOptions}
+                value={modalSpeakerId}
+                onChange={setModalSpeakerId}
+                accentColor={themeColor}
+                theme={uiTheme}
+                ariaLabel={t('subtitle.changeSpeaker')}
+                buttonClassName="w-full rounded-xl px-3 py-2 text-sm outline-none"
+              />
             </div>
             <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
               <button type="button" onClick={() => setSpeakerModalSubtitleId(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
