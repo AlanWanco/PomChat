@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen, ChevronDown } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
@@ -100,6 +100,7 @@ interface StyleManagerModalProps {
   speakerPresets?: Record<string, any>;
   annotationPresets?: Record<string, any>;
   projectPath?: string;
+  projectIdentity?: string;
   projectAssetsCacheEnabled?: boolean;
   initialPresetName?: string | null;
   onSelectImage?: () => Promise<string | null>;
@@ -122,9 +123,14 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
   },
 };
 
-export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
+export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectIdentity, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const currentProjectIdentity = projectIdentity || projectPath || '';
+  const projectIdentityRef = useRef(currentProjectIdentity);
+  useLayoutEffect(() => {
+    projectIdentityRef.current = currentProjectIdentity;
+  }, [currentProjectIdentity]);
   const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
@@ -249,6 +255,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setSelectedPresetIds(new Set([name]));
   };
   const handlePersistAllPresetAvatars = async () => {
+    const expectedProjectIdentity = projectIdentityRef.current;
     const electron = (window as any).electron;
     if (!electron) {
       setToastMsg(t('preset.persistDesktopOnly') || '仅桌面端支持持久化头像');
@@ -263,10 +270,12 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     let changedCount = 0;
     let failedCount = 0;
     for (const [name, preset] of entries) {
+      if (projectIdentityRef.current !== expectedProjectIdentity) return;
       const avatar = preset?.avatar;
       if (!avatar || !avatar.trim()) continue;
       try {
         const result = await electron.persistPresetAvatar({ value: avatar, projectFilePath: projectPath || null, preferredName: preset?.name || name });
+        if (projectIdentityRef.current !== expectedProjectIdentity) return;
         if (result && result !== avatar) {
           next[name] = { ...preset, avatar: result };
           changedCount += 1;
@@ -275,6 +284,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
         failedCount += 1;
       }
     }
+    if (projectIdentityRef.current !== expectedProjectIdentity) return;
     if (changedCount > 0) {
       let nextSpeakers = localSpeakers;
       let speakersChanged = false;
@@ -297,8 +307,22 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       setToastMsg(t('preset.persistNoChanges') || '预设头像均已持久化，无需处理');
     }
   };
-  const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const togglePresetSelect = (name: string) => setSelectedPresetIds((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const toggleSelect = (id: string) => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const togglePresetSelect = (name: string) => {
+    setSelectedPresetIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
   const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig, keepPreset?: boolean) => { setLocalSpeakers((p) => { const updated = u(p[id]); return { ...p, [id]: keepPreset ? updated : { ...updated, preset: '' } }; }); setSpeakersDirty(true); };
   const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], preset: '', style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
   const updatePresetStyle = (name: string, k: string, v: any) => {
@@ -410,7 +434,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
         properties: ['openFile']
       });
       if (!res.canceled && res.filePaths.length > 0) return res.filePaths[0];
-    } catch (_) { /* ignore */ }
+    } catch { /* ignore */ }
     return null;
   };
 
@@ -586,7 +610,14 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const modalBg = isDarkMode ? 'rgba(2, 6, 23, 0.72)' : 'rgba(15, 23, 42, 0.48)';
   const sectionStyle = { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg };
 
-  const toggleSection = (key: string) => setCollapsedSections((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggleSection = (key: string) => {
+    setCollapsedSections((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const isExternalFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
   const isRelativePathLike = (value?: string) => {
     const trimmed = (value || '').trim();
@@ -898,7 +929,12 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           color: editingAnnotPresetName === name ? uiTheme.text : uiTheme.textMuted,
                           borderTop: dragOverPresetName === name ? `2px solid ${secondaryThemeColor}` : undefined,
                         }}>
-                        <input type="checkbox" checked={selectedAnnotPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => { const n = new Set(selectedAnnotPresetIds); n.has(name) ? n.delete(name) : n.add(name); setSelectedAnnotPresetIds(n); }} style={{ accentColor: secondaryThemeColor }} />
+                        <input type="checkbox" checked={selectedAnnotPresetIds.has(name)} onClick={(e) => e.stopPropagation()} onChange={() => {
+                          const next = new Set(selectedAnnotPresetIds);
+                          if (next.has(name)) next.delete(name);
+                          else next.add(name);
+                          setSelectedAnnotPresetIds(next);
+                        }} style={{ accentColor: secondaryThemeColor }} />
                         <div className="w-3 h-3 rounded-full shrink-0 border-2 cursor-pointer transition-all duration-300" style={{ backgroundColor: preset?.style?.textColor || '#fff', borderColor: preset?.style?.bgColor || '#888', boxShadow: `0 0 4px ${secondaryThemeColor}99` }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 10px ${secondaryThemeColor}cc, 0 0 18px ${secondaryThemeColor}55`; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 0 4px ${secondaryThemeColor}99`; }} />
                         <span className="truncate flex-1">{name}</span>
                         <div

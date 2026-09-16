@@ -227,7 +227,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
     const el = compactListRef.current;
     const updateHeight = () => {
-      setCompactViewportHeight(el.clientHeight);
+      const nextHeight = el.clientHeight;
+      setCompactViewportHeight((previous) => previous === nextHeight ? previous : nextHeight);
     };
 
     updateHeight();

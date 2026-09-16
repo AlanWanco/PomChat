@@ -6,6 +6,7 @@ export function useLiveState<T>(initial: T | (() => T)) {
   const live = useRef(value);
   const set = useCallback<Dispatch<SetStateAction<T>>>((action) => {
     const next = typeof action === 'function' ? (action as (previous: T) => T)(live.current) : action;
+    if (Object.is(live.current, next)) return;
     live.current = next;
     render(next);
   }, []);

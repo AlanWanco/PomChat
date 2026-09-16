@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User } from 'lucide-react';
 import { translate, type Language } from '../i18n';
@@ -151,6 +151,11 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const projectIdentity = `${projectPath || ''}\u0000${config?.projectId || ''}`;
+  const projectIdentityRef = useRef(projectIdentity);
+  useLayoutEffect(() => {
+    projectIdentityRef.current = projectIdentity;
+  }, [projectIdentity]);
   const toFsPreviewPath = (localPath: string) => {
     const normalized = localPath.replace(/\\/g, '/');
 
@@ -774,8 +779,9 @@ export function SettingsPanel({
     return filePath;
   };
   const handleAddFontPreset = async () => {
+    const expectedProjectIdentity = projectIdentityRef.current;
     const filePath = await chooseFontFile();
-    if (!filePath) return;
+    if (!filePath || projectIdentityRef.current !== expectedProjectIdentity) return;
 
     const id = makeFontPresetId();
     const name = getFontPresetNameFromPath(filePath);
@@ -793,11 +799,12 @@ export function SettingsPanel({
     showToast(t('fontPresets.added', { name }));
   };
   const handleUpdateFontPresetFile = async (id: string) => {
+    const expectedProjectIdentity = projectIdentityRef.current;
     const preset = fontPresets?.[id];
     if (!preset) return;
 
     const filePath = await chooseFontFile();
-    if (!filePath) return;
+    if (!filePath || projectIdentityRef.current !== expectedProjectIdentity) return;
 
     onFontPresetsChange({
       ...(fontPresets || {}),
@@ -908,8 +915,11 @@ export function SettingsPanel({
 
     return '';
   };
-  const saveClipboardImageToCache = async (event: React.ClipboardEvent<HTMLInputElement>) => {
-    if (!window.electron) {
+  const saveClipboardImageToCache = async (
+    event: React.ClipboardEvent<HTMLInputElement>,
+    expectedProjectIdentity = projectIdentityRef.current,
+  ) => {
+    if (!window.electron || projectIdentityRef.current !== expectedProjectIdentity) {
       return '';
     }
 
@@ -928,12 +938,15 @@ export function SettingsPanel({
     if (directPath) {
       if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
         const imported = await window.electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: directPath, preferredName: file.name });
-        return imported?.storedPath || directPath;
+        return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || directPath) : '';
       }
       return directPath;
     }
 
     const arrayBuffer = await file.arrayBuffer();
+    if (projectIdentityRef.current !== expectedProjectIdentity) {
+      return '';
+    }
     if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
       const imported = await window.electron.saveClipboardImageToProjectAssets({
         projectFilePath: projectPath,
@@ -941,26 +954,32 @@ export function SettingsPanel({
         contentType: file.type,
         preferredName: file.name,
       });
-      return imported?.storedPath || '';
+      return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || '') : '';
     }
-    return await window.electron.saveClipboardImageToCache({
+    if (projectIdentityRef.current !== expectedProjectIdentity) {
+      return '';
+    }
+    const cachedPath = await window.electron.saveClipboardImageToCache({
       bytes: Array.from(new Uint8Array(arrayBuffer)),
       contentType: file.type,
       preferredName: file.name,
-    }) || '';
+    });
+    return projectIdentityRef.current === expectedProjectIdentity ? (cachedPath || '') : '';
   };
   const createImageAwarePathPasteHandler = (extensions: string[], onPath: (path: string) => void | Promise<void>) => {
     return (event: React.ClipboardEvent<HTMLInputElement>) => {
+      const expectedProjectIdentity = projectIdentityRef.current;
       const textOrFilePath = extractClipboardFilePath(event, extensions);
       if (textOrFilePath) {
+        if (projectIdentityRef.current !== expectedProjectIdentity) return;
         event.preventDefault();
         void onPath(textOrFilePath);
         return;
       }
 
       void (async () => {
-        const cachedImagePath = await saveClipboardImageToCache(event);
-        if (!cachedImagePath) {
+        const cachedImagePath = await saveClipboardImageToCache(event, expectedProjectIdentity);
+        if (!cachedImagePath || projectIdentityRef.current !== expectedProjectIdentity) {
           return;
         }
 
@@ -2085,8 +2104,9 @@ export function SettingsPanel({
                   {onSelectImage && (
                     <button
                       onClick={async () => {
+                        const expectedProjectIdentity = projectIdentityRef.current;
                         const path = await onSelectImage();
-                        if (path) updateBackground('image', path);
+                        if (path && projectIdentityRef.current === expectedProjectIdentity) updateBackground('image', path);
                       }}
                       className="px-3 border rounded-md flex items-center justify-center transition-colors"
                       style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
@@ -2339,7 +2359,9 @@ export function SettingsPanel({
                                 value={currentBackgroundSlide.image || ''}
                                 onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, image: e.target.value }))}
                                 onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], async (path) => {
+                                  const expectedProjectIdentity = projectIdentityRef.current;
                                   const naturalSize = await loadAssetNaturalSize(path);
+                                  if (projectIdentityRef.current !== expectedProjectIdentity) return;
                                   updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
                                     ...slide,
                                     image: path,
@@ -2357,9 +2379,11 @@ export function SettingsPanel({
                                 <button
                                   type="button"
                                   onClick={async () => {
+                                    const expectedProjectIdentity = projectIdentityRef.current;
                                     const path = await onSelectImage();
-                                    if (path) {
+                                    if (path && projectIdentityRef.current === expectedProjectIdentity) {
                                       const naturalSize = await loadAssetNaturalSize(path);
+                                      if (projectIdentityRef.current !== expectedProjectIdentity) return;
                                       updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
                                         ...slide,
                                         image: path,
@@ -2793,8 +2817,9 @@ export function SettingsPanel({
                               <button 
                                 disabled={speakerLocked}
                                 onClick={async () => {
+                                  const expectedProjectIdentity = projectIdentityRef.current;
                                   const path = await onSelectImage();
-                                  if (path) {
+                                  if (path && projectIdentityRef.current === expectedProjectIdentity) {
                                     updateSpeaker(key, (currentSpeaker) => ({
                                       ...currentSpeaker,
                                       avatar: path

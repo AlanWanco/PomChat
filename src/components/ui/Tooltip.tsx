@@ -68,7 +68,7 @@ export function Tooltip({
     left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
     top = Math.max(margin, Math.min(top, window.innerHeight - tooltipRect.height - margin));
 
-    setCoords({ left, top });
+    setCoords((previous) => previous.left === left && previous.top === top ? previous : { left, top });
   }, [visible, placement, width, content]);
 
   return (

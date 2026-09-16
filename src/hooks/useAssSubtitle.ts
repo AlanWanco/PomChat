@@ -15,20 +15,32 @@ export interface SubtitleItem {
   sourceLineIndex: number;
 }
 
-const extractDialogueLineMetas = (content: string) => {
+type ParsedAssEvent = {
+  dialogue: ParsedASS['events']['dialogue'][number];
+  sourceLineIndex: number;
+  visible: boolean;
+};
+
+const parseAssEvents = (content: string): ParsedAssEvent[] => {
+  const parsed = parse(content);
+  let dialogueIndex = 0;
+  let commentIndex = 0;
+
   return content
     .split(/\r?\n/)
-    .map((line, index) => {
-      const trimmed = line.trimStart();
-      if (trimmed.startsWith('Dialogue:')) {
-        return { index, visible: true };
+    .map((line, sourceLineIndex) => {
+      const eventType = line.trimStart().match(/^(Dialogue|Comment)\s*:/i)?.[1]?.toLowerCase();
+      if (eventType === 'dialogue') {
+        const dialogue = parsed.events.dialogue[dialogueIndex++];
+        return dialogue ? { dialogue, sourceLineIndex, visible: true } : null;
       }
-      if (trimmed.startsWith('Comment:')) {
-        return { index, visible: false };
+      if (eventType === 'comment') {
+        const dialogue = parsed.events.comment[commentIndex++];
+        return dialogue ? { dialogue, sourceLineIndex, visible: false } : null;
       }
       return null;
     })
-    .filter((item): item is { index: number; visible: boolean } => Boolean(item));
+    .filter((item): item is ParsedAssEvent => Boolean(item));
 };
 
 const normalizeSubtitleText = (value: string) => value.replace(/\\N/g, '\n').trim();
@@ -59,8 +71,6 @@ type ProjectTextItem = {
   speaker?: string;
   visible?: boolean;
 };
-type ParsedDialogue = ParsedASS['events']['dialogue'][number];
-
 const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styleName: string) => {
   const keys = Object.keys(speakerConfig);
   const actor = (actorName || '').trim();
@@ -117,15 +127,16 @@ const mapActorToSpeaker = (speakerConfig: SpeakerConfig, actorName: string, styl
   return keys[0] || 'A';
 };
 
-const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineMetas: Array<{ index: number; visible: boolean }>, speakerConfig: SpeakerConfig) => {
-  return dialogues.reduce((result: SubtitleItem[], dialogue, index: number) => {
+const buildSubtitleItems = (events: ParsedAssEvent[], speakerConfig: SpeakerConfig) => {
+  return events.reduce((result: SubtitleItem[], event) => {
+    const { dialogue, sourceLineIndex, visible } = event;
     const text = normalizeSubtitleText(dialogue.Text.combined);
     if (!text) {
       return result;
     }
 
     result.push({
-      id: `sub-${dialogueLineMetas[index]?.index ?? index}`,
+      id: `sub-${sourceLineIndex}`,
       start: dialogue.Start,
       end: dialogue.End,
       duration: Number((dialogue.End - dialogue.Start).toFixed(2)),
@@ -133,8 +144,8 @@ const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineMetas: Arra
       actor: dialogue.Name || dialogue.Style,
       text,
       speakerId: mapActorToSpeaker(speakerConfig, dialogue.Name, dialogue.Style),
-      visible: dialogueLineMetas[index]?.visible ?? true,
-      sourceLineIndex: dialogueLineMetas[index]?.index ?? index
+      visible,
+      sourceLineIndex
     });
 
     return result;
@@ -146,9 +157,11 @@ export type SubtitleSource = {
   assContentOverride?: string | null;
   projectContent?: ProjectTextItem[];
   subtitleFormat?: 'ass' | 'srt' | 'lrc';
+  /** Distinguishes relative resource paths belonging to different projects. */
+  projectPath?: string | null;
 };
 const sourceIdentity = (source: SubtitleSource) => JSON.stringify([
-  source.assPath, source.assContentOverride, source.projectContent, source.subtitleFormat,
+  source.assPath, source.assContentOverride, source.projectContent, source.subtitleFormat, source.projectPath,
 ]);
 
 export function parseSubtitleSource(source: SubtitleSource, speakers: SpeakerConfig): SubtitleItem[] | null {
@@ -171,7 +184,7 @@ export function parseSubtitleSource(source: SubtitleSource, speakers: SpeakerCon
       visible: item.visible !== false, sourceLineIndex: index,
     }));
   }
-  if (hasOverride) return buildSubtitleItems(parse(assContentOverride!).events.dialogue, extractDialogueLineMetas(assContentOverride!), speakers);
+  if (hasOverride) return buildSubtitleItems(parseAssEvents(assContentOverride!), speakers);
   return assPath && window.electron ? null : [];
 }
 
@@ -180,9 +193,10 @@ export function useAssSubtitle(
   speakerConfig: SpeakerConfig,
   assContentOverride?: string | null,
   projectContent?: ProjectTextItem[],
-  subtitleFormat?: 'ass' | 'srt' | 'lrc'
+  subtitleFormat?: 'ass' | 'srt' | 'lrc',
+  projectPath?: string | null
 ) {
-  const source = { assPath, assContentOverride, projectContent, subtitleFormat };
+  const source = { assPath, assContentOverride, projectContent, subtitleFormat, projectPath };
   const sourceKey = sourceIdentity(source);
   const sourceRef = useRef(source);
   sourceRef.current = source;
@@ -221,7 +235,7 @@ export function useAssSubtitle(
         if (items === null) {
           const text = await window.electron!.readFile(assPath);
           if (isStale()) return;
-          items = buildSubtitleItems(parse(text).events.dialogue, extractDialogueLineMetas(text), speakerConfig);
+          items = buildSubtitleItems(parseAssEvents(text), speakerConfig);
         }
         if (isStale()) return;
         acceptedSource.current = sourceKey;

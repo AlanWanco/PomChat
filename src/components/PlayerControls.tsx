@@ -237,7 +237,7 @@ export const PlayerControls = memo(function PlayerControls({
   }, [waveformZoomLevel]);
 
   const applyZoomLevel = useCallback((nextZoomLevel: number) => {
-    setZoomLevel(nextZoomLevel);
+    setZoomLevel((previous) => previous === nextZoomLevel ? previous : nextZoomLevel);
     onWaveformZoomLevelChange?.(nextZoomLevel);
   }, [onWaveformZoomLevelChange]);
 
@@ -507,7 +507,7 @@ export const PlayerControls = memo(function PlayerControls({
         if (dur > 0) {
           const containerWidth = waveformRef.current.clientWidth;
           const calculatedMin = containerWidth / dur;
-          setMinZoom(calculatedMin);
+          setMinZoom((previous) => previous === calculatedMin ? previous : calculatedMin);
 
           if (!hasUserAdjustedZoomRef.current) {
             applyZoomLevel(calculatedMin);
@@ -566,11 +566,18 @@ export const PlayerControls = memo(function PlayerControls({
   useEffect(() => {
     const updateOverlayMetrics = () => {
       const { scrollElement, wrapperElement } = getWaveformOverlayElements();
-      setWaveformOverlayMetrics({
+      const nextMetrics = {
         scrollLeft: scrollElement?.scrollLeft ?? 0,
         wrapperWidth: wrapperElement?.clientWidth ?? waveformRef.current?.clientWidth ?? 0,
         viewportWidth: scrollElement?.clientWidth ?? waveformRef.current?.clientWidth ?? 0,
-      });
+      };
+      setWaveformOverlayMetrics((previous) => (
+        previous.scrollLeft === nextMetrics.scrollLeft
+        && previous.wrapperWidth === nextMetrics.wrapperWidth
+        && previous.viewportWidth === nextMetrics.viewportWidth
+          ? previous
+          : nextMetrics
+      ));
     };
 
     if (!isWaveformReady && !audioPath) {
@@ -579,7 +586,11 @@ export const PlayerControls = memo(function PlayerControls({
     }
 
     if (!isWaveformReady) {
-      setWaveformOverlayMetrics({ scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 });
+      setWaveformOverlayMetrics((previous) => (
+        previous.scrollLeft === 0 && previous.wrapperWidth === 0 && previous.viewportWidth === 0
+          ? previous
+          : { scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 }
+      ));
       return;
     }
 

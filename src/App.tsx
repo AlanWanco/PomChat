@@ -66,6 +66,23 @@ type HistorySnapshot = {
   persistedCustomFilename: string;
 };
 
+type ProjectLifecycleToken = {
+  epoch: number;
+  projectPath: string | null;
+};
+
+type ProjectResourceOperationToken = ProjectLifecycleToken & {
+  revision: number;
+  projectLoadRequestId: number;
+};
+
+type ImportAssData = {
+  path: string;
+  content: string;
+  lifecycle: ProjectLifecycleToken;
+  revision: number;
+};
+
 type SpeakerReplaceDialogState = {
   speakerKey: string;
   replacementKey: string;
@@ -99,6 +116,8 @@ type ImportProjectSettingsSelection = {
 
 type ImportProjectSettingsDialogState = {
   sourcePath: string;
+  lifecycle: ProjectLifecycleToken;
+  revision: number;
   importedConfig: any;
   conflicts: SpeakerImportConflict[];
   selection: ImportProjectSettingsSelection;
@@ -122,9 +141,11 @@ type UpdatedProjectResource = ProjectResourceEntry & {
 
 type ProjectResourceCheckDialogState = {
   filePath: string;
+  originalContent: string;
   config: any;
   missing: MissingProjectResource[];
   updated: UpdatedProjectResource[];
+  loadToken: ProjectResourceOperationToken;
 };
 
 type UnsavedProjectDialogState = {
@@ -735,6 +756,10 @@ function PreviewBackgroundAsset({
 }) {
   // Track container size and natural image size to compute contain-fit overlay rect
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(intrinsicWidth && intrinsicHeight ? { w: intrinsicWidth, h: intrinsicHeight } : null);
+  const onEditBoxChangeRef = useRef(onEditBoxChange);
+  const onNaturalSizeChangeRef = useRef(onNaturalSizeChange);
+  onEditBoxChangeRef.current = onEditBoxChange;
+  onNaturalSizeChangeRef.current = onNaturalSizeChange;
   useEffect(() => {
     if (intrinsicWidth && intrinsicHeight) {
       setNaturalSize((prev) => prev?.w === intrinsicWidth && prev?.h === intrinsicHeight ? prev : { w: intrinsicWidth, h: intrinsicHeight });
@@ -798,6 +823,8 @@ function PreviewBackgroundAsset({
   const effectiveNaturalSize = intrinsicWidth && intrinsicHeight
     ? { w: intrinsicWidth, h: intrinsicHeight }
     : naturalSize;
+  const effectiveNaturalWidth = effectiveNaturalSize?.w;
+  const effectiveNaturalHeight = effectiveNaturalSize?.h;
 
   let overlayRect: React.CSSProperties = { inset: 0 };
   if (effectiveNaturalSize && effectiveNaturalSize.w > 0 && effectiveNaturalSize.h > 0) {
@@ -812,6 +839,7 @@ function PreviewBackgroundAsset({
   const overlayTop = 'top' in overlayRect && typeof overlayRect.top === 'number' ? overlayRect.top : 0;
 
   useEffect(() => {
+    const onEditBoxChange = onEditBoxChangeRef.current;
     if (!onEditBoxChange) return;
     if (!src) return;
     if (overlayWidth <= 1 || overlayHeight <= 1) return;
@@ -821,11 +849,12 @@ function PreviewBackgroundAsset({
       width: overlayWidth * scale,
       height: overlayHeight * scale,
     });
-  }, [offsetX, offsetY, onEditBoxChange, overlayHeight, overlayLeft, overlayTop, overlayWidth, scale, src]);
+  }, [offsetX, offsetY, overlayHeight, overlayLeft, overlayTop, overlayWidth, scale, src]);
   useEffect(() => {
+    const onNaturalSizeChange = onNaturalSizeChangeRef.current;
     if (!onNaturalSizeChange || !effectiveNaturalSize) return;
     onNaturalSizeChange({ width: effectiveNaturalSize.w, height: effectiveNaturalSize.h });
-  }, [effectiveNaturalSize, onNaturalSizeChange]);
+  }, [effectiveNaturalHeight, effectiveNaturalWidth]);
 
   // The edit overlay shares the same transform so controls naturally stick to the image
   const overlayStyle: React.CSSProperties = {
@@ -941,6 +970,8 @@ function PreviewTextAsset({
   const motionState = getBubbleMotionState(progress * disappearProgress, animationStyle, 'left');
   const { textLines, fontSize, strokeWidth, estimatedWidth, estimatedHeight } = getTextAssetLayout(slide);
   const textGroupRef = useRef<SVGGElement | null>(null);
+  const onEditBoxChangeRef = useRef(onEditBoxChange);
+  onEditBoxChangeRef.current = onEditBoxChange;
   const [textBox, setTextBox] = useState<{ width: number; height: number } | null>(null);
   const textAlign = slide.textAlign || 'center';
   const alignTransformX = textAlign === 'left' ? '0%' : textAlign === 'right' ? '-100%' : '-50%';
@@ -979,6 +1010,7 @@ function PreviewTextAsset({
   const { textAnchorX, getLineY } = getTextAssetSvgMetrics({ width: estimatedWidth, height: estimatedHeight, fontSize, lineCount: textLines.length, textAlign });
 
   useEffect(() => {
+    const onEditBoxChange = onEditBoxChangeRef.current;
     if (!onEditBoxChange) return;
     const alignOffsetX = textAlign === 'left' ? measuredWidth / 2 : textAlign === 'right' ? -measuredWidth / 2 : 0;
     onEditBoxChange({
@@ -987,7 +1019,7 @@ function PreviewTextAsset({
       width: measuredWidth * (slide.scale ?? 1),
       height: measuredHeight * (slide.scale ?? 1),
     });
-  }, [canvasHeight, canvasWidth, measuredHeight, measuredWidth, onEditBoxChange, slide.offsetX, slide.offsetY, slide.scale, textAlign]);
+  }, [canvasHeight, canvasWidth, measuredHeight, measuredWidth, slide.offsetX, slide.offsetY, slide.scale, textAlign]);
 
   return (
     <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
@@ -1175,7 +1207,7 @@ function App() {
   };
 
   const isDesktopMode = typeof window !== 'undefined' && Boolean(window.electron);
-  const [projectPath, setProjectPath] = useState<string | null>(null);
+  const [projectPath, setProjectPath, projectPathRef] = useLiveState<string | null>(null);
   const [recentProject, setRecentProject] = useState<string | null>(() => isDesktopMode ? null : localStorage.getItem(STORAGE_KEY + '_recent_project'));
 
   // Load initial from localStorage if available
@@ -1229,18 +1261,21 @@ function App() {
   const [mobileBottomPanelHeight, setMobileBottomPanelHeight] = useState(340);
   const [isMobileBottomResizeActive, setIsMobileBottomResizeActive] = useState(false);
   const [editingSub, setEditingSub] = useState<{ id: string, start: number, end: number, text: string } | null>(null);
-  const [importAssData, setImportAssData] = useState<{ path: string, content: string } | null>(null);
+  const [importAssData, setImportAssData] = useState<ImportAssData | null>(null);
   const [importAssDataIncremental, setImportAssDataIncremental] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [quickSavePath, setQuickSavePath] = useState('');
-  const [exportOutputPath, setExportOutputPath] = useState('');
+  const [exportOutputPath, setExportOutputPath, exportOutputPathRef] = useLiveState('');
   const [exportRange, setExportRange, exportRangeRef] = useLiveState({ start: 0, end: 0 });
-  const [isExporting, setIsExporting] = useState(false);
+  const [isExporting, setIsExporting, isExportingRef] = useLiveState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgressState | null>(null);
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
   const [lastExportOutputPath, setLastExportOutputPath] = useState('');
   const [lastExportSucceeded, setLastExportSucceeded] = useState(false);
   const exportCancellationRequestedRef = useRef(false);
+  const exportCancellationOperationRef = useRef<number | null>(null);
+  const exportOperationIdRef = useRef(0);
+  const exportLifecycleRef = useRef<ProjectResourceOperationToken | null>(null);
   const [activeInsertImageId, setActiveInsertImageId] = useState<string | null>(null);
   const [isInsertImageEditMode, setIsInsertImageEditMode] = useState(false);
   const [focusInsertImageSettingsKey, setFocusInsertImageSettingsKey] = useState(0);
@@ -1268,13 +1303,15 @@ function App() {
   const [filenameTemplate, setFilenameTemplate, filenameTemplateRef] = useLiveState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
   const [customFilename, setCustomFilename, customFilenameRef] = useLiveState('');
   const [persistedCustomFilename, setPersistedCustomFilename, persistedCustomFilenameRef] = useLiveState('');
-  const [cachedRemoteAssets, setCachedRemoteAssets] = useState<Record<string, string>>({});
+  const [cachedRemoteAssets, setCachedRemoteAssets, cachedRemoteAssetsRef] = useLiveState<Record<string, string>>({});
   const [presets, setPresets, presetsRef] = useLiveState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
   const [annotationPresets, setAnnotationPresets, annotationPresetsRef] = useLiveState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
   const [fontPresets, setFontPresets, fontPresetsRef] = useLiveState<FontPresetMap>(() => config.ui?.fontPresets ?? DEFAULT_UI_CONFIG.fontPresets);
   const [webAudioObjectUrl, setWebAudioObjectUrl, webAudioObjectUrlRef] = useLiveState('');
   const [desktopAudioBlob, setDesktopAudioBlob] = useState<Blob | null>(null);
-  const [desktopAudioObjectUrl, setDesktopAudioObjectUrl] = useState('');
+  const [desktopAudioLoadRevision, setDesktopAudioLoadRevision] = useState(0);
+  const desktopAudioLoadRevisionRef = useRef(0);
+  const [desktopAudioObjectUrl, setDesktopAudioObjectUrl] = useLiveState('');
   const [webAssContent, setWebAssContent, webAssContentRef] = useLiveState<string | null>(null);
   const webPresetInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -1286,12 +1323,20 @@ function App() {
   const lastPlaybackPersistAtRef = useRef(0);
   const lastUiFrameAtRef = useRef(0);
   const historyRef = useRef<HistoryController<HistorySnapshot> | null>(null);
+  const projectFileWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const configFileWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mediaUrlsRef = useRef(new MediaUrlRegistry());
+  const retainedMediaHistoryVersionRef = useRef(-1);
+  const projectLoadRequestRef = useRef(0);
+  const projectResourceCheckRevisionRef = useRef(0);
+  const renderCacheInfoRequestRef = useRef(0);
   const transactionRevisionRef = useRef(0);
   const renderTransactionRevision = transactionRevisionRef.current;
   const pointerInteractionRef = useRef(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const canUndoRef = useRef(false);
+  const canRedoRef = useRef(false);
   const [isProjectDirty, setIsProjectDirty] = useState(false);
   const [showAutoSavedTitle, setShowAutoSavedTitle] = useState(false);
   const [projectChangeTick, setProjectChangeTick] = useState(0);
@@ -1301,6 +1346,7 @@ function App() {
   const [unsavedProjectDialog, setUnsavedProjectDialog] = useState<UnsavedProjectDialogState | null>(null);
   const exportProgressActiveRef = useRef(false);
   const hasHydratedElectronConfigRef = useRef(!isDesktopMode);
+  const uiHydrationPendingRef = useRef(false);
   const lastUiSyncSnapshotRef = useRef('');
   const audioVolumePersistTimeoutRef = useRef<number | null>(null);
   const customFilenamePersistTimeoutRef = useRef<number | null>(null);
@@ -1322,7 +1368,7 @@ function App() {
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const previewBackgroundVideoRef = useRef<HTMLVideoElement>(null);
   const subtitleFormat = (config.subtitleFormat || 'ass') as SubtitleFormat;
-  const { subtitles, setSubtitles, subtitlesRef, restoreSubtitles, invalidateSubtitleLoads, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat);
+  const { subtitles, setSubtitles, subtitlesRef, restoreSubtitles, invalidateSubtitleLoads, loading: subtitlesLoading } = useAssSubtitle(config.assPath, config.speakers, webAssContent, config.content, subtitleFormat, projectPath);
   const latestSubtitleEnd = useMemo(() => subtitles.reduce((max, item) => Math.max(max, item.end || 0), 0), [subtitles]);
   const previewTimelineDuration = useMemo(
     () => Math.max(0, duration || 0, latestSubtitleEnd || 0, exportRange.end || 0),
@@ -1330,7 +1376,18 @@ function App() {
   );
   const hasAudioSource = Boolean(webAudioObjectUrl || config.audioPath);
   const createHistorySnapshot = useCallback((): HistorySnapshot => ({
-    config: { ...configRef.current, ui: { ...configRef.current.ui,
+    config: {
+      ...configRef.current,
+      exportRange: exportRangeRef.current,
+      exportRangeCustomized: exportRangeTouchedRef.current,
+      exportQuality: exportQualityRef.current,
+      exportHardware: exportHardwareRef.current,
+      exportParallelSegments: exportParallelSegmentsRef.current,
+      exportFormat: exportFormatRef.current,
+      exportLogEnabled: exportLogEnabledRef.current,
+      filenameTemplate: filenameTemplateRef.current,
+      customFilename: customFilenameRef.current,
+      ui: { ...configRef.current.ui,
         isDarkMode: isDarkModeRef.current,
         autoSaveProject: autoSaveProjectRef.current,
         projectAssetsCacheEnabled: projectAssetsCacheEnabledRef.current,
@@ -1356,8 +1413,8 @@ function App() {
         themeColor: themeColorStateRef.current,
         secondaryThemeColor: secondaryThemeColorStateRef.current,
         proxy: proxyStateRef.current
-      }, exportRange: exportRangeRef.current, exportQuality: exportQualityRef.current, exportHardware: exportHardwareRef.current, exportParallelSegments: exportParallelSegmentsRef.current, exportFormat: exportFormatRef.current, exportLogEnabled: exportLogEnabledRef.current, filenameTemplate: filenameTemplateRef.current, customFilename: customFilenameRef.current,
-      exportRangeCustomized: exportRangeTouchedRef.current },
+      }
+    },
     subtitles: subtitlesRef.current,
     webAssContent: webAssContentRef.current,
     webAudioObjectUrl: webAudioObjectUrlRef.current,
@@ -1370,10 +1427,54 @@ function App() {
     if (!historyRef.current) historyRef.current = new HistoryController(createHistorySnapshot(), HISTORY_LIMIT);
     return historyRef.current;
   }, [createHistorySnapshot]);
+  const captureProjectLifecycle = useCallback((): ProjectLifecycleToken => ({
+    epoch: getHistory().epoch,
+    projectPath: projectPathRef.current,
+  }), [getHistory, projectPathRef]);
+  const isProjectLifecycleCurrent = useCallback((token: ProjectLifecycleToken) => (
+    token.epoch === getHistory().epoch && token.projectPath === projectPathRef.current
+  ), [getHistory, projectPathRef]);
+  const enqueueProjectFileOperation = useCallback((operation: () => Promise<boolean> | boolean) => {
+    const queued = projectFileWriteQueueRef.current.then(() => operation());
+    projectFileWriteQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
+  }, []);
+  const waitForProjectFileOperations = useCallback(async () => {
+    while (true) {
+      const pending = projectFileWriteQueueRef.current;
+      await pending;
+      if (pending === projectFileWriteQueueRef.current) {
+        return;
+      }
+    }
+  }, []);
+  const enqueueConfigFileOperation = useCallback((operation: () => Promise<boolean> | boolean) => {
+    const queued = configFileWriteQueueRef.current.then(() => operation());
+    configFileWriteQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
+  }, []);
+  const captureProjectResourceOperation = useCallback((): ProjectResourceOperationToken => ({
+    ...captureProjectLifecycle(),
+    revision: getHistory().revision,
+    projectLoadRequestId: projectLoadRequestRef.current,
+  }), [captureProjectLifecycle, getHistory, projectLoadRequestRef]);
+  const isProjectResourceOperationCurrent = useCallback((token: ProjectResourceOperationToken) => (
+    isProjectLifecycleCurrent(token)
+    && token.revision === getHistory().revision
+    && token.projectLoadRequestId === projectLoadRequestRef.current
+  ), [getHistory, isProjectLifecycleCurrent, projectLoadRequestRef]);
   const syncHistoryAvailability = useCallback(() => {
     const history = getHistory();
-    setCanUndo(history.canUndo);
-    setCanRedo(history.canRedo);
+    const nextCanUndo = history.canUndo;
+    const nextCanRedo = history.canRedo;
+    if (canUndoRef.current !== nextCanUndo) {
+      canUndoRef.current = nextCanUndo;
+      setCanUndo(nextCanUndo);
+    }
+    if (canRedoRef.current !== nextCanRedo) {
+      canRedoRef.current = nextCanRedo;
+      setCanRedo(nextCanRedo);
+    }
   }, [getHistory]);
   const markProjectDirty = useCallback(() => {
     const history = getHistory();
@@ -1381,7 +1482,7 @@ function App() {
     if (history.pending && JSON.stringify([history.current.config.assPath, history.current.config.content, history.current.webAssContent, history.current.config.subtitleFormat]) !==
         JSON.stringify([nextSource.assPath, nextSource.content, webAssContentRef.current, nextSource.subtitleFormat])) {
       const source = { assPath: nextSource.assPath, projectContent: nextSource.content,
-        assContentOverride: webAssContentRef.current, subtitleFormat: nextSource.subtitleFormat || 'ass' };
+        assContentOverride: webAssContentRef.current, subtitleFormat: nextSource.subtitleFormat || 'ass', projectPath: projectPathRef.current };
       const items = parseSubtitleSource(source, nextSource.speakers);
       if (items) restoreSubtitles(items, source);
     }
@@ -1401,9 +1502,20 @@ function App() {
     isProjectDirtyRef.current = false;
     setIsProjectDirty(false);
   }, []);
+  const clearDesktopAudioSource = useCallback(() => {
+    desktopAudioLoadRevisionRef.current += 1;
+    setDesktopAudioLoadRevision(desktopAudioLoadRevisionRef.current);
+    setDesktopAudioBlob(null);
+    setDesktopAudioObjectUrl((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+      return '';
+    });
+  }, []);
   const cancelPendingTimers = useCallback(() => {
     transactionRevisionRef.current++;
-    for (const timer of [debouncedConfigCommitTimerRef, customFilenamePersistTimeoutRef, audioVolumePersistTimeoutRef, waveformZoomPersistTimeoutRef]) {
+    for (const timer of [debouncedConfigCommitTimerRef, customFilenamePersistTimeoutRef, audioVolumePersistTimeoutRef, waveformZoomPersistTimeoutRef, autoSavedTitleTimeoutRef]) {
       if (timer.current !== null) window.clearTimeout(timer.current);
       timer.current = null;
     }
@@ -1416,31 +1528,116 @@ function App() {
   }, [getHistory, syncHistoryAvailability]);
   const clearHistory = useCallback(() => {
     cancelPendingTimers();
+    projectLoadRequestRef.current += 1;
+    projectResourceCheckRevisionRef.current += 1;
+    renderCacheInfoRequestRef.current += 1;
+    const cancelledExportOperationId = exportOperationIdRef.current;
+    exportOperationIdRef.current += 1;
+    exportLifecycleRef.current = null;
+    exportProgressActiveRef.current = false;
+    if (isExportingRef.current && window.electron) {
+      exportCancellationOperationRef.current = cancelledExportOperationId;
+      exportCancellationRequestedRef.current = true;
+      void window.electron.cancelExport()
+        .catch((error) => {
+          console.error('Failed to cancel export while resetting project:', error);
+        })
+        .finally(() => {
+          if (exportCancellationOperationRef.current === cancelledExportOperationId) {
+            exportCancellationOperationRef.current = null;
+            exportCancellationRequestedRef.current = false;
+          }
+        });
+    } else if (exportCancellationOperationRef.current === null) {
+      exportCancellationRequestedRef.current = false;
+    }
     invalidateSubtitleLoads();
+    setWebAssContent(null);
     setWebAudioObjectUrl('');
+    setCachedRemoteAssets({});
+    savedSpeakerNamesRef.current = {};
+    setIsPlaying(false);
+    setLoop(false);
+    setPlaybackRate(1.0);
+    setCurrentTime(0);
+    setDuration(0);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
+    }
+    clearDesktopAudioSource();
+    exportRangeTouchedRef.current = false;
+    isApplyingConfigExportRangeRef.current = false;
+    setExportRange({ start: 0, end: 0 });
+    setExportQuality('balance');
+    setExportHardware('auto');
+    setExportParallelSegments(false);
+    setExportFormat('mp4');
+    setExportLogEnabled(true);
+    setQuickSavePath('');
+    setExportOutputPath('');
+    setExportStatusMessage(null);
+    setLastExportOutputPath('');
+    setLastExportSucceeded(false);
+    setIsExporting(false);
+    setShowAutoSavedTitle(false);
+    setShowExportModal(false);
+    setExportProgress(null);
+    setFilenameTemplate('default');
+    setCustomFilename('');
+    setPersistedCustomFilename('');
+    simpleModeCustomFilenameRef.current = '';
+    advancedModeCustomFilenameRef.current = '';
+    setSpeakerReplaceDialog(null);
+    setImportProjectSettingsDialog(null);
+    setProjectResourceCheckDialog(null);
+    setProjectResourceActionBusy(null);
+    setProjectResourceActionReport(null);
+    setUnsavedProjectDialog(null);
+    pendingUnsavedProjectActionRef.current = null;
+    setShowStyleManager(false);
+    setStyleManagerPresetTarget(null);
+    setBubbleSnapshotSubtitleIds([]);
+    setActiveInsertImageId(null);
+    setIsInsertImageEditMode(false);
+    setSlideEditBoxes({});
     insertImageDragRef.current = null;
     pointerInteractionRef.current = false;
     setEditingSub(null);
     setImportAssData(null);
     setImportAssDataIncremental(false);
+    setIsDragOver(false);
+    setSeekTick(0);
+    lastPlaybackPersistAtRef.current = 0;
+    lastUiFrameAtRef.current = 0;
+    setIsMobileBottomPanelExpanded(false);
+    setIsMobileBottomResizeActive(false);
+    portraitAutoCollapseRef.current = null;
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
     getHistory().reset(createHistorySnapshot());
+    canUndoRef.current = false;
+    canRedoRef.current = false;
     setCanUndo(false);
     setCanRedo(false);
-  }, [cancelPendingTimers, createHistorySnapshot, getHistory, invalidateSubtitleLoads]);
+  }, [cancelPendingTimers, clearDesktopAudioSource, createHistorySnapshot, getHistory, invalidateSubtitleLoads, isExportingRef, setCachedRemoteAssets]);
   const pushHistorySnapshot = useCallback(() => {
     flushPendingDebouncedConfigCommit();
     const history = getHistory();
-    history.sync(createHistorySnapshot());
+    if (history.sync(createHistorySnapshot())) syncHistoryAvailability();
     history.begin('discrete');
-  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory]);
+  }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory, syncHistoryAvailability]);
   const restoreHistorySnapshot = useCallback((snapshot: HistorySnapshot) => {
     cancelPendingTimers();
+    if (snapshot.config.audioPath !== configRef.current.audioPath || snapshot.webAudioObjectUrl !== webAudioObjectUrlRef.current) {
+      clearDesktopAudioSource();
+    }
     setConfig(snapshot.config);
     setWebAssContent(snapshot.webAssContent);
     setWebAudioObjectUrl(snapshot.webAudioObjectUrl);
-    restoreSubtitles(snapshot.subtitles, { assPath: snapshot.config.assPath, assContentOverride: snapshot.webAssContent, projectContent: snapshot.config.content, subtitleFormat: snapshot.config.subtitleFormat || 'ass' });
+    restoreSubtitles(snapshot.subtitles, { assPath: snapshot.config.assPath, assContentOverride: snapshot.webAssContent, projectContent: snapshot.config.content, subtitleFormat: snapshot.config.subtitleFormat || 'ass', projectPath: projectPathRef.current });
     setIsDarkMode(snapshot.config.ui.isDarkMode);
     setAutoSaveProject(snapshot.config.ui.autoSaveProject);
     setProjectAssetsCacheEnabled(snapshot.config.ui.projectAssetsCacheEnabled);
@@ -1488,13 +1685,16 @@ function App() {
     isProjectDirtyRef.current = true;
     setIsProjectDirty(true);
     setProjectChangeTick((prev) => prev + 1);
-  }, [cancelPendingTimers, restoreSubtitles]);
+  }, [cancelPendingTimers, clearDesktopAudioSource, restoreSubtitles]);
   const applyTrackedConfigChange = useCallback((nextConfig: any) => {
     pushHistorySnapshot();
-    if (nextConfig.audioPath !== configRef.current.audioPath) setWebAudioObjectUrl('');
+    if (nextConfig.audioPath !== configRef.current.audioPath) {
+      setWebAudioObjectUrl('');
+      clearDesktopAudioSource();
+    }
     setConfig(nextConfig);
     markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+  }, [clearDesktopAudioSource, markProjectDirty, pushHistorySnapshot]);
   const applyTrackedConfigUpdater = useCallback((updater: (prev: any) => any) => {
     applyTrackedConfigChange(updater(configRef.current));
   }, [applyTrackedConfigChange]);
@@ -1528,10 +1728,13 @@ function App() {
   }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory, syncHistoryAvailability]);
   const applyDebouncedConfigChange = useCallback((nextConfig: any, controlKey = 'config') => {
     previewHistoryChange(controlKey, () => {
-      if (nextConfig.audioPath !== configRef.current.audioPath) setWebAudioObjectUrl('');
+      if (nextConfig.audioPath !== configRef.current.audioPath) {
+        setWebAudioObjectUrl('');
+        clearDesktopAudioSource();
+      }
       setConfig(nextConfig);
     });
-  }, [previewHistoryChange]);
+  }, [clearDesktopAudioSource, previewHistoryChange]);
   const settingsControlKeysRef = useRef(new WeakMap<HTMLElement, string>());
   const nextSettingsControlKeyRef = useRef(0);
   const handleSettingsConfigChange = useCallback((nextConfig: any) => {
@@ -1559,11 +1762,56 @@ function App() {
   }, [flushPendingDebouncedConfigCommit, getHistory, restoreHistorySnapshot, syncHistoryAvailability]);
   useLayoutEffect(() => {
     // Source loads and existing compound actions settle into the same transaction.
+    // Do not run this for currentTime-only renders: snapshot cloning is relatively expensive.
     const history = getHistory();
     if (history.pending && !debouncedConfigCommitTimerRef.current && !pointerInteractionRef.current && !insertImageDragRef.current) markProjectDirty();
-    else if (!history.pending) history.sync(createHistorySnapshot());
-    mediaUrlsRef.current.retain(history.snapshots);
-  });
+    else if (!history.pending && history.sync(createHistorySnapshot())) syncHistoryAvailability();
+    if (retainedMediaHistoryVersionRef.current !== history.version) {
+      mediaUrlsRef.current.retain(history.snapshots);
+      retainedMediaHistoryVersionRef.current = history.version;
+    }
+  }, [
+    config,
+    projectPath,
+    subtitles,
+    webAssContent,
+    webAudioObjectUrl,
+    exportRange,
+    exportQuality,
+    exportHardware,
+    exportParallelSegments,
+    exportFormat,
+    exportLogEnabled,
+    filenameTemplate,
+    customFilename,
+    persistedCustomFilename,
+    isDarkMode,
+    autoSaveProject,
+    projectAssetsCacheEnabled,
+    settingsPosition,
+    uiFontScale,
+    subtitlePanelCompactMode,
+    themeColorState,
+    secondaryThemeColorState,
+    proxyState,
+    presets,
+    annotationPresets,
+    fontPresets,
+    bubbleSnapshotBackgroundMode,
+    bubbleSnapshotBackgroundColor,
+    bubbleSnapshotCustomBackgroundImage,
+    bubbleSnapshotBackgroundImageSizing,
+    bubbleSnapshotTileAlign,
+    bubbleSnapshotBackgroundBlur,
+    bubbleSnapshotBackgroundBrightness,
+    bubbleSnapshotSidePadding,
+    bubbleSnapshotBubbleWidthPercent,
+    bubbleSnapshotExportScale,
+    getHistory,
+    createHistorySnapshot,
+    markProjectDirty,
+    syncHistoryAvailability,
+  ]);
   useEffect(() => {
     const down = () => { pointerInteractionRef.current = true; };
     const end = () => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); };
@@ -1650,7 +1898,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const heightRatio = availableHeight / canvasHeight;
       const nextScale = Math.min(widthRatio, heightRatio);
       const safeScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
-      setPreviewScale(safeScale);
+      setPreviewScale((previous) => previous === safeScale ? previous : safeScale);
     };
 
     updateScale();
@@ -1715,7 +1963,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (!availableWidth || !availableHeight) return;
       const nextScale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
       const safeScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
-      setPreviewScale(safeScale);
+      setPreviewScale((previous) => previous === safeScale ? previous : safeScale);
     };
 
     const t1 = window.setTimeout(forceScale, 50);
@@ -1829,9 +2077,10 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const parseAssDialogueLines = (assContent: string) => {
     return assContent.split(/\r?\n/)
-      .filter((line) => line.startsWith('Dialogue:'))
+      .filter((line) => /^\s*Dialogue\s*:/i.test(line))
       .map((line) => {
-        const parts = line.split(',');
+        const payload = line.replace(/^\s*Dialogue\s*:\s*/i, '');
+        const parts = payload.split(',');
         if (parts.length < 10) return null;
         const start = parseTimeToSeconds(parts[1]);
         const end = parseTimeToSeconds(parts[2]);
@@ -1842,13 +2091,17 @@ const [previewScale, setPreviewScale] = useState(1);
       .filter((item): item is { start: number; end: number; text: string } => item !== null);
   };
 
-  const backupAssIfSpeakerNamesChanged = async () => {
-    const resolvedAssPath = resolveProjectAssetPath(config.assPath) || config.assPath;
+  const backupAssIfSpeakerNamesChanged = async (
+    sourceConfig: any = configRef.current,
+    sourceProjectPath: string | null = projectPathRef.current,
+    previousNames: Record<string, string> = savedSpeakerNamesRef.current,
+  ) => {
+    const resolvedAssPath = resolveAssetPathAgainstProject(sourceConfig.assPath, sourceProjectPath) || sourceConfig.assPath;
     if (!window.electron || !resolvedAssPath) return;
 
-    const previousNames = savedSpeakerNamesRef.current;
-    const currentNames = getSpeakerNameSnapshot(config.speakers);
-    const changed = Object.keys(currentNames).some((key) => currentNames[key] !== previousNames[key]);
+    const currentNames = getSpeakerNameSnapshot(sourceConfig.speakers);
+    const nameKeys = new Set([...Object.keys(currentNames), ...Object.keys(previousNames)]);
+    const changed = [...nameKeys].some((key) => currentNames[key] !== previousNames[key]);
     if (!changed) return;
 
     try {
@@ -1856,6 +2109,24 @@ const [previewScale, setPreviewScale] = useState(1);
     } catch (error) {
       console.error('Failed to backup ASS before speaker rename sync:', error);
     }
+  };
+
+  const clearAssSourceWhenSubtitlesEmpty = () => {
+    const currentConfig = configRef.current;
+    const hasSerializedContent = Array.isArray(currentConfig.content) && currentConfig.content.length > 0;
+    if (subtitlesRef.current.length !== 0 || currentConfig.subtitleFormat !== 'ass'
+      || (!currentConfig.assPath && !webAssContentRef.current && !hasSerializedContent)) {
+      return;
+    }
+    // Once the last ASS subtitle is removed, neither the source file nor a
+    // stale serialized/temporary copy may repopulate the editor on reload.
+    setWebAssContent(null);
+    setConfig((prev: any) => {
+      if (!prev.assPath && (!Array.isArray(prev.content) || prev.content.length === 0)) {
+        return prev;
+      }
+      return { ...prev, assPath: '', content: [] };
+    });
   };
 
   const handleUpdateSubtitle = async (id: string, updates: Partial<any>) => {
@@ -1878,6 +2149,7 @@ const [previewScale, setPreviewScale] = useState(1);
       pushHistorySnapshot();
       const nextSubtitles = subtitlesRef.current.filter((sub: any) => sub.id !== id);
       setSubtitles(nextSubtitles);
+      clearAssSourceWhenSubtitlesEmpty();
       if (editingSub?.id === id) {
         setEditingSub(null);
       }
@@ -1916,6 +2188,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const idSet = new Set(ids);
       const nextSubtitles = subtitlesRef.current.filter((sub: any) => !idSet.has(sub.id));
       setSubtitles(nextSubtitles);
+      clearAssSourceWhenSubtitlesEmpty();
       if (editingSub?.id && idSet.has(editingSub.id)) {
         setEditingSub(null);
       }
@@ -1995,6 +2268,8 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleImportPresets = async () => {
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
     if (!window.electron) {
       webPresetInputRef.current?.click();
       return;
@@ -2007,12 +2282,13 @@ const [previewScale, setPreviewScale] = useState(1);
         properties: ['openFile']
       });
 
-      if (result.canceled || result.filePaths.length === 0) return;
+      if (result.canceled || result.filePaths.length === 0 || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
 
       const content = await window.electron.readFile(result.filePaths[0]);
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
       const parsed = JSON.parse(content);
-      const existing = { ...presets };
-      const existingAnnotationPresets = { ...annotationPresets };
+      const existing = { ...presetsRef.current };
+      const existingAnnotationPresets = { ...annotationPresetsRef.current };
       const imported: Record<string, any> = {};
       const importedAnnotations: Record<string, any> = {};
 
@@ -2060,7 +2336,7 @@ const [previewScale, setPreviewScale] = useState(1);
       }
 
       const confirmed = window.confirm(t('app.presetsImportConfirm', { presetCount: presetCount + annotationPresetCount, speakerCount }));
-      if (!confirmed) {
+      if (!confirmed || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
         return;
       }
 
@@ -2070,7 +2346,9 @@ const [previewScale, setPreviewScale] = useState(1);
       markProjectDirty();
       showToast(t('app.presetsImported'));
     } catch (error) {
-      console.error('Failed to import presets:', error);
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === importRevision) {
+        console.error('Failed to import presets:', error);
+      }
     }
   };
 
@@ -2101,7 +2379,10 @@ const [previewScale, setPreviewScale] = useState(1);
       });
 
       if (result.canceled || !result.filePath) return;
-        await window.electron.writeFile(result.filePath, JSON.stringify({ speakers: presets, annotations: annotationPresets }, null, 2));
+      const saved = await window.electron.writeFile(result.filePath, JSON.stringify({ speakers: presetsRef.current, annotations: annotationPresetsRef.current }, null, 2));
+      if (!saved) {
+        throw new Error('The preset file could not be written');
+      }
       showToast(t('app.presetsExported'));
     } catch (error) {
       console.error('Failed to export presets:', error);
@@ -2390,13 +2671,16 @@ const [previewScale, setPreviewScale] = useState(1);
       const normalizedRestoredConfig = restoredConfig.subtitleFormat
         ? restoredConfig
         : { ...restoredConfig, subtitleFormat: restoredConfig.assPath ? 'ass' : (restoredConfig.content?.length ? 'srt' : 'ass') };
-      setConfig(normalizedRestoredConfig);
-      if (normalizedRestoredConfig.subtitleFormat === 'ass' && normalizedRestoredConfig.assPath) {
-        // do not set webAssContent to a path string
-      } else {
-        setWebAssContent(null);
-      }
+      clearHistory();
+      clearProjectDirty();
       setProjectPath('web-demo');
+      setConfig((previous: any) => ({
+        ...normalizedRestoredConfig,
+        ui: previous?.ui || DEFAULT_UI_CONFIG,
+      }));
+      // A saved web project cannot reconstruct a local ASS path. Its serialized
+      // content is authoritative, so never treat assPath as ASS source text.
+      setWebAssContent(null);
       rememberRecentProject(parsed?.projectTitle || 'web-demo');
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedRestoredConfig.speakers);
       if (requiresAudioReload) {
@@ -2407,7 +2691,7 @@ const [previewScale, setPreviewScale] = useState(1);
       console.error('Failed to restore web project from localStorage:', error);
       return false;
     }
-  }, [showToast]);
+  }, [clearHistory, clearProjectDirty, showToast]);
 
   useEffect(() => {
     if (window.electron) {
@@ -2450,6 +2734,7 @@ const [previewScale, setPreviewScale] = useState(1);
   useEffect(() => {
     if (renderTransactionRevision !== transactionRevisionRef.current) return;
     const ui = config.ui || DEFAULT_UI_CONFIG;
+    uiHydrationPendingRef.current = true;
     setIsDarkMode(Boolean(ui.isDarkMode));
     lastUiSyncSnapshotRef.current = JSON.stringify({
       isDarkMode: ui.isDarkMode,
@@ -2530,6 +2815,11 @@ const [previewScale, setPreviewScale] = useState(1);
   useEffect(() => {
     if (renderTransactionRevision !== transactionRevisionRef.current) return;
     if (!hasHydratedElectronConfigRef.current) {
+      uiHydrationPendingRef.current = false;
+      return;
+    }
+    if (uiHydrationPendingRef.current) {
+      uiHydrationPendingRef.current = false;
       return;
     }
 
@@ -2635,7 +2925,7 @@ const [previewScale, setPreviewScale] = useState(1);
         },
       };
     });
-  }, [autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, uiFontScale, exportFilenameEditorMode, subtitlePanelCompactMode, recentProject, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
+  }, [config.ui, autoSaveProject, projectAssetsCacheEnabled, isDarkMode, themeColorState, secondaryThemeColorState, proxyState, settingsPosition, uiFontScale, exportFilenameEditorMode, subtitlePanelCompactMode, recentProject, bubbleSnapshotBackgroundMode, bubbleSnapshotBackgroundColor, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotTileAlign, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotSidePadding, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotExportScale, presets, annotationPresets, fontPresets]);
 
   useEffect(() => {
     if (audioVolumePersistTimeoutRef.current !== null) {
@@ -2659,9 +2949,11 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     const revision = transactionRevisionRef.current;
-    audioVolumePersistTimeoutRef.current = window.setTimeout(() => {
+    const timerId = window.setTimeout(() => {
+      if (audioVolumePersistTimeoutRef.current === timerId) {
+        audioVolumePersistTimeoutRef.current = null;
+      }
       if (revision !== transactionRevisionRef.current) return;
-      audioVolumePersistTimeoutRef.current = null;
       setConfig((prev: any) => {
         const prevUi = prev.ui || DEFAULT_UI_CONFIG;
         if (Number(prevUi.audioVolume ?? DEFAULT_UI_CONFIG.audioVolume) === audioVolume) {
@@ -2677,9 +2969,10 @@ const [previewScale, setPreviewScale] = useState(1);
         };
       });
     }, 1000);
+    audioVolumePersistTimeoutRef.current = timerId;
 
     return () => {
-      if (audioVolumePersistTimeoutRef.current !== null) {
+      if (audioVolumePersistTimeoutRef.current === timerId) {
         window.clearTimeout(audioVolumePersistTimeoutRef.current);
         audioVolumePersistTimeoutRef.current = null;
       }
@@ -2708,9 +3001,11 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     const revision = transactionRevisionRef.current;
-    waveformZoomPersistTimeoutRef.current = window.setTimeout(() => {
+    const timerId = window.setTimeout(() => {
+      if (waveformZoomPersistTimeoutRef.current === timerId) {
+        waveformZoomPersistTimeoutRef.current = null;
+      }
       if (revision !== transactionRevisionRef.current) return;
-      waveformZoomPersistTimeoutRef.current = null;
       setConfig((prev: any) => {
         const prevUi = prev.ui || DEFAULT_UI_CONFIG;
         if (Number(prevUi.waveformZoomLevel ?? DEFAULT_UI_CONFIG.waveformZoomLevel) === waveformZoomLevel) {
@@ -2726,9 +3021,10 @@ const [previewScale, setPreviewScale] = useState(1);
         };
       });
     }, 1000);
+    waveformZoomPersistTimeoutRef.current = timerId;
 
     return () => {
-      if (waveformZoomPersistTimeoutRef.current !== null) {
+      if (waveformZoomPersistTimeoutRef.current === timerId) {
         window.clearTimeout(waveformZoomPersistTimeoutRef.current);
         waveformZoomPersistTimeoutRef.current = null;
       }
@@ -2762,6 +3058,22 @@ const [previewScale, setPreviewScale] = useState(1);
   const handleProxyChangeTracked = useCallback((nextProxy: string) => {
     previewHistoryChange('proxy', () => setProxyState(nextProxy));
   }, [previewHistoryChange]);
+
+  const handleAudioVolumeChangeTracked = useCallback((value: number) => {
+    const nextVolume = Math.max(0, Math.min(1, Number(value.toFixed(2))));
+    if (audioVolume === nextVolume) {
+      return;
+    }
+    previewHistoryChange('audioVolume', () => setAudioVolume(nextVolume));
+  }, [audioVolume, previewHistoryChange]);
+
+  const handleWaveformZoomLevelChangeTracked = useCallback((value: number) => {
+    const nextZoomLevel = Math.max(10, Math.min(1000, Number(value.toFixed(2))));
+    if (waveformZoomLevel === nextZoomLevel) {
+      return;
+    }
+    previewHistoryChange('waveformZoomLevel', () => setWaveformZoomLevel(nextZoomLevel));
+  }, [previewHistoryChange, waveformZoomLevel]);
 
   const handleProjectAssetsCacheEnabledChangeTracked = useCallback((enabled: boolean) => {
     pushHistorySnapshot();
@@ -2803,18 +3115,32 @@ const [previewScale, setPreviewScale] = useState(1);
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
-   // Save config explicitly
-   const handleSaveConfig = () => {
-     flushPendingDebouncedConfigCommit();
-     const latestConfig = { ...createHistorySnapshot().config, ...getProjectConfig() };
-     if (!window.electron) {
-       localStorage.setItem(STORAGE_KEY, JSON.stringify(latestConfig));
-     }
-      if (window.electron) {
-        window.electron.saveConfig(latestConfig).catch((err: any) => console.error('Failed to save config to file:', err));
-      }
-      showToast(t('app.configSaved'));
-    };
+  // Save config explicitly
+  const handleSaveConfig = () => {
+    flushPendingDebouncedConfigCommit();
+    const lifecycle = captureProjectLifecycle();
+    const saveToken = getHistory().saveToken();
+    const latestConfig = { ...createHistorySnapshot().config, ...getProjectConfig() };
+    if (!window.electron) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(latestConfig));
+    } else if (isProjectLifecycleCurrent(lifecycle) && getHistory().isSaveCurrent(saveToken)) {
+      void enqueueConfigFileOperation(async () => {
+        if (!isProjectLifecycleCurrent(lifecycle) || !getHistory().isSaveCurrent(saveToken)) {
+          return false;
+        }
+        const saved = await window.electron!.saveConfig(latestConfig);
+        if (!saved) {
+          throw new Error('The app config could not be written');
+        }
+        return true;
+      }).catch((err: any) => {
+        if (isProjectLifecycleCurrent(lifecycle) && getHistory().isSaveCurrent(saveToken)) {
+          console.error('Failed to save config to file:', err);
+        }
+      });
+    }
+    showToast(t('app.configSaved'));
+  };
 
   useEffect(() => {
     if (!themeColorState) {
@@ -2835,11 +3161,16 @@ const [previewScale, setPreviewScale] = useState(1);
     hasLoadedElectronConfigRef.current = true;
     
     const loadElectronConfig = async () => {
+      const lifecycle = captureProjectLifecycle();
+      const initialSaveToken = getHistory().saveToken();
       try {
         const electronConfig = await window.electron.loadConfig();
-        if (electronConfig) {
+        if (electronConfig
+          && isProjectLifecycleCurrent(lifecycle)
+          && getHistory().isSaveCurrent(initialSaveToken)) {
           const mergedConfig = sanitizeProjectConfig(electronConfig);
           setConfig(mergedConfig);
+          savedSpeakerNamesRef.current = getSpeakerNameSnapshot(mergedConfig.speakers);
         }
       } catch (error) {
         console.error('Failed to load config from Electron:', error);
@@ -2850,7 +3181,7 @@ const [previewScale, setPreviewScale] = useState(1);
     };
     
     loadElectronConfig();
-  }, []);
+  }, [captureProjectLifecycle, getHistory, isProjectLifecycleCurrent]);
 
   useEffect(() => {
     if (!window.electron || !electronConfigReady) return;
@@ -2866,28 +3197,62 @@ const [previewScale, setPreviewScale] = useState(1);
     };
   }, [electronConfigReady]);
 
-  // Save config changes to Electron file (debounced to prevent too frequent saves)
+  // Save config changes to Electron config file (debounced to prevent too frequent saves)
   useEffect(() => {
     // Only save if we have substantive changes (not just on every render)
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
-    
+
+    const lifecycle = captureProjectLifecycle();
+    const saveToken = getHistory().saveToken();
     // Save to file in background without blocking
     const saveTimer = setTimeout(() => {
-      window.electron.saveConfig(configRef.current).catch((err: any) =>
-        console.error('Failed to save config to file:', err)
-      );
+      if (!isProjectLifecycleCurrent(lifecycle) || !getHistory().isSaveCurrent(saveToken)) {
+        return;
+      }
+      const configToSave = {
+        ...createHistorySnapshot().config,
+        content: [...subtitlesRef.current]
+          .sort((a, b) => a.start - b.start || a.end - b.end)
+          .map((subtitle) => ({
+            start: subtitle.start,
+            end: subtitle.end,
+            speaker: subtitle.speakerId,
+            type: 'text',
+            text: subtitle.text,
+            visible: subtitle.visible !== false,
+          })),
+      };
+      void enqueueConfigFileOperation(async () => {
+        if (!isProjectLifecycleCurrent(lifecycle) || !getHistory().isSaveCurrent(saveToken)) {
+          return false;
+        }
+        const saved = await window.electron!.saveConfig(configToSave);
+        if (!saved) {
+          throw new Error('The app config could not be written');
+        }
+        return true;
+      }).catch((err: any) => {
+        if (isProjectLifecycleCurrent(lifecycle) && getHistory().isSaveCurrent(saveToken)) {
+          console.error('Failed to save config to file:', err);
+        }
+      });
     }, 500);
-    
+
     return () => clearTimeout(saveTimer);
-  }, [config]);
+  }, [captureProjectLifecycle, config, createHistorySnapshot, enqueueConfigFileOperation, getHistory, isProjectLifecycleCurrent, projectChangeTick, subtitles]);
 
   useEffect(() => {
     if (window.electron) return;
 
+    const lifecycle = captureProjectLifecycle();
+    const revision = getHistory().revision;
     const saveTimer = setTimeout(() => {
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== revision) {
+        return;
+      }
       const webPersistedConfig = {
-        ...config,
-        content: [...subtitles]
+        ...createHistorySnapshot().config,
+        content: [...subtitlesRef.current]
           .sort((a, b) => a.start - b.start || a.end - b.end)
           .map((s) => ({
             start: s.start,
@@ -2902,7 +3267,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }, 250);
 
     return () => clearTimeout(saveTimer);
-  }, [config, subtitles]);
+  }, [captureProjectLifecycle, config, createHistorySnapshot, getHistory, isProjectLifecycleCurrent, subtitlesRef, subtitles]);
 
   useEffect(() => {
     const isNarrowOrPortrait = windowWidth < 700;
@@ -3150,15 +3515,17 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const getProjectFileStem = useCallback(() => {
-    if (!projectPath || projectPath === 'web-demo') {
-      return sanitizeExportFileStem(config.projectTitle || t('app.untitled') || 'pomchat');
+    const currentProjectPath = projectPathRef.current;
+    const currentProjectTitle = configRef.current.projectTitle;
+    if (!currentProjectPath || currentProjectPath === 'web-demo') {
+      return sanitizeExportFileStem(currentProjectTitle || t('app.untitled') || 'pomchat');
     }
 
-    const normalizedPath = projectPath.replace(/\\/g, '/');
+    const normalizedPath = currentProjectPath.replace(/\\/g, '/');
     const filename = normalizedPath.split('/').pop() || '';
     const stem = filename.replace(/\.[^.]+$/, '');
-    return sanitizeExportFileStem(stem || config.projectTitle || t('app.untitled') || 'pomchat');
-  }, [config.projectTitle, projectPath, t]);
+    return sanitizeExportFileStem(stem || currentProjectTitle || t('app.untitled') || 'pomchat');
+  }, [configRef, projectPathRef, t]);
 
   const generateFilename = (template: 'default' | 'timestamp' | 'unix' | 'custom', customName: string, format: 'mp4' | 'mov-alpha' | 'webm-alpha', editorMode: 'simple' | 'advanced'): string => {
     const extension = format === 'mov-alpha' ? 'mov' : format === 'webm-alpha' ? 'webm' : 'mp4';
@@ -3228,8 +3595,21 @@ const [previewScale, setPreviewScale] = useState(1);
     return 'veryfast';
   };
 
-  const getProjectConfig = () => {
-    const restConfig: any = Object.fromEntries(Object.entries(createHistorySnapshot().config).filter(([key]) => key !== 'ui'));
+  const getProjectConfig = useCallback(() => {
+    const snapshot = createHistorySnapshot();
+    const currentConfig = {
+      ...snapshot.config,
+      exportRange: snapshot.exportRange,
+      exportRangeCustomized: snapshot.exportRangeTouched,
+      exportQuality: snapshot.exportQuality,
+      exportHardware: snapshot.exportHardware,
+      exportParallelSegments: snapshot.exportParallelSegments,
+      exportFormat: snapshot.exportFormat,
+      exportLogEnabled: snapshot.exportLogEnabled,
+      filenameTemplate: snapshot.filenameTemplate,
+      customFilename: snapshot.customFilename,
+    };
+    const restConfig: any = Object.fromEntries(Object.entries(currentConfig).filter(([key]) => key !== 'ui'));
     return {
       ...restConfig,
       content: [...subtitlesRef.current].sort((a, b) => a.start - b.start || a.end - b.end).map(s => ({
@@ -3241,12 +3621,12 @@ const [previewScale, setPreviewScale] = useState(1);
         visible: s.visible !== false,
       }))
     };
-  };
+  }, [createHistorySnapshot]);
 
   const getExportConfig = (slideIntrinsicSizeOverrides?: Record<string, { width: number; height: number }>) => {
     const restConfig = getProjectConfig();
     const resolveExportAssetPath = (assetPath: string | undefined) => {
-      const cachedPath = cachedRemoteAssets[assetPath || ''] || assetPath;
+      const cachedPath = cachedRemoteAssetsRef.current[assetPath || ''] || assetPath;
       return resolvePath(cachedPath) || cachedPath || '';
     };
     const remapMarkdownImagePaths = (text: string) => replaceMarkdownImageLinkSrcs(
@@ -3264,14 +3644,14 @@ const [previewScale, setPreviewScale] = useState(1);
     );
     return {
       ...restConfig,
-      exportRangeCustomized: exportRangeTouchedRef.current || config.exportRangeCustomized === true,
+      exportRangeCustomized: exportRangeTouchedRef.current || configRef.current.exportRangeCustomized === true,
       audioPath: resolveExportAssetPath(restConfig.audioPath),
       content: Array.isArray(restConfig.content)
         ? restConfig.content.map((item: any) => item?.type === 'text' ? { ...item, text: remapMarkdownImagePaths(item.text || '') } : item)
         : restConfig.content,
       speakers: remappedSpeakers,
       fontPresets: Object.fromEntries(
-        Object.entries(fontPresets || {}).map(([key, preset]) => [
+        Object.entries(fontPresetsRef.current || {}).map(([key, preset]) => [
           key,
           {
             ...preset,
@@ -3330,8 +3710,8 @@ const [previewScale, setPreviewScale] = useState(1);
     });
   }
 
-  async function ensureBackgroundSlideIntrinsicSizes() {
-    const slides = Array.isArray(config.background?.slides) ? config.background.slides : [];
+  async function ensureBackgroundSlideIntrinsicSizes(lifecycle?: ProjectResourceOperationToken) {
+    const slides = Array.isArray(configRef.current.background?.slides) ? configRef.current.background.slides : [];
     const targets = slides.filter((slide: BackgroundSlideItem) => slide.type !== 'text' && slide.image && (!slide.intrinsicWidth || !slide.intrinsicHeight));
     if (targets.length === 0) {
       return {} as Record<string, { width: number; height: number }>;
@@ -3342,11 +3722,15 @@ const [previewScale, setPreviewScale] = useState(1);
       size: await loadRenderableAssetNaturalSize(slide.image || ''),
     })));
     const updates = measured.filter((item) => item.size);
-    if (updates.length === 0) {
+    if (updates.length === 0 || (lifecycle && !isProjectResourceOperationCurrent(lifecycle))) {
       return {} as Record<string, { width: number; height: number }>;
     }
 
     const sizeMap = Object.fromEntries(updates.map((item) => [item.id, { width: item.size!.width, height: item.size!.height }])) as Record<string, { width: number; height: number }>;
+
+    if (lifecycle && !isProjectResourceOperationCurrent(lifecycle)) {
+      return {} as Record<string, { width: number; height: number }>;
+    }
 
     setConfig((prev: any) => {
       const prevSlides = Array.isArray(prev?.background?.slides) ? prev.background.slides : [];
@@ -3382,9 +3766,9 @@ const [previewScale, setPreviewScale] = useState(1);
 
   const getDefaultExportRange = useCallback(() => {
     const start = 0;
-    const end = getProjectContentEnd({ ...config, content: subtitles }, duration);
+    const end = getProjectContentEnd({ ...configRef.current, content: subtitlesRef.current }, duration);
     return { start, end };
-  }, [config, duration, subtitles]);
+  }, [configRef, duration, subtitlesRef]);
 
   const isSameRange = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start === b.start && a.end === b.end;
 
@@ -3504,20 +3888,24 @@ const [previewScale, setPreviewScale] = useState(1);
     });
   }, [previewHistoryChange]);
 
-  const loadExportPaths = useCallback(async () => {
+  const loadExportPaths = useCallback(async (lifecycle?: ProjectLifecycleToken, revision?: number) => {
     if (!window.electron) {
       return null;
     }
 
+    const targetProjectPath = projectPathRef.current;
     const paths = await window.electron.getExportPaths({
-      projectPath,
+      projectPath: targetProjectPath,
       projectTitle: getProjectFileStem()
     });
+    if (lifecycle && (!isProjectLifecycleCurrent(lifecycle) || (revision !== undefined && getHistory().revision !== revision))) {
+      return null;
+    }
 
     setQuickSavePath(paths.quickSavePath);
     setExportOutputPath((prev) => prev || paths.suggestedPath || paths.quickSavePath);
     return paths;
-  }, [getProjectFileStem, projectPath]);
+  }, [getHistory, getProjectFileStem, isProjectLifecycleCurrent, projectPathRef]);
 
   useEffect(() => {
     exportRangeTouchedRef.current = false;
@@ -3577,6 +3965,18 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    // Earlier effects can synchronously update useLiveState refs before React
+    // renders the next commit. Always serialize those live values here rather
+    // than the stale values captured by this effect's render closure.
+    const currentExportRange = exportRangeRef.current;
+    const currentExportQuality = exportQualityRef.current;
+    const currentExportHardware = exportHardwareRef.current;
+    const currentExportParallelSegments = exportParallelSegmentsRef.current;
+    const currentExportFormat = exportFormatRef.current;
+    const currentExportLogEnabled = exportLogEnabledRef.current;
+    const currentFilenameTemplate = filenameTemplateRef.current;
+    const currentPersistedCustomFilename = persistedCustomFilenameRef.current;
+
     if (isApplyingConfigExportRangeRef.current) {
       const sourceRange = config.exportRange;
       const normalizedSourceRange = sourceRange && typeof sourceRange.start === 'number' && typeof sourceRange.end === 'number'
@@ -3586,7 +3986,7 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         : null;
       const sameAsConfig = normalizedSourceRange
-        ? isSameRange(exportRange, normalizedSourceRange) && Boolean(config.exportRangeCustomized) === exportRangeTouchedRef.current
+        ? isSameRange(currentExportRange, normalizedSourceRange) && Boolean(config.exportRangeCustomized) === exportRangeTouchedRef.current
         : false;
       if (sameAsConfig) {
         isApplyingConfigExportRangeRef.current = false;
@@ -3596,16 +3996,16 @@ const [previewScale, setPreviewScale] = useState(1);
 
     setConfig((prev: any) => {
       const sameExportRange =
-        prev.exportRange?.start === exportRange.start &&
-        prev.exportRange?.end === exportRange.end;
+        prev.exportRange?.start === currentExportRange.start &&
+        prev.exportRange?.end === currentExportRange.end;
       const sameExportRangeCustomized = Boolean(prev.exportRangeCustomized) === exportRangeTouchedRef.current;
-      const sameQuality = prev.exportQuality === exportQuality;
-      const sameHardware = prev.exportHardware === exportHardware;
-      const sameParallelSegments = Boolean(prev.exportParallelSegments) === exportParallelSegments;
-      const sameFormat = prev.exportFormat === exportFormat;
-      const sameLogEnabled = Boolean(prev.exportLogEnabled) === exportLogEnabled;
-      const sameTemplate = prev.filenameTemplate === filenameTemplate;
-      const sameCustomFilename = prev.customFilename === persistedCustomFilename;
+      const sameQuality = prev.exportQuality === currentExportQuality;
+      const sameHardware = prev.exportHardware === currentExportHardware;
+      const sameParallelSegments = Boolean(prev.exportParallelSegments) === currentExportParallelSegments;
+      const sameFormat = prev.exportFormat === currentExportFormat;
+      const sameLogEnabled = Boolean(prev.exportLogEnabled) === currentExportLogEnabled;
+      const sameTemplate = prev.filenameTemplate === currentFilenameTemplate;
+      const sameCustomFilename = prev.customFilename === currentPersistedCustomFilename;
 
       if (sameExportRange && sameExportRangeCustomized && sameQuality && sameHardware && sameParallelSegments && sameFormat && sameLogEnabled && sameTemplate && sameCustomFilename) {
         return prev;
@@ -3613,15 +4013,15 @@ const [previewScale, setPreviewScale] = useState(1);
 
       return {
         ...prev,
-        exportRange,
+        exportRange: currentExportRange,
         exportRangeCustomized: exportRangeTouchedRef.current,
-        exportQuality,
-        exportHardware,
-        exportParallelSegments,
-        exportFormat,
-        exportLogEnabled,
-        filenameTemplate,
-        customFilename: persistedCustomFilename
+        exportQuality: currentExportQuality,
+        exportHardware: currentExportHardware,
+        exportParallelSegments: currentExportParallelSegments,
+        exportFormat: currentExportFormat,
+        exportLogEnabled: currentExportLogEnabled,
+        filenameTemplate: currentFilenameTemplate,
+        customFilename: currentPersistedCustomFilename
       };
     });
   }, [exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename]);
@@ -3632,7 +4032,8 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     const unsubscribe = window.electron.onExportProgress((payload) => {
-      if (!exportProgressActiveRef.current) {
+      const lifecycle = exportLifecycleRef.current;
+      if (!exportProgressActiveRef.current || !lifecycle || !isProjectResourceOperationCurrent(lifecycle)) {
         return;
       }
       const stage = payload.stage;
@@ -3655,7 +4056,7 @@ const [previewScale, setPreviewScale] = useState(1);
     });
 
     return unsubscribe;
-  }, [t]);
+  }, [isProjectResourceOperationCurrent, t]);
 
   const handleOpenBubbleSnapshot = useCallback((ids: string[]) => {
     const validSpeakerIds = new Set(
@@ -3684,67 +4085,99 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    const paths = await loadExportPaths();
+    const lifecycle = captureProjectLifecycle();
+    const openRevision = getHistory().revision;
+    const paths = await loadExportPaths(lifecycle, openRevision);
+    if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== openRevision) {
+      return;
+    }
     const defaults = getDefaultExportRange();
     if (!exportRangeTouchedRef.current) {
       setExportRange((prev) => (isSameRange(prev, defaults) ? prev : defaults));
     }
-    if (paths?.suggestedPath && !exportOutputPath) {
+    if (paths?.suggestedPath && !exportOutputPathRef.current) {
       setExportOutputPath(paths.suggestedPath);
     }
     if (window.electron) {
+      const cacheRequestId = ++renderCacheInfoRequestRef.current;
       try {
         const info = await window.electron.getRenderCacheInfo();
+        if (cacheRequestId !== renderCacheInfoRequestRef.current || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== openRevision) {
+          return;
+        }
         setRenderCacheInfo(info);
       } catch (error) {
-        console.error('Failed to load render cache info:', error);
+        if (cacheRequestId === renderCacheInfoRequestRef.current && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === openRevision) {
+          console.error('Failed to load render cache info:', error);
+        }
       }
+    }
+    if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== openRevision) {
+      return;
     }
     setExportStatusMessage(t('export.statusIdle'));
     setShowExportModal(true);
-  }, [exportOutputPath, getDefaultExportRange, loadExportPaths, t]);
+  }, [captureProjectLifecycle, exportOutputPathRef, getDefaultExportRange, getHistory, isProjectLifecycleCurrent, loadExportPaths, t]);
 
   const handleClearRenderCache = useCallback(async (type: 'remote-assets' | 'remotion-temp') => {
-    if (!window.electron || isExporting) {
+    if (!window.electron || isExportingRef.current) {
       return;
     }
+    const lifecycle = captureProjectLifecycle();
+    const requestId = ++renderCacheInfoRequestRef.current;
     try {
       await window.electron.clearRenderCache(type);
       const info = await window.electron.getRenderCacheInfo();
+      if (requestId !== renderCacheInfoRequestRef.current || !isProjectLifecycleCurrent(lifecycle)) {
+        return;
+      }
       setRenderCacheInfo(info);
       setExportStatusMessage(type === 'remote-assets' ? t('export.cacheClearedRemote') : t('export.cacheClearedTemp'));
     } catch (error) {
-      console.error('Failed to clear render cache:', error);
-      setExportStatusMessage(t('export.cacheClearFailed'));
+      if (requestId === renderCacheInfoRequestRef.current && isProjectLifecycleCurrent(lifecycle)) {
+        console.error('Failed to clear render cache:', error);
+        setExportStatusMessage(t('export.cacheClearFailed'));
+      }
     }
-  }, [isExporting, t]);
+  }, [captureProjectLifecycle, isExportingRef, isProjectLifecycleCurrent, t]);
 
   useEffect(() => {
     if (!window.electron) {
       return;
     }
+    const lifecycle = captureProjectLifecycle();
+    const requestId = ++renderCacheInfoRequestRef.current;
+    let cancelled = false;
     window.electron.getRenderCacheInfo().then((info) => {
-      setRenderCacheInfo(info);
+      if (!cancelled && requestId === renderCacheInfoRequestRef.current && isProjectLifecycleCurrent(lifecycle)) {
+        setRenderCacheInfo(info);
+      }
     }).catch((error) => {
-      console.error('Failed to load render cache info:', error);
+      if (!cancelled && requestId === renderCacheInfoRequestRef.current && isProjectLifecycleCurrent(lifecycle)) {
+        console.error('Failed to load render cache info:', error);
+      }
     });
-  }, [projectPath]);
+    return () => {
+      cancelled = true;
+    };
+  }, [captureProjectLifecycle, isProjectLifecycleCurrent, projectPath]);
 
   const handleChooseExportPath = useCallback(async () => {
     if (!window.electron) return;
+    const lifecycle = captureProjectLifecycle();
     const result = await window.electron.showOpenDialog({
       title: t('export.title'),
-      defaultPath: exportOutputPath || quickSavePath,
+      defaultPath: exportOutputPathRef.current || quickSavePath,
       properties: ['openDirectory', 'createDirectory']
     });
 
-    if (!result.canceled && result.filePaths?.[0]) {
+    if (!result.canceled && result.filePaths?.[0] && isProjectLifecycleCurrent(lifecycle)) {
       setExportOutputPath(result.filePaths[0]);
     }
-  }, [exportOutputPath, quickSavePath, t]);
+  }, [captureProjectLifecycle, exportOutputPathRef, isProjectLifecycleCurrent, quickSavePath, t]);
 
   const handleCancelExport = useCallback(async () => {
-    if (!window.electron || !isExporting) return;
+    if (!window.electron || !isExportingRef.current) return;
     exportCancellationRequestedRef.current = true;
     setExportStatusMessage(t('export.cancelling'));
     try {
@@ -3752,27 +4185,53 @@ const [previewScale, setPreviewScale] = useState(1);
     } catch (error) {
       console.error('Failed to cancel export:', error);
     }
-  }, [isExporting, t]);
+  }, [isExportingRef, t]);
 
   const handleStartExport = useCallback(async () => {
+    if (isExportingRef.current) {
+      return;
+    }
+    if (exportCancellationOperationRef.current !== null) {
+      setExportStatusMessage(t('export.cancelling'));
+      return;
+    }
     if (!window.electron) {
       alert(t('export.clientOnly'));
       return;
     }
 
-    let trimmedPath = exportOutputPath.trim();
+    let trimmedPath = exportOutputPathRef.current.trim();
     if (!trimmedPath) {
       setExportStatusMessage(t('export.pathRequired'));
       return;
     }
 
-    const filename = generateFilename(filenameTemplate, customFilename, exportFormat, exportFilenameEditorMode);
+    const currentExportFormat = exportFormatRef.current;
+    const currentExportRange = exportRangeRef.current;
+    const currentExportQuality = exportQualityRef.current;
+    const currentExportHardware = exportHardwareRef.current;
+    const currentExportParallelSegments = exportParallelSegmentsRef.current;
+    const currentExportLogEnabled = exportLogEnabledRef.current;
+    const filename = generateFilename(filenameTemplateRef.current, customFilenameRef.current, currentExportFormat, exportFilenameEditorModeRef.current);
     trimmedPath = applyFilenameTemplateToPath(trimmedPath, filename);
 
-    if (exportRange.end <= exportRange.start) {
+    if (currentExportRange.end <= currentExportRange.start) {
       setExportStatusMessage(t('export.invalidRange'));
       return;
     }
+
+    const lifecycle = captureProjectLifecycle();
+    const exportRevision = getHistory().revision;
+    const operationId = ++exportOperationIdRef.current;
+    const exportLifecycle = {
+      ...lifecycle,
+      revision: exportRevision,
+      projectLoadRequestId: projectLoadRequestRef.current,
+    };
+    exportLifecycleRef.current = exportLifecycle;
+    const isCurrentExport = () => operationId === exportOperationIdRef.current
+      && exportLifecycleRef.current === exportLifecycle
+      && isProjectResourceOperationCurrent(exportLifecycle);
 
     setIsExporting(true);
     exportCancellationRequestedRef.current = false;
@@ -3785,39 +4244,45 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       let uploadPlan;
       try {
-        uploadPlan = await biliup.prepare(exportFormat);
+        uploadPlan = await biliup.prepare(currentExportFormat);
       } catch (error) {
+        if (!isCurrentExport()) {
+          return;
+        }
         const code = error instanceof Error ? error.message : 'upload';
         biliup.setError(code);
         setExportStatusMessage(t(`biliup.error.${code}`));
         biliup.open();
         return;
       }
-      if (exportCancellationRequestedRef.current) {
+      if (!isCurrentExport() || exportCancellationRequestedRef.current) {
         return;
       }
-      const slideIntrinsicSizeOverrides = await ensureBackgroundSlideIntrinsicSizes();
-      if (exportCancellationRequestedRef.current) {
+      const slideIntrinsicSizeOverrides = await ensureBackgroundSlideIntrinsicSizes(exportLifecycle);
+      if (!isCurrentExport() || exportCancellationRequestedRef.current) {
         return;
       }
-      const crf = calculateCRF(exportQuality);
-      const preset = calculateX264Preset(exportQuality);
-      if (exportCancellationRequestedRef.current) {
+      const crf = calculateCRF(currentExportQuality);
+      const preset = calculateX264Preset(currentExportQuality);
+      if (!isCurrentExport() || exportCancellationRequestedRef.current) {
         return;
       }
       const res = await window.electron.exportVideo({
         ...getExportConfig(slideIntrinsicSizeOverrides),
         outputPath: trimmedPath,
-        exportRange,
-        exportQuality,
-        exportHardware,
-        exportParallelSegments,
-        exportFormat,
-        exportLogEnabled,
+        exportRange: currentExportRange,
+        exportQuality: currentExportQuality,
+        exportHardware: currentExportHardware,
+        exportParallelSegments: currentExportParallelSegments,
+        exportFormat: currentExportFormat,
+        exportLogEnabled: currentExportLogEnabled,
         crf,
         x264Preset: preset
       });
 
+      if (!isCurrentExport()) {
+        return;
+      }
       if (res.success) {
         setLastExportSucceeded(true);
         setExportStatusMessage(res.message || t('app.exportSuccess'));
@@ -3826,7 +4291,9 @@ const [previewScale, setPreviewScale] = useState(1);
         if (uploadPlan && !res.placeholder) {
           // Upload failures are independent of a successfully rendered local video.
           void biliup.upload(uploadPlan, res.outputPath || trimmedPath).catch(() => {
-            showToast(t('biliup.uploadStartFailed'));
+            if (isProjectLifecycleCurrent(lifecycle)) {
+              showToast(t('biliup.uploadStartFailed'));
+            }
           });
         }
       } else {
@@ -3841,6 +4308,9 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }
     } catch (error: any) {
+      if (!isCurrentExport()) {
+        return;
+      }
       setLastExportSucceeded(false);
       if (exportCancellationRequestedRef.current) {
         setExportStatusMessage(t('export.cancelled'));
@@ -3851,11 +4321,14 @@ const [previewScale, setPreviewScale] = useState(1);
         window.electron?.showNotification({ title: 'PomChat', body: errorMsg });
       }
     } finally {
-      setIsExporting(false);
-      exportCancellationRequestedRef.current = false;
-      exportProgressActiveRef.current = false;
+      if (operationId === exportOperationIdRef.current) {
+        exportLifecycleRef.current = null;
+        setIsExporting(false);
+        exportCancellationRequestedRef.current = false;
+        exportProgressActiveRef.current = false;
+      }
     }
-  }, [exportOutputPath, exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, customFilename, getExportConfig, showToast, t, generateFilename, calculateCRF, calculateX264Preset, ensureBackgroundSlideIntrinsicSizes, biliup]);
+  }, [biliup, captureProjectLifecycle, ensureBackgroundSlideIntrinsicSizes, exportOutputPathRef, getExportConfig, generateFilename, getHistory, isExportingRef, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, showToast, t, calculateCRF, calculateX264Preset]);
 
   const handleRevealExport = useCallback(async () => {
     const targetPath = lastExportOutputPath || exportOutputPath.trim();
@@ -3864,13 +4337,16 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [exportOutputPath, lastExportOutputPath]);
 
   const exportAss = async () => {
+    const lifecycle = captureProjectLifecycle();
+    const exportRevision = getHistory().revision;
+    const currentConfig = configRef.current;
     const assContent = buildAssContent({
-      subtitles,
-      speakers: config.speakers || {},
-      dimensions: config.dimensions,
-      title: config.projectTitle || t('app.untitled'),
+      subtitles: subtitlesRef.current,
+      speakers: currentConfig.speakers || {},
+      dimensions: currentConfig.dimensions,
+      title: currentConfig.projectTitle || t('app.untitled'),
     });
-    const defaultFilename = `${sanitizeExportFileStem(config.projectTitle || t('app.untitled') || 'pomchat')}.ass`;
+    const defaultFilename = `${sanitizeExportFileStem(currentConfig.projectTitle || t('app.untitled') || 'pomchat')}.ass`;
 
     if (!window.electron) {
       try {
@@ -3894,20 +4370,24 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const result = await window.electron.showSaveDialog({
         title: t('menu.exportAss'),
-        defaultPath: config.assPath && /\\.ass$/i.test(config.assPath) ? config.assPath : defaultFilename,
+        defaultPath: currentConfig.assPath && /\\.ass$/i.test(currentConfig.assPath) ? currentConfig.assPath : defaultFilename,
         filters: [{ name: t('dialog.filterAss'), extensions: ['ass'] }],
       });
 
-      if (result.canceled || !result.filePath) return;
+      if (result.canceled || !result.filePath || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== exportRevision) return;
       const targetPath = /\\.ass$/i.test(result.filePath) ? result.filePath : `${result.filePath}.ass`;
       const saved = await window.electron.writeFile(targetPath, assContent);
       if (!saved) {
         throw new Error('The ASS file could not be written');
       }
-      showToast(t('app.assExported'));
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === exportRevision) {
+        showToast(t('app.assExported'));
+      }
     } catch (error: any) {
-      console.error('Failed to export ASS subtitle:', error);
-      showToast(`${t('dialog.errorExportAssFailed')}: ${error?.message || error}`);
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === exportRevision) {
+        console.error('Failed to export ASS subtitle:', error);
+        showToast(`${t('dialog.errorExportAssFailed')}: ${error?.message || error}`);
+      }
     }
   };
 
@@ -4084,7 +4564,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }
 
   function resolveProjectAssetPath(value: string | undefined): string | undefined {
-    return resolveAssetPathAgainstProject(value, projectPath);
+    return resolveAssetPathAgainstProject(value, projectPathRef.current);
   }
 
   const looksLikeLocalFsPath = useCallback((value: string | undefined) => {
@@ -4095,9 +4575,10 @@ const [previewScale, setPreviewScale] = useState(1);
   }, []);
 
   const importProjectAssetPath = useCallback(async (sourcePath: string, baseProjectFilePath?: string | null, preferredName?: string) => {
+    const currentProjectPath = projectPathRef.current;
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
       ? baseProjectFilePath
-      : (projectPath && projectPath !== 'web-demo' ? projectPath : null);
+      : (currentProjectPath && currentProjectPath !== 'web-demo' ? currentProjectPath : null);
     const trimmed = sourcePath.trim();
     if (!window.electron || !trimmed || !targetProjectPath) {
       return { storedPath: trimmed, absolutePath: trimmed };
@@ -4106,45 +4587,47 @@ const [previewScale, setPreviewScale] = useState(1);
       return { storedPath: trimmed, absolutePath: trimmed };
     }
     return await window.electron.importProjectAsset({ projectFilePath: targetProjectPath, sourcePath: trimmed, preferredName });
-  }, [projectPath]);
+  }, [projectPathRef]);
 
   const getCurrentConfigWithUi = useCallback(() => ({
     ...getProjectConfig(),
     ui: {
-      ...(config.ui || DEFAULT_UI_CONFIG),
-      isDarkMode,
-      themeColor: themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
-      secondaryThemeColor: secondaryThemeColorState || DEFAULT_UI_CONFIG.secondaryThemeColor,
-      autoSaveProject,
-      projectAssetsCacheEnabled,
-      proxy: proxyState.trim(),
-      settingsPosition,
-      uiFontScale,
-      exportFilenameEditorMode,
-      subtitlePanelCompactMode,
+      ...(configRef.current.ui || DEFAULT_UI_CONFIG),
+      isDarkMode: isDarkModeRef.current,
+      themeColor: themeColorStateRef.current || (isDarkModeRef.current ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT),
+      secondaryThemeColor: secondaryThemeColorStateRef.current || DEFAULT_UI_CONFIG.secondaryThemeColor,
+      autoSaveProject: autoSaveProjectRef.current,
+      projectAssetsCacheEnabled: projectAssetsCacheEnabledRef.current,
+      proxy: proxyStateRef.current.trim(),
+      settingsPosition: settingsPositionRef.current,
+      uiFontScale: uiFontScaleRef.current,
+      audioVolume: audioVolumeRef.current,
+      waveformZoomLevel: waveformZoomLevelRef.current,
+      exportFilenameEditorMode: exportFilenameEditorModeRef.current,
+      subtitlePanelCompactMode: subtitlePanelCompactModeRef.current,
       recentProject,
-      bubbleSnapshotBackgroundMode,
-      bubbleSnapshotBackgroundColor,
-      bubbleSnapshotCustomBackgroundImage,
-      bubbleSnapshotBackgroundImageSizing,
-      bubbleSnapshotTileAlign,
-      bubbleSnapshotBackgroundBlur,
-      bubbleSnapshotBackgroundBrightness,
-      bubbleSnapshotSidePadding,
-      bubbleSnapshotBubbleWidthPercent,
-      bubbleSnapshotExportScale,
-      presets,
-      annotationPresets,
-      fontPresets,
+      bubbleSnapshotBackgroundMode: bubbleSnapshotBackgroundModeRef.current,
+      bubbleSnapshotBackgroundColor: bubbleSnapshotBackgroundColorRef.current,
+      bubbleSnapshotCustomBackgroundImage: bubbleSnapshotCustomBackgroundImageRef.current,
+      bubbleSnapshotBackgroundImageSizing: bubbleSnapshotBackgroundImageSizingRef.current,
+      bubbleSnapshotTileAlign: bubbleSnapshotTileAlignRef.current,
+      bubbleSnapshotBackgroundBlur: bubbleSnapshotBackgroundBlurRef.current,
+      bubbleSnapshotBackgroundBrightness: bubbleSnapshotBackgroundBrightnessRef.current,
+      bubbleSnapshotSidePadding: bubbleSnapshotSidePaddingRef.current,
+      bubbleSnapshotBubbleWidthPercent: bubbleSnapshotBubbleWidthPercentRef.current,
+      bubbleSnapshotExportScale: bubbleSnapshotExportScaleRef.current,
+      presets: presetsRef.current,
+      annotationPresets: annotationPresetsRef.current,
+      fontPresets: fontPresetsRef.current,
     }
-  }), [annotationPresets, autoSaveProject, bubbleSnapshotBackgroundBlur, bubbleSnapshotBackgroundBrightness, bubbleSnapshotBackgroundColor, bubbleSnapshotBackgroundImageSizing, bubbleSnapshotBackgroundMode, bubbleSnapshotBubbleWidthPercent, bubbleSnapshotCustomBackgroundImage, bubbleSnapshotExportScale, bubbleSnapshotSidePadding, bubbleSnapshotTileAlign, config.ui, exportFilenameEditorMode, fontPresets, getProjectConfig, isDarkMode, presets, projectAssetsCacheEnabled, proxyState, recentProject, secondaryThemeColorState, settingsPosition, subtitlePanelCompactMode, themeColorState, uiFontScale, waveformZoomLevel]);
+  }), [configRef, getProjectConfig, recentProject]);
 
   const getResolvedProjectAssetPath = useCallback((value: string | undefined, baseProjectFilePath?: string | null) => {
     const targetProjectPath = baseProjectFilePath && baseProjectFilePath !== 'web-demo'
       ? baseProjectFilePath
-      : projectPath;
+      : projectPathRef.current;
     return resolveAssetPathAgainstProject(value, targetProjectPath);
-  }, [projectPath]);
+  }, [projectPathRef]);
 
   const isPathInsideDirectory = useCallback((targetPath: string | undefined, directoryPath: string | undefined) => {
     if (!targetPath || !directoryPath) return false;
@@ -4244,7 +4727,7 @@ const [previewScale, setPreviewScale] = useState(1);
       copyLocalAssetsCount,
       refreshRemoteAssetCacheCount,
     };
-  }, [collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, renderCacheInfo?.remoteAssets?.path]);
+  }, [collectProjectResources, config, fontPresets, getCurrentConfigWithUi, getResolvedProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, renderCacheInfo?.remoteAssets?.path, subtitles]);
 
   const updateConfigValueByPath = useCallback((target: any, dottedPath: string, nextValue: string) => {
     const markdownImageMatch = dottedPath.match(/^content\.(\d+)\.markdownImage\.(\d+)$/);
@@ -4277,38 +4760,103 @@ const [previewScale, setPreviewScale] = useState(1);
     return cloned;
   }, []);
 
-  const syncProjectResourceConfigState = useCallback((nextConfig: any, options?: { markDirty?: boolean }) => {
-    setConfig(nextConfig);
-    savedSpeakerNamesRef.current = getSpeakerNameSnapshot(nextConfig.speakers);
-    if (nextConfig?.ui?.fontPresets) {
-      setFontPresets(nextConfig.ui.fontPresets);
+  const syncProjectResourceConfigState = useCallback((nextConfig: any, options?: { markDirty?: boolean; trackHistory?: boolean }) => {
+    if (options?.trackHistory) {
+      pushHistorySnapshot();
+    }
+    const currentUi = createHistorySnapshot().config.ui;
+    const nextStateConfig = { ...nextConfig, ui: currentUi };
+    setConfig(nextStateConfig);
+    savedSpeakerNamesRef.current = getSpeakerNameSnapshot(nextStateConfig.speakers);
+    if (nextStateConfig?.ui?.fontPresets) {
+      setFontPresets(nextStateConfig.ui.fontPresets);
     }
     if (options?.markDirty) {
       markProjectDirty();
     }
-  }, [markProjectDirty]);
+  }, [createHistorySnapshot, markProjectDirty, pushHistorySnapshot]);
 
-  const applyProjectResourceMigrationResult = useCallback(async (nextConfig: any, toastKey: string) => {
-    if (window.electron && projectPath && projectPath !== 'web-demo') {
-      await window.electron.writeFile(projectPath, JSON.stringify(nextConfig, null, 2));
+  const applyProjectResourceMigrationResult = useCallback(async (
+    nextConfig: any,
+    toastKey: string,
+    lifecycle?: ProjectResourceOperationToken,
+  ) => {
+    const targetProjectPath = projectPathRef.current;
+    if (lifecycle && !isProjectResourceOperationCurrent(lifecycle)) {
+      return false;
     }
-    pushHistorySnapshot();
-    syncProjectResourceConfigState(nextConfig);
-    markProjectDirty();
-    setProjectResourceCheckDialog(null);
-    clearProjectDirty();
-    showToast(t(toastKey));
-  }, [clearProjectDirty, projectPath, pushHistorySnapshot, showToast, syncProjectResourceConfigState, t]);
+
+    const originalPortableContent = window.electron && targetProjectPath && targetProjectPath !== 'web-demo'
+      ? JSON.stringify(Object.fromEntries(Object.entries(getProjectConfig()).filter(([key]) => key !== 'ui')), null, 2)
+      : null;
+    const portableConfig = Object.fromEntries(Object.entries(nextConfig).filter(([key]) => key !== 'ui'));
+    const applied = await enqueueProjectFileOperation(async () => {
+      if (lifecycle && !isProjectResourceOperationCurrent(lifecycle)) {
+        return false;
+      }
+
+      const restoreStaleProjectFile = async () => {
+        if (!window.electron || !targetProjectPath || targetProjectPath === 'web-demo') {
+          return;
+        }
+        const restoreContent = isProjectLifecycleCurrent(lifecycle || { epoch: -1, projectPath: null })
+          && projectPathRef.current === targetProjectPath
+          ? JSON.stringify(getProjectConfig(), null, 2)
+          : originalPortableContent;
+        if (restoreContent === null) {
+          return;
+        }
+        const restored = await window.electron.writeFile(targetProjectPath, restoreContent);
+        if (!restored) {
+          console.error('Failed to restore project file after stale resource migration: write was rejected');
+        }
+      };
+
+      if (window.electron && targetProjectPath && targetProjectPath !== 'web-demo') {
+        try {
+          const written = await window.electron.writeFile(targetProjectPath, JSON.stringify(portableConfig, null, 2));
+          if (!written) {
+            throw new Error('The project file could not be written');
+          }
+        } catch (error) {
+          // Repair possible truncation before another queued save can run.
+          try {
+            await restoreStaleProjectFile();
+          } catch (restoreError) {
+            console.error('Failed to restore project file after resource migration write failure:', restoreError);
+          }
+          throw error;
+        }
+        if (lifecycle && !isProjectResourceOperationCurrent(lifecycle)) {
+          await restoreStaleProjectFile();
+          return false;
+        }
+      }
+
+      if (lifecycle && !isProjectResourceOperationCurrent(lifecycle)) {
+        return false;
+      }
+      syncProjectResourceConfigState(nextConfig, { markDirty: true, trackHistory: true });
+      projectResourceCheckRevisionRef.current += 1;
+      setProjectResourceCheckDialog(null);
+      clearProjectDirty();
+      showToast(t(toastKey));
+      return true;
+    });
+    return applied;
+  }, [clearProjectDirty, enqueueProjectFileOperation, getProjectConfig, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, projectPathRef, showToast, syncProjectResourceConfigState, t]);
 
   const handleCopyRemoteAssetsToProject = useCallback(async () => {
     if (projectResourceActionBusy) {
       return;
     }
+    const lifecycle = captureProjectResourceOperation();
+    const targetProjectPath = projectPathRef.current;
     if (!window.electron) {
       setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
       return;
     }
-    if (!projectPath || projectPath === 'web-demo') {
+    if (!targetProjectPath || targetProjectPath === 'web-demo') {
       setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
       return;
     }
@@ -4317,6 +4865,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const workingConfig = getCurrentConfigWithUi();
       const resources = collectProjectResources(workingConfig);
       const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
       let nextConfig = workingConfig;
       let changed = 0;
@@ -4330,7 +4879,9 @@ const [previewScale, setPreviewScale] = useState(1);
           let imported = importedBySource.get(rawValue);
           if (typeof imported === 'undefined') {
             const cachedPath = await window.electron.cacheRemoteAsset(rawValue);
-            imported = cachedPath ? await importProjectAssetPath(cachedPath, projectPath) : null;
+            if (!isProjectResourceOperationCurrent(lifecycle)) return;
+            imported = cachedPath ? await importProjectAssetPath(cachedPath, targetProjectPath) : null;
+            if (!isProjectResourceOperationCurrent(lifecycle)) return;
             importedBySource.set(rawValue, imported);
           }
           if (imported?.storedPath && imported.storedPath !== rawValue) {
@@ -4341,13 +4892,14 @@ const [previewScale, setPreviewScale] = useState(1);
           continue;
         }
 
-        const resolvedPath = getResolvedProjectAssetPath(rawValue, projectPath);
+        const resolvedPath = getResolvedProjectAssetPath(rawValue, targetProjectPath);
         if (!resolvedPath || !isPathInsideDirectory(resolvedPath, remoteCacheDir)) {
           continue;
         }
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
-          imported = await importProjectAssetPath(rawValue, projectPath);
+          imported = await importProjectAssetPath(rawValue, targetProjectPath);
+          if (!isProjectResourceOperationCurrent(lifecycle)) return;
           importedBySource.set(resolvedPath, imported);
         }
         if (imported?.storedPath && imported.storedPath !== rawValue) {
@@ -4357,44 +4909,52 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }
 
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       if (changed > 0) {
-        await applyProjectResourceMigrationResult(nextConfig, 'global.copyRemoteAssetsDone');
+        const applied = await applyProjectResourceMigrationResult(nextConfig, 'global.copyRemoteAssetsDone', lifecycle);
+        if (!applied || !isProjectLifecycleCurrent(lifecycle)) return;
         setProjectResourceActionReport({ title: t('global.resourceActionChanged', { count: changed }), items: changedItems });
       } else {
         showToast(t('global.copyRemoteAssetsNoop'));
         setProjectResourceActionReport({ title: t('global.resourceActionNoChanges'), items: [] });
       }
     } catch (error: any) {
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
       setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
     } finally {
-      setProjectResourceActionBusy(null);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        setProjectResourceActionBusy(null);
+      }
     }
-  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, projectPath, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
+  }, [applyProjectResourceMigrationResult, captureProjectResourceOperation, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, projectPathRef, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
 
   const handleCopyLocalAssetsToProject = useCallback(async () => {
     if (projectResourceActionBusy) {
       return;
     }
+    const lifecycle = captureProjectResourceOperation();
+    const targetProjectPath = projectPathRef.current;
     if (!window.electron) {
       setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
       return;
     }
-    if (!projectPath || projectPath === 'web-demo') {
+    if (!targetProjectPath || targetProjectPath === 'web-demo') {
       setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
       return;
     }
     setProjectResourceActionBusy('local-copy');
     try {
       const workingConfig = getCurrentConfigWithUi();
-      const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
+      const projectAssetsDir = getResolvedProjectAssetPath('assets', targetProjectPath) || '';
       const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       let nextConfig = workingConfig;
       let unlockedCount = 0;
       const nextSpeakers = { ...(workingConfig.speakers || {}) };
       Object.entries(nextSpeakers).forEach(([spkId, spk]: [string, any]) => {
         if (spk?.lockPreset !== true || !spk?.avatar) return;
-        const resolved = getResolvedProjectAssetPath(spk.avatar, projectPath);
+        const resolved = getResolvedProjectAssetPath(spk.avatar, targetProjectPath);
         if (!resolved || !looksLikeLocalFsPath(resolved)) return;
         if (isPathInsideDirectory(resolved, remoteCacheDir)) return;
         if (isPathInsideDirectory(resolved, projectAssetsDir)) return;
@@ -4412,14 +4972,15 @@ const [previewScale, setPreviewScale] = useState(1);
       for (const resource of resources) {
         if (resource.kind !== 'file') continue;
         const rawValue = resource.value?.trim();
-        const resolvedPath = getResolvedProjectAssetPath(rawValue, projectPath);
+        const resolvedPath = getResolvedProjectAssetPath(rawValue, targetProjectPath);
         if (!rawValue || !resolvedPath) continue;
         if (!looksLikeLocalFsPath(resolvedPath)) continue;
         if (isPathInsideDirectory(resolvedPath, remoteCacheDir)) continue;
         if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) continue;
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
-          imported = await importProjectAssetPath(rawValue, projectPath);
+          imported = await importProjectAssetPath(rawValue, targetProjectPath);
+          if (!isProjectResourceOperationCurrent(lifecycle)) return;
           importedBySource.set(resolvedPath, imported);
         }
         if (imported?.storedPath && imported.storedPath !== rawValue) {
@@ -4432,30 +4993,40 @@ const [previewScale, setPreviewScale] = useState(1);
       if (unlockedCount > 0) {
         changedItems.push(t('resource.unlockPresetCount', { count: unlockedCount }));
       }
-      if (changed > 0) {
-        await applyProjectResourceMigrationResult(nextConfig, 'global.copyLocalAssetsDone');
-        setProjectResourceActionReport({ title: t('global.resourceActionChanged', { count: changed }), items: changedItems });
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
+      if (changed > 0 || unlockedCount > 0) {
+        const applied = await applyProjectResourceMigrationResult(nextConfig, 'global.copyLocalAssetsDone', lifecycle);
+        if (!applied || !isProjectLifecycleCurrent(lifecycle)) return;
+        setProjectResourceActionReport({
+          title: changed > 0 ? t('global.resourceActionChanged', { count: changed }) : t('resource.unlockPresetCount', { count: unlockedCount }),
+          items: changedItems,
+        });
       } else {
         showToast(t('global.copyLocalAssetsNoop'));
-        setProjectResourceActionReport({ title: unlockedCount > 0 ? t('resource.unlockPresetCount', { count: unlockedCount }) : t('global.resourceActionNoChanges'), items: changedItems });
+        setProjectResourceActionReport({ title: t('global.resourceActionNoChanges'), items: [] });
       }
     } catch (error: any) {
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
       setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
     } finally {
-      setProjectResourceActionBusy(null);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        setProjectResourceActionBusy(null);
+      }
     }
-  }, [applyProjectResourceMigrationResult, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, projectResourceActionBusy, pushHistorySnapshot, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
+  }, [applyProjectResourceMigrationResult, captureProjectResourceOperation, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, looksLikeLocalFsPath, projectPathRef, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
 
   const handleRefreshRemoteAssetCache = useCallback(async () => {
     if (projectResourceActionBusy) {
       return;
     }
+    const lifecycle = captureProjectResourceOperation();
+    const targetProjectPath = projectPathRef.current;
     if (!window.electron) {
       setProjectResourceActionReport({ title: t('global.resourceActionDesktopOnly'), items: [] });
       return;
     }
-    if (!projectPath || projectPath === 'web-demo') {
+    if (!targetProjectPath || targetProjectPath === 'web-demo') {
       setProjectResourceActionReport({ title: t('global.resourceActionSaveProjectFirst'), items: [] });
       return;
     }
@@ -4463,32 +5034,39 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const workingConfig = getCurrentConfigWithUi();
       const resources = collectProjectResources(workingConfig).filter((resource) => resource.kind === 'url');
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       let refreshed = 0;
       const refreshedItems: string[] = [];
       for (const resource of resources) {
         const rawValue = resource.value?.trim();
         if (!rawValue) continue;
         const cachedPath = await window.electron.cacheRemoteAsset(rawValue);
+        if (!isProjectResourceOperationCurrent(lifecycle)) return;
         if (cachedPath) {
-          const finalPath = projectAssetsCacheEnabled && projectPath
-            ? (await importProjectAssetPath(cachedPath, projectPath))?.absolutePath || cachedPath
+          const finalPath = projectAssetsCacheEnabled && targetProjectPath
+            ? (await importProjectAssetPath(cachedPath, targetProjectPath))?.absolutePath || cachedPath
             : cachedPath;
+          if (!isProjectResourceOperationCurrent(lifecycle)) return;
           setCachedRemoteAssets((prev) => (prev[rawValue] === finalPath ? prev : { ...prev, [rawValue]: finalPath || cachedPath }));
           refreshed += 1;
           refreshedItems.push(`${resource.label} -> ${rawValue}`);
         }
       }
       const info = await window.electron.getRenderCacheInfo();
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       setRenderCacheInfo(info);
       showToast(t(refreshed > 0 ? 'global.refreshRemoteAssetsDone' : 'global.refreshRemoteAssetsNoop'));
       setProjectResourceActionReport({ title: refreshed > 0 ? t('global.resourceActionChanged', { count: refreshed }) : t('global.resourceActionNoChanges'), items: refreshed > 0 ? refreshedItems : [] });
     } catch (error: any) {
+      if (!isProjectResourceOperationCurrent(lifecycle)) return;
       showToast(`${t('global.resourceActionFailed')}: ${error?.message || error}`);
       setProjectResourceActionReport({ title: `${t('global.resourceActionFailed')}: ${error?.message || error}`, items: [] });
     } finally {
-      setProjectResourceActionBusy(null);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        setProjectResourceActionBusy(null);
+      }
     }
-  }, [collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, projectAssetsCacheEnabled, projectPath, projectResourceActionBusy, showToast, t]);
+  }, [captureProjectResourceOperation, collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, projectAssetsCacheEnabled, projectPathRef, projectResourceActionBusy, showToast, t]);
 
   const getProjectResourceFileType = useCallback((resourceId: string, resourceValue: string): ProjectResourceFileType => {
     const lowerValue = (resourceValue || '').toLowerCase();
@@ -4518,12 +5096,12 @@ const [previewScale, setPreviewScale] = useState(1);
       ? targetConfig.ui.fontPresets
       : {};
     if (!Object.keys(projectFontPresets).length) {
-      return { nextConfig: targetConfig, nextGlobalFontPresets: fontPresets };
+      return { nextConfig: targetConfig, nextGlobalFontPresets: fontPresetsRef.current };
     }
 
     let nextConfig = targetConfig;
     const nextProjectFontPresets: FontPresetMap = {};
-    const nextGlobalFontPresets: FontPresetMap = { ...(fontPresets || {}) };
+    const nextGlobalFontPresets: FontPresetMap = { ...(fontPresetsRef.current || {}) };
 
     Object.entries(projectFontPresets).forEach(([projectPresetId, preset]) => {
       if (!preset?.family) {
@@ -4595,13 +5173,12 @@ const [previewScale, setPreviewScale] = useState(1);
       },
       nextGlobalFontPresets,
     };
-  }, [fontPresets]);
+  }, [fontPresetsRef]);
 
   const finalizeLoadedProject = useCallback((filePath: string, normalizedConfig: any) => {
-    const shouldUseAssSource = !window.electron && normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
+    clearHistory();
     setProjectPath(filePath);
     rememberRecentProject(filePath);
-    clearHistory();
     clearProjectDirty();
     if (!window.electron) {
       localStorage.setItem(STORAGE_KEY + '_recent_project', filePath);
@@ -4613,12 +5190,13 @@ const [previewScale, setPreviewScale] = useState(1);
         recentProject: filePath
       }
     }));
-    setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+    // Project files carry serialized subtitle content; assPath is never ASS text.
+    setWebAssContent(null);
     setIsMobileBottomPanelExpanded(false);
     savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
     setShowSettings(true);
     showToast(t('app.projectLoaded'));
-  }, [rememberRecentProject, showToast, t]);
+  }, [clearHistory, clearProjectDirty, rememberRecentProject, showToast, t]);
 
   const detectVideoMediaInfo = useCallback(async (src: string) => {
     return await new Promise<{ hasAudio: boolean; duration: number | null }>((resolve) => {
@@ -4649,7 +5227,7 @@ const [previewScale, setPreviewScale] = useState(1);
         try {
           const stream = (video as any).captureStream?.();
           finish(Boolean(stream && stream.getAudioTracks().length > 0));
-        } catch (_error) {
+        } catch {
           finish(false);
         }
       };
@@ -4667,8 +5245,8 @@ const [previewScale, setPreviewScale] = useState(1);
     const trimmed = path.trim();
     if (!trimmed) return undefined;
 
-    if (cachedRemoteAssets[trimmed]) {
-      return resolveLocalPreviewPath(cachedRemoteAssets[trimmed]);
+    if (cachedRemoteAssetsRef.current[trimmed]) {
+      return resolveLocalPreviewPath(cachedRemoteAssetsRef.current[trimmed]);
     }
 
     return resolveLocalPreviewPath(resolveProjectAssetPath(trimmed));
@@ -4694,6 +5272,8 @@ const [previewScale, setPreviewScale] = useState(1);
 
     let cancelled = false;
     let nextUrl = '';
+    const loadRevision = desktopAudioLoadRevisionRef.current;
+    const isStaleAudioLoad = () => cancelled || loadRevision !== desktopAudioLoadRevisionRef.current;
     const localFsPath = trimmed.startsWith('file://')
       ? (() => {
           try {
@@ -4710,7 +5290,7 @@ const [previewScale, setPreviewScale] = useState(1);
       filePath: localFsPath,
       projectFilePath: projectPath || null,
     }).then((bytes) => {
-      if (cancelled) {
+      if (isStaleAudioLoad()) {
         return;
       }
       if (!bytes || bytes.length === 0) {
@@ -4733,6 +5313,9 @@ const [previewScale, setPreviewScale] = useState(1);
         return nextUrl;
       });
     }).catch((error) => {
+      if (isStaleAudioLoad()) {
+        return;
+      }
       console.error('Failed to read desktop audio file:', error);
       setDesktopAudioBlob(null);
       setDesktopAudioObjectUrl((prev) => {
@@ -4749,7 +5332,7 @@ const [previewScale, setPreviewScale] = useState(1);
         URL.revokeObjectURL(nextUrl);
       }
     };
-  }, [config.audioPath, projectPath]);
+  }, [config.audioPath, desktopAudioLoadRevision, projectPath]);
 
   useEffect(() => {
     if (!window.electron) {
@@ -4763,6 +5346,8 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     let cancelled = false;
+    const lifecycle = captureProjectResourceOperation();
+    const targetProjectPath = projectPathRef.current;
 
     const cacheAssets = async () => {
       const importedByUrl = new Map<string, { storedPath: string; absolutePath: string } | null>();
@@ -4770,20 +5355,29 @@ const [previewScale, setPreviewScale] = useState(1);
       let migrated = false;
 
       for (const resource of remoteResources) {
+        if (cancelled || !isProjectResourceOperationCurrent(lifecycle)) {
+          return;
+        }
         const url = resource.value.trim();
-        const existingCachedPath = cachedRemoteAssets[url];
+        const existingCachedPath = cachedRemoteAssetsRef.current[url];
         let finalPath = existingCachedPath || '';
 
         try {
           if (!finalPath) {
             const cachedPath = await window.electron.cacheRemoteAsset(url);
+            if (cancelled || !isProjectResourceOperationCurrent(lifecycle)) {
+              return;
+            }
             finalPath = cachedPath || '';
           }
 
-          if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo' && finalPath) {
+          if (projectAssetsCacheEnabled && targetProjectPath && targetProjectPath !== 'web-demo' && finalPath) {
             let imported = importedByUrl.get(url);
             if (typeof imported === 'undefined') {
-              imported = await importProjectAssetPath(finalPath, projectPath);
+              imported = await importProjectAssetPath(finalPath, targetProjectPath);
+              if (cancelled || !isProjectResourceOperationCurrent(lifecycle)) {
+                return;
+              }
               importedByUrl.set(url, imported);
             }
             if (imported?.storedPath && imported.storedPath !== url) {
@@ -4793,25 +5387,27 @@ const [previewScale, setPreviewScale] = useState(1);
             }
           }
 
-          if (!cancelled && finalPath) {
+          if (!cancelled && finalPath && isProjectResourceOperationCurrent(lifecycle)) {
             setCachedRemoteAssets((prev) => (prev[url] === finalPath ? prev : { ...prev, [url]: finalPath }));
           }
         } catch (error) {
-          console.warn('Failed to cache remote asset:', url, error);
+          if (!cancelled && isProjectResourceOperationCurrent(lifecycle)) {
+            console.warn('Failed to cache remote asset:', url, error);
+          }
         }
       }
 
-      if (!cancelled && migrated) {
-        syncProjectResourceConfigState(nextConfig, { markDirty: true });
+      if (!cancelled && migrated && isProjectResourceOperationCurrent(lifecycle)) {
+        syncProjectResourceConfigState(nextConfig, { markDirty: true, trackHistory: true });
       }
     };
 
-    cacheAssets();
+    void cacheAssets();
 
     return () => {
       cancelled = true;
     };
-  }, [cachedRemoteAssets, collectProjectResources, getCurrentConfigWithUi, importProjectAssetPath, projectAssetsCacheEnabled, projectPath, syncProjectResourceConfigState, updateConfigValueByPath]);
+  }, [captureProjectResourceOperation, cachedRemoteAssetsRef, collectProjectResources, config, fontPresets, getCurrentConfigWithUi, importProjectAssetPath, isProjectResourceOperationCurrent, projectAssetsCacheEnabled, projectPath, projectPathRef, subtitles, syncProjectResourceConfigState, updateConfigValueByPath]);
 
   const desktopLocalAudioSource = useMemo(() => {
     if (!window.electron) {
@@ -5102,6 +5698,10 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const applyImportedProjectSettings = useCallback((payload: ImportProjectSettingsDialogState) => {
+    if (!isProjectLifecycleCurrent(payload.lifecycle) || getHistory().revision !== payload.revision) {
+      setImportProjectSettingsDialog(null);
+      return;
+    }
     pushHistorySnapshot();
     setConfig((prev: any) => {
       const nextSpeakers = { ...(prev?.speakers || {}) };
@@ -5171,9 +5771,16 @@ const [previewScale, setPreviewScale] = useState(1);
     setImportProjectSettingsDialog(null);
     markProjectDirty();
     showToast(t('app.projectSettingsImported'));
-  }, [markProjectDirty, pushHistorySnapshot, showToast, t]);
+  }, [getHistory, isProjectLifecycleCurrent, markProjectDirty, pushHistorySnapshot, showToast, t]);
+
+  const cancelImportProjectSettings = useCallback(() => {
+    setImportProjectSettingsDialog(null);
+  }, []);
 
   const beginImportProjectSettings = useCallback(async (sourcePath: string, parsed: any) => {
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
+    const targetProjectPath = projectPathRef.current;
     const validatedConfig = validateProjectConfig(parsed);
     const resolveImportedSettingPath = async (value: string | undefined) => {
       const trimmed = String(value || '').trim();
@@ -5186,12 +5793,12 @@ const [previewScale, setPreviewScale] = useState(1);
       if (/^www\./i.test(trimmed) || /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\') || (trimmed.startsWith('/') && !trimmed.startsWith('/projects/') && !trimmed.startsWith('/assets/'))) {
         return trimmed;
       }
-      if (!window.electron || !projectPath || projectPath === 'web-demo') {
+      if (!window.electron || !targetProjectPath || targetProjectPath === 'web-demo') {
         return resolveAssetPathAgainstProject(trimmed, sourcePath) || trimmed;
       }
       try {
         const inspection = await window.electron.inspectProjectResources({
-          projectFilePath: projectPath,
+          projectFilePath: targetProjectPath,
           resources: [{ id: 'import-check', value: trimmed }],
         });
         const result = inspection?.[0];
@@ -5234,15 +5841,20 @@ const [previewScale, setPreviewScale] = useState(1);
       ),
     };
 
+    if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
+      return;
+    }
+
+    const currentConfig = configRef.current;
     const conflicts: SpeakerImportConflict[] = [];
     Object.entries(importedConfig.speakers || {}).forEach(([sourceKey, importedSpeaker]: [string, any]) => {
-      const existingByKey = config.speakers?.[sourceKey];
-      const sameNameKey = Object.keys(config.speakers || {}).find((key) => key !== sourceKey && String(config.speakers[key]?.name || '').trim() === String(importedSpeaker?.name || '').trim());
+      const existingByKey = currentConfig.speakers?.[sourceKey];
+      const sameNameKey = Object.keys(currentConfig.speakers || {}).find((key) => key !== sourceKey && String(currentConfig.speakers[key]?.name || '').trim() === String(importedSpeaker?.name || '').trim());
       const conflictTargetKey = existingByKey ? sourceKey : (sameNameKey || null);
       if (!conflictTargetKey) {
         return;
       }
-      const existingSpeaker = config.speakers?.[conflictTargetKey];
+      const existingSpeaker = currentConfig.speakers?.[conflictTargetKey];
       if (speakersEqual(existingSpeaker, importedSpeaker)) {
         return;
       }
@@ -5256,24 +5868,27 @@ const [previewScale, setPreviewScale] = useState(1);
       });
     });
 
-    const hasLayoutChange = JSON.stringify(config.chatLayout || {}) !== JSON.stringify(importedConfig.chatLayout || {})
-      || JSON.stringify(config.dimensions || {}) !== JSON.stringify(importedConfig.dimensions || {})
-      || (config.fps ?? null) !== (importedConfig.fps ?? null)
+    const hasLayoutChange = JSON.stringify(currentConfig.chatLayout || {}) !== JSON.stringify(importedConfig.chatLayout || {})
+      || JSON.stringify(currentConfig.dimensions || {}) !== JSON.stringify(importedConfig.dimensions || {})
+      || (currentConfig.fps ?? null) !== (importedConfig.fps ?? null)
       || JSON.stringify({
-        fit: config.background?.fit,
-        position: config.background?.position,
-        blur: config.background?.blur,
-        brightness: config.background?.brightness,
-        image: config.background?.image,
-        duration: config.background?.duration,
+        fit: currentConfig.background?.fit,
+        position: currentConfig.background?.position,
+        blur: currentConfig.background?.blur,
+        brightness: currentConfig.background?.brightness,
+        image: currentConfig.background?.image,
+        duration: currentConfig.background?.duration,
       }) !== JSON.stringify(importedConfig.background || {});
     const hasSpeakerChange = conflicts.length > 0
       || Object.entries(importedConfig.speakers || {}).some(([sourceKey, importedSpeaker]: [string, any]) => {
-        const existingSpeaker = config.speakers?.[sourceKey];
-        const sameNameKey = Object.keys(config.speakers || {}).find((key) => String(config.speakers[key]?.name || '').trim() === String(importedSpeaker?.name || '').trim());
+        const existingSpeaker = currentConfig.speakers?.[sourceKey];
+        const sameNameKey = Object.keys(currentConfig.speakers || {}).find((key) => String(currentConfig.speakers[key]?.name || '').trim() === String(importedSpeaker?.name || '').trim());
         return !existingSpeaker && !sameNameKey;
       });
 
+    if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
+      return;
+    }
     if (!hasLayoutChange && !hasSpeakerChange) {
       showToast(t('app.projectSettingsNoChanges'));
       return;
@@ -5281,6 +5896,8 @@ const [previewScale, setPreviewScale] = useState(1);
 
     setImportProjectSettingsDialog({
       sourcePath,
+      lifecycle,
+      revision: importRevision,
       importedConfig,
       conflicts,
       selection: {
@@ -5297,9 +5914,11 @@ const [previewScale, setPreviewScale] = useState(1);
         },
       },
     });
-  }, [applyImportedProjectSettings, config.background, config.chatLayout, config.dimensions, config.fps, config.speakers, showToast, t, validateProjectConfig]);
+  }, [applyImportedProjectSettings, captureProjectLifecycle, configRef, getHistory, isProjectLifecycleCurrent, projectPathRef, showToast, t, validateProjectConfig]);
 
   const handleNewProjectNow = async (initialOverrides?: any) => {
+    const lifecycle = captureProjectLifecycle();
+    const projectRevision = getHistory().revision;
     const safeOverrides = sanitizeProjectOverrides(initialOverrides);
     if (!window.electron) {
       setWebAssContent(null);
@@ -5328,9 +5947,21 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterProject'), extensions: ['pomchat', 'json'] }]
       });
       
-      if (!result.canceled && result.filePath) {
+      if (!result.canceled && result.filePath && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
         const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...safeOverrides };
-        await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
+        const written = await enqueueProjectFileOperation(() => {
+          if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== projectRevision) {
+            return false;
+          }
+          return window.electron!.writeFile(result.filePath!, JSON.stringify(newConfig, null, 2));
+        });
+        if (!written) {
+          if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
+            throw new Error('The new project file could not be written');
+          }
+          return;
+        }
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== projectRevision) return;
         clearHistory();
         clearProjectDirty();
         setProjectPath(result.filePath);
@@ -5350,7 +5981,9 @@ const [previewScale, setPreviewScale] = useState(1);
         showToast(t('welcome.new'));
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorCreateProjectFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
+        alert(`${t('dialog.errorCreateProjectFailed')}: ${e.message}`);
+      }
     }
   };
 
@@ -5375,12 +6008,14 @@ const [previewScale, setPreviewScale] = useState(1);
     flushPendingDebouncedConfigCommit();
     const saveToken = getHistory().saveToken();
     const finalConfig = getProjectConfig();
+    const targetProjectPath = projectPathRef.current;
+    const targetSpeakerNames = savedSpeakerNamesRef.current;
 
-    if (!window.electron || !projectPath || projectPath === 'web-demo') {
+    if (!window.electron || !targetProjectPath || targetProjectPath === 'web-demo') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
       rememberRecentProject(finalConfig.projectTitle || 'web-demo');
-      if (getHistory().isSaveCurrent(saveToken)) clearProjectDirty();
-      if (options?.source === 'autosave' && projectPath) {
+      if (getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath) clearProjectDirty();
+      if (options?.source === 'autosave' && targetProjectPath && getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath) {
         setShowAutoSavedTitle(true);
         if (autoSavedTitleTimeoutRef.current !== null) {
           window.clearTimeout(autoSavedTitleTimeoutRef.current);
@@ -5397,11 +6032,39 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     try {
-      await backupAssIfSpeakerNamesChanged();
-      await window.electron.writeFile(projectPath, JSON.stringify(finalConfig, null, 2));
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(config.speakers);
-      if (getHistory().isSaveCurrent(saveToken)) clearProjectDirty();
-      if (options?.source === 'autosave' && getHistory().isSaveCurrent(saveToken)) {
+      const saved = await enqueueProjectFileOperation(async () => {
+        if (!getHistory().isSaveCurrent(saveToken) || projectPathRef.current !== targetProjectPath) {
+          return false;
+        }
+        await backupAssIfSpeakerNamesChanged(finalConfig, targetProjectPath, targetSpeakerNames);
+        if (!getHistory().isSaveCurrent(saveToken) || projectPathRef.current !== targetProjectPath) {
+          return false;
+        }
+        const written = await window.electron!.writeFile(targetProjectPath, JSON.stringify(finalConfig, null, 2));
+        if (!written) {
+          throw new Error('The project file could not be written');
+        }
+        if (!getHistory().isSaveCurrent(saveToken)) {
+          if (getHistory().epoch === saveToken.epoch && projectPathRef.current === targetProjectPath) {
+            const restored = await window.electron!.writeFile(targetProjectPath, JSON.stringify(getProjectConfig(), null, 2));
+            if (!restored) {
+              console.error('Failed to restore project file after a stale save: write was rejected');
+            }
+          }
+          return false;
+        }
+        return true;
+      });
+      if (!saved) {
+        return false;
+      }
+      const saveIsCurrent = getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath;
+      if (!saveIsCurrent) {
+        return false;
+      }
+      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(finalConfig.speakers);
+      clearProjectDirty();
+      if (options?.source === 'autosave' && saveIsCurrent) {
         setShowAutoSavedTitle(true);
         if (autoSavedTitleTimeoutRef.current !== null) {
           window.clearTimeout(autoSavedTitleTimeoutRef.current);
@@ -5416,7 +6079,9 @@ const [previewScale, setPreviewScale] = useState(1);
       }
       return true;
     } catch (e: any) {
-      alert(`${t('dialog.errorSaveFailed')}: ${e.message}`);
+      if (getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath) {
+        alert(`${t('dialog.errorSaveFailed')}: ${e.message}`);
+      }
       return false;
     }
   }
@@ -5429,7 +6094,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (autoSaveProject) {
+    if (autoSaveProjectRef.current) {
       const saved = await saveProjectInternal({ silent: true, source: 'guard' });
       if (!saved || isProjectDirtyRef.current) {
         return;
@@ -5443,7 +6108,7 @@ const [previewScale, setPreviewScale] = useState(1);
       title: t('app.unsavedProjectTitle'),
       description: t('app.unsavedProjectDescription'),
     });
-  }, [autoSaveProject, flushPendingDebouncedConfigCommit, t]);
+  }, [autoSaveProjectRef, flushPendingDebouncedConfigCommit, t]);
 
   const handleNewProject = useCallback((initialOverrides?: any) => {
     runWithUnsavedProjectGuard(() => handleNewProjectNow(initialOverrides));
@@ -5454,6 +6119,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [runWithUnsavedProjectGuard]);
 
   const handleSetAudio = async () => {
+    const lifecycle = captureProjectLifecycle();
     if (!window.electron) {
       webAudioInputRef.current?.click();
       return;
@@ -5464,17 +6130,20 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterAudio'), extensions: [...AUDIO_IMPORT_EXTENSIONS] }],
         properties: ['openFile']
       });
-      if (!res.canceled && res.filePaths.length > 0) {
+      if (!res.canceled && res.filePaths.length > 0 && isProjectLifecycleCurrent(lifecycle)) {
         applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: res.filePaths[0] }));
         showToast(t('app.audioUpdated'));
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorSelectAudioFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorSelectAudioFailed')}: ${e.message}`);
+      }
     }
   };
 
   const handleSetSubtitle = async () => {
-    const lifecycle = getHistory().epoch;
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
     if (!window.electron) {
       webSubtitleInputRef.current?.click();
       return;
@@ -5485,16 +6154,16 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterSubtitle'), extensions: ['ass', 'srt', 'lrc'] }],
         properties: ['openFile']
       });
-      if (!res.canceled && res.filePaths.length > 0) {
+      if (!res.canceled && res.filePaths.length > 0 && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === importRevision) {
         const selectedPath = res.filePaths[0];
         const content = await window.electron.readFile(selectedPath);
-        if (lifecycle !== getHistory().epoch) return;
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
         const lower = selectedPath.toLowerCase();
         if (lower.endsWith('.ass')) {
-          setImportAssData({ path: selectedPath, content });
+          setImportAssData({ path: selectedPath, content, lifecycle, revision: importRevision });
         } else {
           const rows = lower.endsWith('.srt') ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
-          const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+          const projectContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
           applyTrackedConfigUpdater((prev: any) => ({
             ...prev,
             assPath: '',
@@ -5506,12 +6175,15 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
+      }
     }
   };
 
   const handleIncrementalImportSubtitle = async () => {
-    const lifecycle = getHistory().epoch;
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
     if (!window.electron) {
       alert('Incremental import is only available in the desktop app.');
       return;
@@ -5522,17 +6194,17 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterSubtitle'), extensions: ['ass', 'srt', 'lrc'] }],
         properties: ['openFile']
       });
-      if (!res.canceled && res.filePaths.length > 0) {
+      if (!res.canceled && res.filePaths.length > 0 && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === importRevision) {
         const selectedPath = res.filePaths[0];
         const fileContent = await window.electron.readFile(selectedPath);
-        if (lifecycle !== getHistory().epoch) return;
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
         const lower = selectedPath.toLowerCase();
         if (lower.endsWith('.ass')) {
-          setImportAssData({ path: selectedPath, content: fileContent });
+          setImportAssData({ path: selectedPath, content: fileContent, lifecycle, revision: importRevision });
           setImportAssDataIncremental(true);
         } else {
           const rows = lower.endsWith('.srt') ? parseSrtSubtitles(fileContent) : parseLrcSubtitles(fileContent);
-          const newContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+          const newContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
           const existingContent = getProjectConfig().content;
           const mergedContent = [...existingContent, ...newContent];
           applyTrackedConfigUpdater((prev: any) => ({
@@ -5551,13 +6223,15 @@ const [previewScale, setPreviewScale] = useState(1);
             buttons: [t('common.yes'), t('common.no')],
             defaultId: 0,
           });
-          if (sortResult.response === 0) {
+          if (sortResult.response === 0 && isProjectLifecycleCurrent(lifecycle)) {
             handleSortSubtitles();
           }
         }
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorSelectSubtitleFailed')}: ${e.message}`);
+      }
     }
   };
 
@@ -5576,11 +6250,12 @@ const [previewScale, setPreviewScale] = useState(1);
 
     pushHistorySnapshot();
     setWebAudioObjectUrl('');
+    clearDesktopAudioSource();
     setConfig((prev: any) => ({ ...prev, audioPath: '' }));
     markProjectDirty();
 
     showToast(t('app.audioCleared'));
-  }, [applyTrackedConfigUpdater, showToast, t, webAudioObjectUrl]);
+  }, [clearDesktopAudioSource, markProjectDirty, pushHistorySnapshot, showToast, t]);
 
   const handleClearSubtitle = useCallback(() => {
     pushHistorySnapshot();
@@ -5593,9 +6268,12 @@ const [previewScale, setPreviewScale] = useState(1);
     setSubtitles([]);
     markProjectDirty();
     showToast(t('app.subtitleCleared'));
-  }, [applyTrackedConfigUpdater, showToast, t]);
+  }, [markProjectDirty, pushHistorySnapshot, showToast, t]);
 
-  const importFileByPath = useCallback(async (filePath: string, currentProjectPath: string | null) => {
+  const importFileByPath = useCallback(async (filePath: string) => {
+    let lifecycle = captureProjectLifecycle();
+    let importRevision = getHistory().revision;
+    let hasCurrentProject = projectPathRef.current !== null;
     if (!window.electron || !filePath) return;
 
     const normalizedPath = filePath.toLowerCase();
@@ -5608,11 +6286,23 @@ const [previewScale, setPreviewScale] = useState(1);
     const isAudio = /(\.mp3|\.wav|\.aac|\.m4a|\.flac|\.ogg|\.opus)$/i.test(normalizedPath);
 
     if (isJson) {
-      await loadProjectFromPath(filePath);
-      showToast(t('app.projectImported'));
+      await runWithUnsavedProjectGuard(async () => {
+        // The guard may defer this callback until the user saves or discards
+        // the current project, so capture identity at execution time.
+        const importLifecycle = captureProjectLifecycle();
+        const importRevisionAtStart = getHistory().revision;
+        if (!isProjectLifecycleCurrent(importLifecycle) || getHistory().revision !== importRevisionAtStart) return;
+        const loadEpoch = getHistory().epoch;
+        await loadProjectFromPath(filePath);
+        if (getHistory().epoch !== loadEpoch && projectPathRef.current === filePath) {
+          showToast(t('app.projectImported'));
+        }
+      });
       return;
     }
 
+    if (!isProjectLifecycleCurrent(lifecycle)) return;
+    projectResourceCheckRevisionRef.current += 1;
     setProjectResourceCheckDialog(null);
 
     if (!isAss && !isSrt && !isLrc && !isAudio && !isImage && !isVideo) {
@@ -5620,7 +6310,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (!currentProjectPath) {
+    if (!hasCurrentProject) {
       // 位于欢迎页时，先询问新建项目，然后注入对应的路径
       const overrides: any = {};
       
@@ -5630,16 +6320,26 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterProject'), extensions: ['pomchat', 'json'] }]
       });
       
-      if (result.canceled || !result.filePath) return;
+      if (result.canceled || !result.filePath || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
 
       if (isAudio || isVideo) overrides.audioPath = filePath;
       if (isImage) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
       if (isAss) overrides.assPath = filePath;
       
       const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...overrides };
-      await window.electron.writeFile(result.filePath, JSON.stringify(newConfig, null, 2));
-      
+      const written = await enqueueProjectFileOperation(() => {
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
+          return false;
+        }
+        return window.electron!.writeFile(result.filePath!, JSON.stringify(newConfig, null, 2));
+      });
+      if (!written) return;
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
+      clearHistory();
       setProjectPath(result.filePath);
+      hasCurrentProject = true;
+      lifecycle = captureProjectLifecycle();
+      importRevision = getHistory().revision;
       rememberRecentProject(result.filePath);
       localStorage.setItem('pomchat_recent_project', result.filePath);
       setConfig((prev: any) => ({
@@ -5655,40 +6355,33 @@ const [previewScale, setPreviewScale] = useState(1);
 
       if (isAss || isSrt || isLrc) {
         const content = await window.electron.readFile(filePath);
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
         if (isAss) {
-          setImportAssData({ path: filePath, content });
+          setImportAssData({ path: filePath, content, lifecycle, revision: importRevision });
         } else {
           const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
-          const projectContent = buildPlainSubtitleProjectContent(rows, newConfig.speakers || {});
-          setConfig((prev: any) => ({
+          const projectContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
+          applyTrackedConfigUpdater((prev: any) => ({
             ...prev,
             subtitleFormat: isSrt ? 'srt' : 'lrc',
             assPath: '',
             content: projectContent,
-            ui: {
-              ...(prev?.ui || DEFAULT_UI_CONFIG),
-              recentProject: result.filePath
-            }
           }));
+          setWebAssContent(null);
           showToast(t('app.subtitleImported'));
         }
       }
 
       if (isImage) {
-        setConfig((prev: any) => ({
-            ...prev,
-            background: {
-              ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
-              image: filePath,
-              duration: isVideo ? prev?.background?.duration : undefined
-            },
-          ui: {
-            ...(prev?.ui || DEFAULT_UI_CONFIG),
-            recentProject: result.filePath
-          }
+        applyTrackedConfigUpdater((prev: any) => ({
+          ...prev,
+          background: {
+            ...(prev?.background || DEFAULT_PROJECT_CONFIG.background),
+            image: filePath,
+            duration: isVideo ? prev?.background?.duration : undefined,
+          },
         }));
         showToast(t('app.imageImported'));
-
       }
 
       if (isVideo) {
@@ -5700,15 +6393,17 @@ const [previewScale, setPreviewScale] = useState(1);
 
     if (isAss) {
       const content = await window.electron.readFile(filePath);
-      setImportAssData({ path: filePath, content });
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
+      setImportAssData({ path: filePath, content, lifecycle, revision: importRevision });
       showToast(t('app.assImported'));
       return;
     }
 
     if (isSrt || isLrc) {
       const content = await window.electron.readFile(filePath);
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
       const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
-      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      const projectContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
       applyTrackedConfigUpdater((prev: any) => ({
         ...prev,
         subtitleFormat: isSrt ? 'srt' : 'lrc',
@@ -5739,7 +6434,9 @@ const [previewScale, setPreviewScale] = useState(1);
       showToast(t('app.imageImported'));
 
       if (isVideo) {
+        const mediaImportRevision = getHistory().revision;
         const mediaInfo = await detectVideoMediaInfo(toFsServePath(filePath));
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== mediaImportRevision) return;
         applyTrackedConfigUpdater((prev: any) => ({
           ...prev,
           background: {
@@ -5750,17 +6447,18 @@ const [previewScale, setPreviewScale] = useState(1);
         }));
 
         const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
-        if (shouldUseVideoAudio) {
+        if (shouldUseVideoAudio && isProjectLifecycleCurrent(lifecycle)) {
           applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: filePath }));
           showToast(t('app.audioImported'));
         }
       }
       return;
     }
-  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, presets, showToast, t]);
+  }, [applyTrackedConfigUpdater, captureProjectLifecycle, clearHistory, config.speakers, detectVideoMediaInfo, getHistory, isProjectLifecycleCurrent, presets, projectPathRef, showToast, t]);
 
 
   const handleSelectImage = async (): Promise<string | null> => {
+    const lifecycle = captureProjectLifecycle();
     if (!window.electron) {
       alert(t('dialog.webImageInputOnly'));
       return null;
@@ -5771,31 +6469,44 @@ const [previewScale, setPreviewScale] = useState(1);
         filters: [{ name: t('dialog.filterMedia'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'] }],
         properties: ['openFile']
       });
-      if (!res.canceled && res.filePaths.length > 0) {
+      if (!res.canceled && res.filePaths.length > 0 && isProjectLifecycleCurrent(lifecycle)) {
         const filePath = res.filePaths[0];
         
         if (/\.(mp4|webm|mov|mkv)$/i.test(filePath)) {
           const shouldUseVideoAudio = window.confirm(t('app.videoAudioPrompt'));
-          if (shouldUseVideoAudio) {
+          if (shouldUseVideoAudio && isProjectLifecycleCurrent(lifecycle)) {
             applyTrackedConfigUpdater((prev: any) => ({ ...prev, audioPath: filePath }));
             showToast(t('app.audioImported'));
           }
         }
         
+        if (!isProjectLifecycleCurrent(lifecycle)) {
+          return null;
+        }
         return filePath;
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorSelectImageFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorSelectImageFailed')}: ${e.message}`);
+      }
     }
     return null;
   };
 
   const loadProjectFromPath = async (filePath: string) => {
-    const lifecycle = getHistory().epoch;
+    const lifecycle = captureProjectLifecycle();
+    const loadRevision = getHistory().revision;
+    const requestId = ++projectLoadRequestRef.current;
+    const isCurrentLoad = () => requestId === projectLoadRequestRef.current
+      && isProjectLifecycleCurrent(lifecycle)
+      && getHistory().revision === loadRevision;
     try {
+      projectResourceCheckRevisionRef.current += 1;
       setProjectResourceCheckDialog(null);
+      await waitForProjectFileOperations();
+      if (!isCurrentLoad()) return;
       const content = await window.electron.readFile(filePath);
-      if (lifecycle !== getHistory().epoch) return;
+      if (!isCurrentLoad()) return;
       const parsed = JSON.parse(content);
       const validatedConfig = validateProjectConfig(parsed);
       const normalizedConfig = validatedConfig.subtitleFormat
@@ -5804,7 +6515,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (window.electron) {
         const resources = collectProjectResources(normalizedConfig);
         const inspection = await window.electron.inspectProjectResources({ projectFilePath: filePath, resources: resources.map(({ id, value }) => ({ id, value })) });
-        if (lifecycle !== getHistory().epoch) return;
+        if (!isCurrentLoad()) return;
         let checkedConfig = normalizedConfig;
         const updated: UpdatedProjectResource[] = [];
         const missing: MissingProjectResource[] = [];
@@ -5824,25 +6535,39 @@ const [previewScale, setPreviewScale] = useState(1);
 
         const skippedFontPresetIds = new Set(
           missing
-            .map((item) => item.id.match(/^ui\.fontPresets\.([^\.]+)\.filePath$/)?.[1] || '')
+            .map((item) => item.id.match(/^ui\.fontPresets\.([^.]+)\.filePath$/)?.[1] || '')
             .filter(Boolean)
         );
         const reconciled = reconcileProjectFontPresets(checkedConfig, { skipFontPresetIds: skippedFontPresetIds });
         checkedConfig = reconciled.nextConfig;
-        setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
+        if (!isCurrentLoad()) return;
 
         if (updated.length > 0 || missing.length > 0) {
-          setProjectResourceCheckDialog({ filePath, config: checkedConfig, updated, missing });
+          projectResourceCheckRevisionRef.current += 1;
+          setProjectResourceCheckDialog({
+            filePath,
+            originalContent: content,
+            config: checkedConfig,
+            updated,
+            missing,
+            loadToken: {
+              ...lifecycle,
+              revision: loadRevision,
+              projectLoadRequestId: projectLoadRequestRef.current,
+            },
+          });
           showToast(t('projectResourceCheck.requiresAttention'));
           return;
         }
 
+        setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
         finalizeLoadedProject(filePath, checkedConfig);
         return;
       }
 
       finalizeLoadedProject(filePath, normalizedConfig);
     } catch (e: any) {
+      if (!isCurrentLoad()) return;
       alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
       if (filePath === recentProject) {
         setRecentProject(null);
@@ -5874,6 +6599,8 @@ const [previewScale, setPreviewScale] = useState(1);
     projectResourceCheckDialog, runWithUnsavedProjectGuard, loadProjectFromPath, showToast, t]);
 
   const handleOpenProjectNow = async () => {
+    const lifecycle = captureProjectLifecycle();
+    const projectRevision = getHistory().revision;
     if (!window.electron) {
       webProjectInputRef.current?.click();
       return;
@@ -5886,11 +6613,13 @@ const [previewScale, setPreviewScale] = useState(1);
         properties: ['openFile']
       });
 
-      if (!result.canceled && result.filePaths.length > 0) {
+      if (!result.canceled && result.filePaths.length > 0 && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
         await loadProjectFromPath(result.filePaths[0]);
       }
     } catch (e: any) {
-      alert(`${t('dialog.errorSelectFileFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
+        alert(`${t('dialog.errorSelectFileFailed')}: ${e.message}`);
+      }
     }
   };
 
@@ -5911,23 +6640,63 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [loadProjectFromPath, loadWebSavedProject, runWithUnsavedProjectGuard]);
 
   const handleProjectResourceReplacementChange = useCallback((resourceId: string, replacement: string) => {
+    projectResourceCheckRevisionRef.current += 1;
     setProjectResourceCheckDialog((prev) => prev ? {
       ...prev,
       missing: prev.missing.map((item) => item.id === resourceId ? { ...item, replacement } : item)
     } : prev);
   }, []);
 
+  const cancelProjectResourceCheck = useCallback(() => {
+    projectResourceCheckRevisionRef.current += 1;
+    setProjectResourceCheckDialog(null);
+  }, []);
+
   const handleApplyProjectResourceCheck = useCallback(async () => {
-    if (!projectResourceCheckDialog) {
+    const dialog = projectResourceCheckDialog;
+    const loadToken = dialog?.loadToken;
+    const checkRevision = projectResourceCheckRevisionRef.current;
+    if (!dialog || !loadToken || !isProjectResourceOperationCurrent(loadToken)) {
+      if (dialog && loadToken && isProjectLifecycleCurrent(loadToken)) {
+        projectResourceCheckRevisionRef.current += 1;
+        setProjectResourceCheckDialog(null);
+      }
       return;
     }
+    const isCurrentCheck = () => projectResourceCheckRevisionRef.current === checkRevision
+      && isProjectResourceOperationCurrent(loadToken);
+    let writeAttempted = false;
+    let restoredInsideQueue = false;
+    const writeRestoredProjectFile = async () => {
+      if (!window.electron) {
+        return true;
+      }
+      const restoreContent = isProjectLifecycleCurrent(loadToken) && projectPathRef.current === dialog.filePath
+        ? JSON.stringify(getProjectConfig(), null, 2)
+        : dialog.originalContent;
+      const restored = await window.electron.writeFile(dialog.filePath, restoreContent);
+      if (!restored) {
+        console.error('Failed to restore project file after stale resource check: write was rejected');
+      }
+      return restored;
+    };
+    const restoreProjectFileAfterStaleWrite = async () => {
+      if (!window.electron) {
+        return;
+      }
+      try {
+        await enqueueProjectFileOperation(writeRestoredProjectFile);
+      } catch (error) {
+        console.error('Failed to restore project file after stale resource check:', error);
+      }
+    };
 
-    let nextConfig = projectResourceCheckDialog.config;
+    let nextConfig = dialog.config;
     const unresolvedFontPresetIds = new Set<string>();
-    for (const item of projectResourceCheckDialog.missing) {
+    for (const item of dialog.missing) {
       const replacement = item.replacement.trim();
       if (!replacement) {
-        const presetId = item.id.match(/^ui\.fontPresets\.([^\.]+)\.filePath$/)?.[1] || '';
+        const presetId = item.id.match(/^ui\.fontPresets\.([^.]+)\.filePath$/)?.[1] || '';
         if (presetId) {
           unresolvedFontPresetIds.add(presetId);
         }
@@ -5938,25 +6707,65 @@ const [previewScale, setPreviewScale] = useState(1);
 
     const reconciled = reconcileProjectFontPresets(nextConfig, { missingFontPresetIds: unresolvedFontPresetIds });
     nextConfig = reconciled.nextConfig;
-    setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
-
-    try {
-      if (window.electron) {
-        await window.electron.writeFile(projectResourceCheckDialog.filePath, JSON.stringify(nextConfig, null, 2));
-      }
-    } catch (error: any) {
-      alert(`${t('dialog.errorSaveFailed')}: ${error.message}`);
+    if (!isCurrentCheck()) {
       return;
     }
 
-    setProjectResourceCheckDialog(null);
-    finalizeLoadedProject(projectResourceCheckDialog.filePath, nextConfig);
-  }, [finalizeLoadedProject, projectResourceCheckDialog, reconcileProjectFontPresets, t, updateConfigValueByPath]);
+    const portableConfig = Object.fromEntries(Object.entries(nextConfig).filter(([key]) => key !== 'ui'));
+    try {
+      const applied = await enqueueProjectFileOperation(async () => {
+        if (!isCurrentCheck()) {
+          return false;
+        }
+        if (window.electron) {
+          writeAttempted = true;
+          try {
+            const written = await window.electron.writeFile(dialog.filePath, JSON.stringify(portableConfig, null, 2));
+            if (!written) {
+              throw new Error('The project file could not be written');
+            }
+          } catch (error) {
+            // writeFile is not guaranteed to be atomic. Repair a partial write
+            // before releasing the queue, even when the operation itself failed.
+            try {
+              restoredInsideQueue = await writeRestoredProjectFile();
+            } catch (restoreError) {
+              console.error('Failed to restore project file after resource-check write failure:', restoreError);
+            }
+            throw error;
+          }
+        }
+        if (!isCurrentCheck()) {
+          if (writeAttempted) {
+            restoredInsideQueue = await writeRestoredProjectFile();
+          }
+          return false;
+        }
+        setFontPresets((prev) => (JSON.stringify(prev || {}) === JSON.stringify(reconciled.nextGlobalFontPresets || {}) ? prev : reconciled.nextGlobalFontPresets));
+        projectResourceCheckRevisionRef.current += 1;
+        setProjectResourceCheckDialog(null);
+        finalizeLoadedProject(dialog.filePath, nextConfig);
+        return true;
+      });
+      if (!applied && !isCurrentCheck() && writeAttempted && !restoredInsideQueue) {
+        await restoreProjectFileAfterStaleWrite();
+      }
+    } catch (error: any) {
+      if (isCurrentCheck()) {
+        alert(`${t('dialog.errorSaveFailed')}: ${error.message}`);
+      }
+      if (writeAttempted && !restoredInsideQueue) {
+        await restoreProjectFileAfterStaleWrite();
+      }
+    }
+  }, [enqueueProjectFileOperation, finalizeLoadedProject, getProjectConfig, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, projectPathRef, projectResourceCheckDialog, reconcileProjectFontPresets, t, updateConfigValueByPath]);
 
   const handleBrowseProjectResourceReplacement = useCallback(async (resourceId: string) => {
     if (!window.electron) {
       return;
     }
+    const lifecycle = captureProjectLifecycle();
+    const checkRevision = projectResourceCheckRevisionRef.current;
     try {
       const targetResource = projectResourceCheckDialog?.missing.find((item) => item.id === resourceId);
       const fileType = getProjectResourceFileType(resourceId, targetResource?.value || '');
@@ -5976,17 +6785,22 @@ const [previewScale, setPreviewScale] = useState(1);
         properties: ['openFile'],
         filters
       });
-      if (result.canceled || !result.filePaths?.[0]) {
+      if (result.canceled || !result.filePaths?.[0] || !isProjectLifecycleCurrent(lifecycle)
+        || projectResourceCheckRevisionRef.current !== checkRevision) {
         return;
       }
       handleProjectResourceReplacementChange(resourceId, result.filePaths[0]);
     } catch (error: any) {
-      alert(`${t('dialog.errorSelectFileFailed')}: ${error.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorSelectFileFailed')}: ${error.message}`);
+      }
     }
-  }, [getProjectResourceFileType, handleProjectResourceReplacementChange, projectResourceCheckDialog?.missing, t]);
+  }, [captureProjectLifecycle, getProjectResourceFileType, handleProjectResourceReplacementChange, isProjectLifecycleCurrent, projectResourceCheckDialog?.missing, t]);
 
   const handleImportProjectSettings = async () => {
-    if (!window.electron || !projectPath || projectPath === 'web-demo') {
+    const lifecycle = captureProjectLifecycle();
+    const targetProjectPath = projectPathRef.current;
+    if (!window.electron || !targetProjectPath || targetProjectPath === 'web-demo') {
       return;
     }
 
@@ -5997,15 +6811,20 @@ const [previewScale, setPreviewScale] = useState(1);
         properties: ['openFile']
       });
 
-      if (result.canceled || !result.filePaths?.[0]) {
+      if (result.canceled || !result.filePaths?.[0] || !isProjectLifecycleCurrent(lifecycle)) {
         return;
       }
 
       const sourcePath = result.filePaths[0];
       const content = await window.electron.readFile(sourcePath);
+      if (!isProjectLifecycleCurrent(lifecycle)) {
+        return;
+      }
       await beginImportProjectSettings(sourcePath, JSON.parse(content));
     } catch (e: any) {
-      alert(`${t('dialog.errorImportSettingsFailed')}: ${e.message}`);
+      if (isProjectLifecycleCurrent(lifecycle)) {
+        alert(`${t('dialog.errorImportSettingsFailed')}: ${e.message}`);
+      }
     }
   };
 
@@ -6029,23 +6848,28 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleWebSubtitleSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const lifecycle = getHistory().epoch;
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
     const file = event.target.files?.[0];
     if (!file) return;
 
     const content = await file.text();
-    if (lifecycle !== getHistory().epoch) return;
+    if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
+    let pendingLifecycle = lifecycle;
+    let pendingRevision = importRevision;
     if (!projectPath) {
       setProjectPath('web-demo');
       setShowSettings(true);
+      pendingLifecycle = captureProjectLifecycle();
+      pendingRevision = getHistory().revision;
     }
 
     const normalizedName = file.name.toLowerCase();
     if (normalizedName.endsWith('.ass')) {
-      setImportAssData({ path: file.name, content });
+      setImportAssData({ path: file.name, content, lifecycle: pendingLifecycle, revision: pendingRevision });
     } else if (normalizedName.endsWith('.srt') || normalizedName.endsWith('.lrc')) {
       const rows = normalizedName.endsWith('.srt') ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
-      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      const projectContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
       applyTrackedConfigUpdater((prev: any) => ({
         ...prev,
         subtitleFormat: normalizedName.endsWith('.srt') ? 'srt' : 'lrc',
@@ -6062,14 +6886,17 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleWebPresetSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
       const content = await file.text();
+      if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
       const parsed = JSON.parse(content);
-      const existing = { ...presets };
-      const existingAnnotationPresets = { ...annotationPresets };
+      const existing = { ...presetsRef.current };
+      const existingAnnotationPresets = { ...annotationPresetsRef.current };
       const imported: Record<string, any> = {};
       const importedAnnotations: Record<string, any> = {};
 
@@ -6118,7 +6945,7 @@ const [previewScale, setPreviewScale] = useState(1);
       }
 
       const confirmed = window.confirm(t('app.presetsImportConfirm', { presetCount: presetCount + annotationPresetCount, speakerCount }));
-      if (!confirmed) {
+      if (!confirmed || !isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
         return;
       }
 
@@ -6128,15 +6955,19 @@ const [previewScale, setPreviewScale] = useState(1);
       markProjectDirty();
       showToast(t('app.presetsImported'));
     } catch (error) {
-      console.error('Failed to import presets:', error);
-      showToast(t('app.dropUnsupported'));
+      if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === importRevision) {
+        console.error('Failed to import presets:', error);
+        showToast(t('app.dropUnsupported'));
+      }
     } finally {
       event.target.value = '';
     }
   };
 
   const importWebFile = useCallback(async (file: File, currentProjectPath: string | null) => {
-    const lifecycle = getHistory().epoch;
+    const lifecycle = captureProjectLifecycle();
+    const importRevision = getHistory().revision;
+    const isCurrentImport = () => isProjectLifecycleCurrent(lifecycle) && getHistory().revision === importRevision;
     const normalizedName = file.name.toLowerCase();
     const isJson = normalizedName.endsWith('.json') || normalizedName.endsWith('.pomchat');
     const isAss = normalizedName.endsWith('.ass');
@@ -6147,16 +6978,21 @@ const [previewScale, setPreviewScale] = useState(1);
     const isAudio = /\.(mp3|wav|aac|m4a|flac|ogg|opus|mp4|webm|mov|mkv)$/i.test(normalizedName);
 
     if (isJson) {
+      let jsonImportLifecycle: ProjectLifecycleToken | null = null;
+      let jsonImportRevision: number | null = null;
       try {
         await runWithUnsavedProjectGuard(async () => {
+          // Capture identity after the unsaved-project guard. A deferred
+          // action must apply to the project that the user actually kept.
+          jsonImportLifecycle = captureProjectLifecycle();
+          jsonImportRevision = getHistory().revision;
           const content = await file.text();
-          if (lifecycle !== getHistory().epoch) return;
+          if (!isProjectLifecycleCurrent(jsonImportLifecycle) || getHistory().revision !== jsonImportRevision) return;
           const parsed = JSON.parse(content);
           const validatedConfig = validateProjectConfig(parsed);
           const normalizedConfig = validatedConfig.subtitleFormat
             ? validatedConfig
             : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
-          const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
           setProjectPath('web-demo');
           rememberRecentProject(file.name);
           clearHistory();
@@ -6168,7 +7004,7 @@ const [previewScale, setPreviewScale] = useState(1);
               recentProject: file.name
             }
           }));
-          setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
+          setWebAssContent(null);
           setIsMobileBottomPanelExpanded(false);
           savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
           setShowSettings(true);
@@ -6179,31 +7015,40 @@ const [previewScale, setPreviewScale] = useState(1);
           showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
         });
       } catch (e: any) {
-        alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
+        if (jsonImportLifecycle
+          && jsonImportRevision !== null
+          && isProjectLifecycleCurrent(jsonImportLifecycle)
+          && getHistory().revision === jsonImportRevision) {
+          alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
+        }
       }
       return;
     }
 
     if (isAss) {
       const content = await file.text();
-      if (lifecycle !== getHistory().epoch) return;
+      if (!isCurrentImport()) return;
+      let pendingLifecycle = lifecycle;
+      let pendingRevision = importRevision;
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
+        pendingLifecycle = captureProjectLifecycle();
+        pendingRevision = getHistory().revision;
       }
-      setImportAssData({ path: file.name, content });
+      setImportAssData({ path: file.name, content, lifecycle: pendingLifecycle, revision: pendingRevision });
       return;
     }
 
     if (isSrt || isLrc) {
       const content = await file.text();
-      if (lifecycle !== getHistory().epoch) return;
+      if (!isCurrentImport()) return;
       if (!currentProjectPath) {
         setProjectPath('web-demo');
         setShowSettings(true);
       }
       const rows = isSrt ? parseSrtSubtitles(content) : parseLrcSubtitles(content);
-      const projectContent = buildPlainSubtitleProjectContent(rows, config.speakers);
+      const projectContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
       pushHistorySnapshot();
       setConfig((prev: any) => ({
         ...prev,
@@ -6262,11 +7107,11 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     showToast(t('app.dropUnsupported'));
-  }, [applyTrackedConfigUpdater, config.speakers, detectVideoMediaInfo, runWithUnsavedProjectGuard, showToast, t, validateProjectConfig, webAudioObjectUrl]);
+  }, [applyTrackedConfigUpdater, captureProjectLifecycle, clearHistory, config.speakers, detectVideoMediaInfo, enqueueProjectFileOperation, getHistory, isProjectLifecycleCurrent, runWithUnsavedProjectGuard, showToast, t, validateProjectConfig, webAudioObjectUrl]);
 
   const handleSaveProject = useCallback(async (options?: { silent?: boolean; source?: 'manual' | 'autosave' | 'guard' }) => {
     return await saveProjectInternal(options);
-  }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, flushPendingDebouncedConfigCommit, getProjectConfig, projectPath, showToast, subtitles, t]);
+  }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, enqueueProjectFileOperation, flushPendingDebouncedConfigCommit, getProjectConfig, projectPath, showToast, subtitles, t]);
 
   const handleConfirmUnsavedProject = useCallback(async () => {
     const pendingAction = pendingUnsavedProjectActionRef.current;
@@ -6350,33 +7195,43 @@ const [previewScale, setPreviewScale] = useState(1);
     const file = event.target.files?.[0];
     if (!file) return;
 
-    try {
-      const content = await file.text();
-      const parsed = JSON.parse(content);
-      const validatedConfig = validateProjectConfig(parsed);
-      const requiresAudioReload = !window.electron && Boolean(validatedConfig.audioPath);
-      const normalizedConfig = validatedConfig.subtitleFormat
-        ? validatedConfig
-        : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
-      const shouldUseAssSource = normalizedConfig.subtitleFormat === 'ass' && Boolean(normalizedConfig.assPath);
-      setProjectPath('web-demo');
-      rememberRecentProject(file.name);
-      clearHistory();
-      clearProjectDirty();
-      setConfig((prev: any) => ({
-        ...(requiresAudioReload ? { ...normalizedConfig, audioPath: '' } : normalizedConfig),
-        ui: {
-          ...(prev?.ui || DEFAULT_UI_CONFIG),
-          recentProject: file.name
+    const load = async () => {
+      const lifecycle = captureProjectLifecycle();
+      const loadRevision = getHistory().revision;
+      try {
+        const content = await file.text();
+        if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== loadRevision) return;
+        const parsed = JSON.parse(content);
+        const validatedConfig = validateProjectConfig(parsed);
+        const requiresAudioReload = Boolean(validatedConfig.audioPath);
+        const normalizedConfig = validatedConfig.subtitleFormat
+          ? validatedConfig
+          : { ...validatedConfig, subtitleFormat: validatedConfig.assPath ? 'ass' : (validatedConfig.content?.length ? 'srt' : 'ass') };
+        setProjectPath('web-demo');
+        rememberRecentProject(file.name);
+        clearHistory();
+        clearProjectDirty();
+        setConfig((prev: any) => ({
+          ...(requiresAudioReload ? { ...normalizedConfig, audioPath: '' } : normalizedConfig),
+          ui: {
+            ...(prev?.ui || DEFAULT_UI_CONFIG),
+            recentProject: file.name
+          }
+        }));
+        setWebAssContent(null);
+        setIsMobileBottomPanelExpanded(false);
+        savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
+        setShowSettings(true);
+        showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
+      } catch (e: any) {
+        if (isProjectLifecycleCurrent(lifecycle) && getHistory().revision === loadRevision) {
+          alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
         }
-      }));
-      setWebAssContent(shouldUseAssSource ? normalizedConfig.assPath : null);
-      setIsMobileBottomPanelExpanded(false);
-      savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
-      setShowSettings(true);
-      showToast(requiresAudioReload ? t('app.projectLoadedNeedAudio') : t('app.projectLoaded'));
-    } catch (e: any) {
-      alert(`${t('dialog.errorLoadFailed')}: ${e.message}`);
+      }
+    };
+
+    try {
+      await runWithUnsavedProjectGuard(load);
     } finally {
       event.target.value = '';
     }
@@ -6387,12 +7242,19 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    const lifecycle = captureProjectLifecycle();
+    const revision = getHistory().revision;
     const timer = window.setTimeout(() => {
+      if (!isProjectDirtyRef.current
+        || !isProjectLifecycleCurrent(lifecycle)
+        || getHistory().revision !== revision) {
+        return;
+      }
       void handleSaveProject({ silent: true, source: 'autosave' });
     }, 2000);
 
     return () => window.clearTimeout(timer);
-  }, [autoSaveProject, handleSaveProject, isProjectDirty, projectChangeTick, projectPath]);
+  }, [autoSaveProject, captureProjectLifecycle, getHistory, handleSaveProject, isProjectDirty, isProjectLifecycleCurrent, projectChangeTick, projectPath]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -6434,9 +7296,11 @@ const [previewScale, setPreviewScale] = useState(1);
     };
 
     const handlePointerUp = () => {
+      if (!insertImageDragRef.current) return;
       insertImageDragRef.current = null;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      flushPendingDebouncedConfigCommit();
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -6455,7 +7319,7 @@ const [previewScale, setPreviewScale] = useState(1);
       window.removeEventListener('pointercancel', handlePointerUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeInsertImageBounds, markProjectDirty, previewScale]);
+  }, [activeInsertImageBounds, flushPendingDebouncedConfigCommit, markProjectDirty, previewScale]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -6707,9 +7571,14 @@ const [previewScale, setPreviewScale] = useState(1);
     const firstPath = firstFile ? window.electron.getDroppedFilePath(firstFile) : '';
 
     if (firstPath) {
-      // Delay opening native dialogs to let OS drag-and-drop state machine finish
+      // Delay opening native dialogs to let OS drag-and-drop state machine finish,
+      // but keep the drop bound to the project that received it.
+      const dropLifecycle = captureProjectLifecycle();
+      const dropRevision = getHistory().revision;
       setTimeout(() => {
-        void importFileByPath(firstPath, projectPath);
+        if (isProjectLifecycleCurrent(dropLifecycle) && getHistory().revision === dropRevision) {
+          void importFileByPath(firstPath);
+        }
       }, 100);
       return;
     }
@@ -6780,7 +7649,7 @@ const [previewScale, setPreviewScale] = useState(1);
         )}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => setProjectResourceCheckDialog(null)} className="px-3 py-1.5 rounded text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+          <button type="button" onClick={cancelProjectResourceCheck} className="px-3 py-1.5 rounded text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
             {t('common.cancel')}
           </button>
           <button type="button" onClick={handleApplyProjectResourceCheck} className="px-3 py-1.5 rounded text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
@@ -7994,13 +8863,9 @@ const [previewScale, setPreviewScale] = useState(1);
         themeColor={themeColor}
         secondaryThemeColor={secondaryThemeColor}
         audioVolume={audioVolume}
-        onAudioVolumeChange={(value) => {
-          setAudioVolume(Math.max(0, Math.min(1, Number(value.toFixed(2)))));
-        }}
+        onAudioVolumeChange={handleAudioVolumeChangeTracked}
         waveformZoomLevel={waveformZoomLevel}
-        onWaveformZoomLevelChange={(value) => {
-          setWaveformZoomLevel(Math.max(10, Math.min(1000, Number(value.toFixed(2)))));
-        }}
+        onWaveformZoomLevelChange={handleWaveformZoomLevelChangeTracked}
         exportRangeStart={exportRange.start}
         exportRangeEnd={exportRange.end}
         defaultExportStart={defaultExportRange.start}
@@ -8280,6 +9145,7 @@ const [previewScale, setPreviewScale] = useState(1);
         speakerPresets={presets}
         annotationPresets={annotationPresets}
         projectPath={projectPath}
+        projectIdentity={`${projectPath || ''}\u0000${config.projectId || ''}`}
         projectAssetsCacheEnabled={projectAssetsCacheEnabled}
         initialPresetName={styleManagerPresetTarget}
         onSelectImage={handleSelectImage}
@@ -8489,7 +9355,7 @@ const [previewScale, setPreviewScale] = useState(1);
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setImportProjectSettingsDialog(null)}
+                onClick={cancelImportProjectSettings}
                 className="px-3 py-1.5 rounded text-sm"
                 style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}
               >
@@ -8565,7 +9431,13 @@ const [previewScale, setPreviewScale] = useState(1);
           secondaryThemeColor={secondaryThemeColor}
           onCancel={() => { setImportAssData(null); setImportAssDataIncremental(false); }}
           onConfirm={async (path, newSpeakers, importedPresets, importedAnnotationPresets) => {
-            const sanitizedContent = sanitizeImportedAssContent(importAssData.content);
+            const pendingImport = importAssData;
+            if (!pendingImport || !isProjectLifecycleCurrent(pendingImport.lifecycle) || getHistory().revision !== pendingImport.revision) {
+              setImportAssData(null);
+              setImportAssDataIncremental(false);
+              return;
+            }
+            const sanitizedContent = sanitizeImportedAssContent(pendingImport.content);
             const isIncremental = importAssDataIncremental;
             setImportAssDataIncremental(false);
 
@@ -8580,7 +9452,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 const incomingStyle = String(incomingSpeaker?.assStyleName || '').trim();
                 const incomingName = String(incomingSpeaker?.name || '').trim();
 
-                return Object.entries(nextSpeakers).find(([_, existingSpeaker]: [string, any]) => {
+                return Object.entries(nextSpeakers).find(([, existingSpeaker]: [string, any]) => {
                   const existingActor = String(existingSpeaker?.assActorName || '').trim();
                   const existingStyle = String(existingSpeaker?.assStyleName || '').trim();
                   const existingName = String(existingSpeaker?.name || '').trim();
