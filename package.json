@@ -10,6 +10,7 @@
     "dist": "npm run build && npm run prepare-remotion-offline && electron-builder --publish never",
     "lint": "eslint .",
     "test:biliup": "node scripts/test-biliup.mjs",
+    "test:history": "node scripts/test-history.mjs",
     "test:remotion:gpu": "node scripts/test-remotion-gpu.mjs",
     "preview": "vite preview"
   },

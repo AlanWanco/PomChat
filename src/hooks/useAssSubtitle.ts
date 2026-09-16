@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useLiveState } from './useLiveState';
 import { parse, type ParsedASS } from 'ass-compiler';
 
 export interface SubtitleItem {
@@ -140,6 +141,40 @@ const buildSubtitleItems = (dialogues: ParsedDialogue[], dialogueLineMetas: Arra
   }, []);
 };
 
+export type SubtitleSource = {
+  assPath: string;
+  assContentOverride?: string | null;
+  projectContent?: ProjectTextItem[];
+  subtitleFormat?: 'ass' | 'srt' | 'lrc';
+};
+const sourceIdentity = (source: SubtitleSource) => JSON.stringify([
+  source.assPath, source.assContentOverride, source.projectContent, source.subtitleFormat,
+]);
+
+export function parseSubtitleSource(source: SubtitleSource, speakers: SpeakerConfig): SubtitleItem[] | null {
+  const { assPath, assContentOverride, projectContent, subtitleFormat } = source;
+  const hasOverride = Boolean(assContentOverride?.trim());
+  // A supplied empty project list is authoritative for plain subtitle formats.
+  const useProject = Array.isArray(projectContent) && (
+    subtitleFormat === 'srt' || subtitleFormat === 'lrc' ||
+    (projectContent.length > 0 && (subtitleFormat === 'ass' || !assPath || (!window.electron && !hasOverride)))
+  );
+  if (useProject) {
+    return projectContent.filter(item => item?.type === 'text').map((item, index) => ({
+      id: `sub-${index}`,
+      start: Number(item.start || 0), end: Number(item.end || 0),
+      duration: Number(((item.end || 0) - (item.start || 0)).toFixed(2)),
+      style: item.speaker ? (speakers[item.speaker]?.name || 'Default') : 'Default',
+      actor: item.speaker ? (speakers[item.speaker]?.name || item.speaker) : '',
+      text: normalizeSubtitleText(item.text || ''),
+      speakerId: item.speaker || Object.keys(speakers)[0] || 'A',
+      visible: item.visible !== false, sourceLineIndex: index,
+    }));
+  }
+  if (hasOverride) return buildSubtitleItems(parse(assContentOverride!).events.dialogue, extractDialogueLineMetas(assContentOverride!), speakers);
+  return assPath && window.electron ? null : [];
+}
+
 export function useAssSubtitle(
   assPath: string,
   speakerConfig: SpeakerConfig,
@@ -147,116 +182,62 @@ export function useAssSubtitle(
   projectContent?: ProjectTextItem[],
   subtitleFormat?: 'ass' | 'srt' | 'lrc'
 ) {
-  const [subtitles, setSubtitles] = useState<SubtitleItem[]>([]);
+  const source = { assPath, assContentOverride, projectContent, subtitleFormat };
+  const sourceKey = sourceIdentity(source);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const [subtitles, updateSubtitles, subtitlesRef] = useLiveState<SubtitleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const [loadRevision, setLoadRevision] = useState(0);
+  const acceptedSource = useRef<string | null>(null);
+  const restoreSubtitles = useCallback((items: SubtitleItem[], restoredSource: SubtitleSource) => {
+    generation.current++;
+    acceptedSource.current = sourceIdentity(restoredSource);
+    updateSubtitles(structuredClone(items));
+    setLoading(false);
+    setError(null);
+  }, [updateSubtitles]);
+  const setSubtitles = useCallback((action: React.SetStateAction<SubtitleItem[]>) => {
+    restoreSubtitles(typeof action === 'function' ? action(subtitlesRef.current) : action, sourceRef.current);
+  }, [restoreSubtitles, subtitlesRef]);
+  const invalidateSubtitleLoads = useCallback(() => {
+    generation.current++;
+    acceptedSource.current = null;
+    updateSubtitles([]);
+    setLoadRevision(value => value + 1);
+  }, [updateSubtitles]);
 
   useEffect(() => {
+    if (acceptedSource.current === sourceKey) return;
+    const loadGeneration = ++generation.current;
     let cancelled = false;
-    const hasAssOverride = Boolean(assContentOverride && assContentOverride.trim().length > 0);
-
-    const shouldUseProjectContent = Array.isArray(projectContent)
-      && projectContent.length > 0
-      && (subtitleFormat === 'srt' || subtitleFormat === 'lrc' || subtitleFormat === 'ass' || (!window.electron && !hasAssOverride) || !assPath);
-
-    if (hasAssOverride && !shouldUseProjectContent) {
-      Promise.resolve().then(() => {
-        if (!cancelled) {
-          setLoading(true);
-        }
-      });
-
-      Promise.resolve(assContentOverride as string)
-        .then((text: string) => {
-          if (cancelled) return;
-          const parsed = parse(text);
-          const dialogueLineMetas = extractDialogueLineMetas(text);
-          const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineMetas, speakerConfig);
-
-          setSubtitles(items);
-          setError(null);
-        })
-        .catch((err: Error) => {
-          if (cancelled) return;
-          console.error(err);
-          setError(err.message);
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setLoading(false);
-          }
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (shouldUseProjectContent) {
-      const items: SubtitleItem[] = projectContent
-        .filter((item): item is ProjectTextItem => Boolean(item) && typeof item === 'object' && item.type === 'text')
-        .map((item, index) => ({
-          id: `sub-${index}`,
-          start: Number(item.start || 0),
-          end: Number(item.end || 0),
-          duration: Number(((item.end || 0) - (item.start || 0)).toFixed(2)),
-          style: item.speaker ? (speakerConfig[item.speaker]?.name || 'Default') : 'Default',
-          actor: item.speaker ? (speakerConfig[item.speaker]?.name || item.speaker) : '',
-          text: normalizeSubtitleText(item.text || ''),
-          speakerId: item.speaker || Object.keys(speakerConfig || {})[0] || 'A',
-          visible: item.visible !== false,
-          sourceLineIndex: index
-        }));
-
-      const timer = window.setTimeout(() => {
-        setSubtitles(items);
-        setError(null);
-        setLoading(false);
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timer);
-      };
-    }
-
-    if (!assPath || !window.electron) {
-      const timer = window.setTimeout(() => setSubtitles([]), 0);
-      return () => {
-        window.clearTimeout(timer);
-      };
-    }
-    
-    Promise.resolve().then(() => {
-      if (!cancelled) {
+    const isStale = () => cancelled || generation.current !== loadGeneration;
+    const load = async () => {
+      try {
         setLoading(true);
-      }
-    });
-
-    window.electron.readFile(assPath)
-      .then((text: string) => {
-        if (cancelled) return;
-        const parsed = parse(text);
-        const dialogueLineMetas = extractDialogueLineMetas(text);
-        const items = buildSubtitleItems(parsed.events.dialogue, dialogueLineMetas, speakerConfig);
-
-        setSubtitles(items);
-        setError(null);
-      })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
+        let items = parseSubtitleSource(source, speakerConfig);
+        if (items === null) {
+          const text = await window.electron!.readFile(assPath);
+          if (isStale()) return;
+          items = buildSubtitleItems(parse(text).events.dialogue, extractDialogueLineMetas(text), speakerConfig);
         }
-      });
-
-    return () => {
-      cancelled = true;
+        if (isStale()) return;
+        acceptedSource.current = sourceKey;
+        updateSubtitles(items);
+        setError(null);
+      } catch (err) {
+        if (!isStale()) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!isStale()) setLoading(false);
+      }
     };
-  }, [assPath, assContentOverride, projectContent, subtitleFormat]);
+    void load();
+    return () => { cancelled = true; };
+    // Speaker styling and object identity changes must not reload edited subtitles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey, loadRevision]);
 
-  return { subtitles, setSubtitles, loading, error };
+  return { subtitles, setSubtitles, subtitlesRef, restoreSubtitles, invalidateSubtitleLoads, loading, error };
 }

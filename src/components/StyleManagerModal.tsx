@@ -103,7 +103,7 @@ interface StyleManagerModalProps {
   projectAssetsCacheEnabled?: boolean;
   initialPresetName?: string | null;
   onSelectImage?: () => Promise<string | null>;
-  onSave: (speakers: Record<string, SpeakerConfig>) => void;
+  onSave: (speakers: Record<string, SpeakerConfig>, presets?: StyleManagerModalProps['speakerPresets'], annotations?: StyleManagerModalProps['annotationPresets']) => void;
   onSpeakerPresetsChange?: (presets: Record<string, any>) => void;
   onAnnotationPresetsChange?: (presets: Record<string, any>) => void;
   onClose: () => void;
@@ -122,7 +122,7 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
   },
 };
 
-export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onSpeakerPresetsChange, onAnnotationPresetsChange, onClose }: StyleManagerModalProps) {
+export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
@@ -289,8 +289,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       if (speakersChanged) nextSpeakers = spkNext;
       setLocalPresets(next);
       setLocalSpeakers(nextSpeakers);
-      if (onSpeakerPresetsChange) onSpeakerPresetsChange(next);
-      if (onSave) onSave(nextSpeakers);
+      onSave(nextSpeakers, next);
       setPresetsDirty(false);
       setSpeakersDirty(false);
       setToastMsg(t('preset.persistAllDone', { count: changedCount }) + (failedCount > 0 ? ` / ${t('preset.persistFailed') || '持久化失败'} ${failedCount}` : ''));
@@ -920,9 +919,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
             })() : null}
             <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
               <button onClick={() => {
-                if (speakersDirty) { onSave(localSpeakers); setSpeakersDirty(false); }
-                if (presetsDirty && onSpeakerPresetsChange) { onSpeakerPresetsChange(localPresets); setPresetsDirty(false); }
-                if (annotPresetsDirty && onAnnotationPresetsChange) { onAnnotationPresetsChange(localAnnotationPresets); setAnnotPresetsDirty(false); }
+                onSave(localSpeakers, localPresets, localAnnotationPresets);
+                setSpeakersDirty(false);
+                setPresetsDirty(false);
+                setAnnotPresetsDirty(false);
               }} disabled={!speakersDirty && !presetsDirty && !annotPresetsDirty}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all"
                 style={{ backgroundColor: (speakersDirty || presetsDirty || annotPresetsDirty) ? secondaryThemeColor : uiTheme.border, opacity: (speakersDirty || presetsDirty || annotPresetsDirty) ? 1 : 0.5, cursor: (speakersDirty || presetsDirty || annotPresetsDirty) ? 'pointer' : 'default' }}>
