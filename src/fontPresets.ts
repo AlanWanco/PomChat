@@ -1,3 +1,5 @@
+import type { PodchatExportInput, SpeakerConfig } from './remotion/types';
+
 export type FontPreset = {
   id: string;
   name: string;
@@ -82,7 +84,15 @@ export const findMatchingFontPresetId = (fontPresets: FontPresetMap | null | und
   return Object.entries(fontPresets || {}).find(([, entry]) => getFontPresetSignature(entry) === targetSignature)?.[0];
 };
 
-export const replaceFontPresetFamilyReferences = <T extends Record<string, any>>(config: T, fromValues: string[], fallbacks?: {
+type FontReferenceConfig = {
+  chatLayout?: PodchatExportInput['chatLayout'] & {
+    timestampFontFamily?: string;
+  };
+  speakers?: Record<string, SpeakerConfig>;
+  background?: PodchatExportInput['background'];
+};
+
+export const replaceFontPresetFamilyReferences = <T extends object>(config: T, fromValues: string[], fallbacks?: {
   speakerFontFamily?: string;
   nameFontFamily?: string;
   timestampFontFamily?: string;
@@ -95,7 +105,7 @@ export const replaceFontPresetFamilyReferences = <T extends Record<string, any>>
 
   const matches = (value: unknown) => typeof value === 'string' && normalizedFrom.has(value.trim());
   let changed = false;
-  const nextConfig = { ...config } as any;
+  const nextConfig = { ...config } as T & FontReferenceConfig;
 
   if (nextConfig.chatLayout && matches(nextConfig.chatLayout.timestampFontFamily)) {
     nextConfig.chatLayout = {
@@ -108,7 +118,7 @@ export const replaceFontPresetFamilyReferences = <T extends Record<string, any>>
   if (nextConfig.speakers && typeof nextConfig.speakers === 'object') {
     let speakersChanged = false;
     const nextSpeakers = Object.fromEntries(
-      Object.entries(nextConfig.speakers).map(([speakerId, speaker]: [string, any]) => {
+      Object.entries(nextConfig.speakers).map(([speakerId, speaker]) => {
         if (!speaker?.style || typeof speaker.style !== 'object') {
           return [speakerId, speaker];
         }
@@ -141,7 +151,7 @@ export const replaceFontPresetFamilyReferences = <T extends Record<string, any>>
 
   if (nextConfig.background?.slides && Array.isArray(nextConfig.background.slides)) {
     let slideChanged = false;
-    const nextSlides = nextConfig.background.slides.map((slide: Record<string, any>) => {
+    const nextSlides = nextConfig.background.slides.map((slide) => {
       if (!matches(slide?.fontFamily)) {
         return slide;
       }

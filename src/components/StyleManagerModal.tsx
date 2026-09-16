@@ -256,7 +256,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   };
   const handlePersistAllPresetAvatars = async () => {
     const expectedProjectIdentity = projectIdentityRef.current;
-    const electron = (window as any).electron;
+    const electron = window.electron;
     if (!electron) {
       setToastMsg(t('preset.persistDesktopOnly') || '仅桌面端支持持久化头像');
       return;
@@ -379,7 +379,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     const fileItem = clipboardItems.find((item) => item.kind === 'file');
     if (fileItem) {
       const file = fileItem.getAsFile();
-      const filePath = file && (window as any).electron ? (window as any).electron.getDroppedFilePath(file) : '';
+      const filePath = file && window.electron ? window.electron.getDroppedFilePath(file) : '';
       if (filePath && matchesAcceptedExtension(filePath, extensions)) return filePath;
     }
     const text = event.clipboardData?.getData('text/plain')?.trim() || '';
@@ -387,9 +387,9 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     return '';
   };
   const saveClipboardImageToCache = async (event: React.ClipboardEvent<HTMLInputElement>) => {
-    const electron = (window as any).electron; if (!electron) return '';
+    const electron = window.electron; if (!electron) return '';
     const clipboardItems = Array.from(event.clipboardData?.items || []);
-    const imageItem = clipboardItems.find((item: any) => item.kind === 'file' && item.type.startsWith('image/'));
+    const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
     if (!imageItem) return '';
     const file = imageItem.getAsFile(); if (!file) return '';
     const directPath = electron.getDroppedFilePath(file) || '';
@@ -426,7 +426,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
 
   const handleBrowseFile = async (): Promise<string | null> => {
     if (onSelectImage) return onSelectImage();
-    const electron = (window as any).electron; if (!electron) return null;
+    const electron = window.electron; if (!electron) return null;
     try {
       const res = await electron.showOpenDialog({
         title: '选择图片',
@@ -494,7 +494,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     if (!path) return path;
     const trimmed = path.trim();
     if (!trimmed) return undefined;
-    const useFilePreviewPath = typeof window !== 'undefined' && Boolean((window as any).electron);
+    const useFilePreviewPath = typeof window !== 'undefined' && Boolean(window.electron);
     const resolveAbs = (p: string) => useFilePreviewPath ? toFilePreviewPath(p) : toFsPreviewPath(p);
     if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
     if (trimmed.startsWith('file://')) {
@@ -1430,7 +1430,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
               <div className="flex-1 flex items-center justify-center text-sm opacity-50">{t('speakers.applyPreset') || 'Select a speaker to edit'}</div>
             )}
             <div className="px-4 py-3 border-t flex items-center justify-between gap-2" style={{ borderColor: uiTheme.border }}>
-              {leftTab === 'presets' && typeof window !== 'undefined' && (window as any).electron && (
+              {leftTab === 'presets' && typeof window !== 'undefined' && window.electron && (
                 <button onClick={() => void handlePersistAllPresetAvatars()} className="px-3 py-2 rounded-xl text-xs transition-all duration-300"
                   style={{ border: `1px solid ${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
                   title={t('preset.persistAvatarHint') || '把所有预设头像保存到本机 avatar 文件夹（绝对路径）并自动保存'}>
