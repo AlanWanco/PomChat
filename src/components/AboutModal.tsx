@@ -81,7 +81,9 @@ export function AboutModal({
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
               <div className="text-xs uppercase tracking-wider mb-1" style={{ color: uiTheme.textMuted }}>{t('about.currentVersion')}</div>
-              <div className="font-semibold">v{__APP_VERSION__}</div>
+              <div className="font-semibold" title={__APP_COMMIT__ !== 'unknown' ? __APP_COMMIT__ : undefined}>
+                v{__APP_VERSION__}{__APP_COMMIT__ !== 'unknown' ? ` · ${__APP_COMMIT__.slice(0, 12)}` : ''}
+              </div>
             </div>
             <div className="rounded-xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
               <div className="text-xs uppercase tracking-wider mb-1" style={{ color: uiTheme.textMuted }}>{t('about.platform')}</div>

@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 declare const __APP_VERSION__: string;
+declare const __APP_COMMIT__: string;
 
 interface HTMLWebViewElement extends HTMLElement {
   getWebContentsId: () => number;

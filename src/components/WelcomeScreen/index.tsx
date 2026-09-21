@@ -69,8 +69,8 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
           />
         </button>
         <h1 className="text-4xl font-bold mb-3 tracking-tight">PomChat Studio</h1>
-        <div className="mb-2 text-xs px-2 py-0.5 rounded-full border" style={{ borderColor: `${secondaryThemeColor}44`, color: uiTheme.textMuted, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '12' : '0E'}` }}>
-          v{__APP_VERSION__}
+        <div className="mb-2 text-xs px-2 py-0.5 rounded-full border" title={__APP_COMMIT__ !== 'unknown' ? __APP_COMMIT__ : undefined} style={{ borderColor: `${secondaryThemeColor}44`, color: uiTheme.textMuted, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '12' : '0E'}` }}>
+          v{__APP_VERSION__}{__APP_COMMIT__ !== 'unknown' ? ` · ${__APP_COMMIT__.slice(0, 12)}` : ''}
         </div>
         <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           {t('welcome.tagline')}

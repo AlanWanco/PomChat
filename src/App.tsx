@@ -1809,13 +1809,22 @@ function App() {
     applyTrackedConfigChange(updater(configRef.current));
   }, [applyTrackedConfigChange]);
   const handleConfigAndPresetsChange = useCallback((nextConfig: any, updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any>; fontPresets?: FontPresetMap }) => {
+    const nextConfigWithUi = {
+      ...nextConfig,
+      ui: {
+        ...(nextConfig?.ui || configRef.current.ui || DEFAULT_UI_CONFIG),
+        ...(updates.presets !== undefined ? { presets: updates.presets } : {}),
+        ...(updates.annotationPresets !== undefined ? { annotationPresets: updates.annotationPresets } : {}),
+        ...(updates.fontPresets !== undefined ? { fontPresets: updates.fontPresets } : {}),
+      },
+    };
     pushHistorySnapshot();
-    setConfig(nextConfig);
-    if (updates.presets) setPresets(updates.presets);
-    if (updates.annotationPresets) setAnnotationPresets(updates.annotationPresets);
-    if (updates.fontPresets) setFontPresets(updates.fontPresets);
+    setConfig(nextConfigWithUi);
+    if (updates.presets !== undefined) setPresets(updates.presets);
+    if (updates.annotationPresets !== undefined) setAnnotationPresets(updates.annotationPresets);
+    if (updates.fontPresets !== undefined) setFontPresets(updates.fontPresets);
     markProjectDirty();
-  }, [markProjectDirty, pushHistorySnapshot]);
+  }, [configRef, markProjectDirty, pushHistorySnapshot]);
   const previewHistoryChange = useCallback((key: string, edit: () => void) => {
     const history = getHistory();
     if (!history.pending) history.sync(createHistorySnapshot());
@@ -3280,23 +3289,35 @@ const [previewScale, setPreviewScale] = useState(1);
   const handlePresetsChangeTracked = useCallback((nextPresets: Record<string, any>) => {
     pushHistorySnapshot();
     setPresets(nextPresets);
+    setConfig((prev: any) => ({
+      ...prev,
+      ui: { ...(prev.ui || DEFAULT_UI_CONFIG), presets: nextPresets },
+    }));
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
   const handleAnnotationPresetsChangeTracked = useCallback((nextPresets: Record<string, any>) => {
     pushHistorySnapshot();
     setAnnotationPresets(nextPresets);
+    setConfig((prev: any) => ({
+      ...prev,
+      ui: { ...(prev.ui || DEFAULT_UI_CONFIG), annotationPresets: nextPresets },
+    }));
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
   const handleFontPresetsChangeTracked = useCallback((nextPresets: FontPresetMap) => {
     pushHistorySnapshot();
     setFontPresets(nextPresets);
+    setConfig((prev: any) => ({
+      ...prev,
+      ui: { ...(prev.ui || DEFAULT_UI_CONFIG), fontPresets: nextPresets },
+    }));
     markProjectDirty();
   }, [markProjectDirty, pushHistorySnapshot]);
 
   // Save config explicitly
-  const handleSaveConfig = () => {
+  const handleSaveConfig = (options?: { silent?: boolean }) => {
     flushPendingDebouncedConfigCommit();
     const lifecycle = captureProjectLifecycle();
     const saveToken = getHistory().saveToken();
@@ -3319,7 +3340,9 @@ const [previewScale, setPreviewScale] = useState(1);
         }
       });
     }
-    showToast(t('app.configSaved'));
+    if (!options?.silent) {
+      showToast(t('app.configSaved'));
+    }
   };
 
   useEffect(() => {
@@ -6220,6 +6243,8 @@ const [previewScale, setPreviewScale] = useState(1);
       ui: preservedUi,
     });
     setSubtitles([]);
+    // 关闭项目也要立即落盘本机 UI 配置，避免关闭流程中的旧防抖快照覆盖预设和最近项目。
+    handleSaveConfig({ silent: true });
     document.title = 'PomChat Studio';
   };
 
@@ -9349,11 +9374,13 @@ const [previewScale, setPreviewScale] = useState(1);
         onSpeakerPresetsChange={handlePresetsChangeTracked}
         onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
         onSave={(nextSpeakers, nextPresets, nextAnnotations) => {
-          pushHistorySnapshot();
-          setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
-          if (nextPresets) setPresets(nextPresets);
-          if (nextAnnotations) setAnnotationPresets(nextAnnotations);
-          markProjectDirty();
+          const updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any> } = {};
+          if (nextPresets !== undefined) updates.presets = nextPresets;
+          if (nextAnnotations !== undefined) updates.annotationPresets = nextAnnotations;
+          handleConfigAndPresetsChange(
+            { ...configRef.current, speakers: nextSpeakers },
+            updates,
+          );
           showToast(t('speakers.presetSaved', { name: '' }));
         }}
         onClose={() => { setShowStyleManager(false); setStyleManagerPresetTarget(null); }}
