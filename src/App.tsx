@@ -6187,6 +6187,22 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const handleCloseProjectNow = () => {
+    const currentConfig = createHistorySnapshot().config;
+    const currentProjectPath = projectPathRef.current;
+    const currentUi = currentConfig.ui || DEFAULT_UI_CONFIG;
+    const preservedRecentProjects = currentProjectPath
+      ? [currentProjectPath, ...(currentUi.recentProjects || []).filter((item: string) => item !== currentProjectPath)].slice(0, 10)
+      : currentUi.recentProjects;
+    const preservedUi = {
+      ...currentUi,
+      ...(currentProjectPath
+        ? {
+            recentProject: currentProjectPath,
+            recentProjects: preservedRecentProjects,
+          }
+        : {}),
+    };
+    const blankConfig = createBlankProjectConfig(t('app.newProject'));
     clearHistory();
     clearProjectDirty();
     setProjectResourceCheckDialog(null);
@@ -6198,7 +6214,11 @@ const [previewScale, setPreviewScale] = useState(1);
         setWebAudioObjectUrl('');
       }
     }
-    setConfig(createBlankProjectConfig(t('app.newProject')));
+    setConfig({
+      ...blankConfig,
+      ...(currentConfig.language ? { language: currentConfig.language } : {}),
+      ui: preservedUi,
+    });
     setSubtitles([]);
     document.title = 'PomChat Studio';
   };
