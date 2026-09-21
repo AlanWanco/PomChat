@@ -48,6 +48,108 @@ const guessAudioMimeType = (filePath: string) => {
 const AUDIO_IMPORT_EXTENSIONS = ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg', 'opus', 'mp4', 'webm', 'mov', 'mkv'] as const;
 const AUDIO_IMPORT_ACCEPT = 'audio/*,video/*,.mp3,.wav,.aac,.m4a,.flac,.ogg,.opus,.mp4,.webm,.mov,.mkv';
 
+type ImportedPresetCollections = {
+  imported: Record<string, any>;
+  importedAnnotations: Record<string, any>;
+  speakerCount: number;
+};
+
+const cloneImportedPresetValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const normalizeImportedPresetValue = (value: any) => {
+  const source = value && typeof value === 'object' ? value : {};
+  const style = Object.prototype.hasOwnProperty.call(source, 'style')
+    ? source.style
+    : source;
+  return {
+    style: cloneImportedPresetValue(style && typeof style === 'object' ? style : {}),
+    avatar: typeof source.avatar === 'string' ? source.avatar : '',
+    side: typeof source.side === 'string' ? source.side : 'left',
+  };
+};
+
+const collectImportedPresets = (
+  parsed: any,
+  existing: Record<string, any>,
+  existingAnnotationPresets: Record<string, any>,
+): ImportedPresetCollections => {
+  const imported: Record<string, any> = {};
+  const importedAnnotations: Record<string, any> = {};
+  const isObjectRecord = (value: any): value is Record<string, any> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  const addPreset = (
+    target: Record<string, any>,
+    existingTarget: Record<string, any>,
+    requestedName: string,
+    value: any,
+  ) => {
+    const baseName = (typeof requestedName === 'string' ? requestedName : String(requestedName ?? '')).trim() || 'Preset';
+    let presetName = baseName;
+    let counter = 2;
+    while (existingTarget[presetName] || target[presetName]) {
+      presetName = `${baseName} (${counter})`;
+      counter += 1;
+    }
+    target[presetName] = normalizeImportedPresetValue(value);
+  };
+
+  const uiPresets = isObjectRecord(parsed?.ui?.presets) ? parsed.ui.presets : null;
+  const uiAnnotationPresets = isObjectRecord(parsed?.ui?.annotationPresets) ? parsed.ui.annotationPresets : null;
+  const hasUiPresets = Boolean(uiPresets && Object.keys(uiPresets).length > 0);
+  const hasUiAnnotationPresets = Boolean(uiAnnotationPresets && Object.keys(uiAnnotationPresets).length > 0);
+
+  if (uiPresets) {
+    Object.entries(uiPresets).forEach(([presetName, presetValue]) => {
+      addPreset(imported, existing, presetName, presetValue);
+    });
+  }
+  if (uiAnnotationPresets) {
+    Object.entries(uiAnnotationPresets).forEach(([presetName, presetValue]) => {
+      addPreset(importedAnnotations, existingAnnotationPresets, presetName, presetValue);
+    });
+  }
+
+  const annotations = isObjectRecord(parsed?.annotations) ? parsed.annotations : null;
+  const hasAnnotations = Boolean(annotations && Object.keys(annotations).length > 0);
+  const speakers = isObjectRecord(parsed?.speakers) ? parsed.speakers : null;
+  if (speakers) {
+    Object.entries(speakers).forEach(([speakerKey, speaker]: [string, any]) => {
+      const isAnnotation = speakerKey === 'ANNOTATION' || speaker?.type === 'annotation';
+      if (isAnnotation) {
+        if (!hasUiAnnotationPresets && !hasAnnotations) {
+          addPreset(importedAnnotations, existingAnnotationPresets, speaker?.name || speakerKey, speaker);
+        }
+        return;
+      }
+      // A project file stores actual speakers here. If it also contains the
+      // optional UI preset collection, that collection is the canonical source.
+      if (!hasUiPresets) {
+        addPreset(imported, existing, speaker?.name || speakerKey, speaker);
+      }
+    });
+  }
+
+  if (annotations && !hasUiAnnotationPresets) {
+    Object.entries(annotations).forEach(([presetName, presetValue]) => {
+      addPreset(importedAnnotations, existingAnnotationPresets, presetName, presetValue);
+    });
+  }
+
+  const hasStructuredSource = Boolean(
+    uiPresets || uiAnnotationPresets || speakers || annotations,
+  );
+  if (isObjectRecord(parsed) && !hasStructuredSource) {
+    Object.entries(parsed).forEach(([presetName, presetValue]) => {
+      addPreset(imported, existing, presetName, presetValue);
+    });
+  }
+
+  return {
+    imported,
+    importedAnnotations,
+    speakerCount: speakers ? Object.keys(speakers).length : 0,
+  };
+};
+
 type HistorySnapshot = {
   config: any;
   subtitles: any[];
@@ -2344,7 +2446,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const result = await window.electron.showOpenDialog({
         title: t('menu.importPresets'),
-        filters: [{ name: t('dialog.filterJson'), extensions: ['json'] }],
+        filters: [{ name: t('dialog.filterPresetOrProject'), extensions: ['json', 'pomchat'] }],
         properties: ['openFile']
       });
 
@@ -2355,46 +2457,11 @@ const [previewScale, setPreviewScale] = useState(1);
       const parsed = JSON.parse(content);
       const existing = { ...presetsRef.current };
       const existingAnnotationPresets = { ...annotationPresetsRef.current };
-      const imported: Record<string, any> = {};
-      const importedAnnotations: Record<string, any> = {};
-
-      if (parsed?.speakers && typeof parsed.speakers === 'object') {
-        Object.entries(parsed.speakers).forEach(([speakerKey, speaker]: [string, any]) => {
-          const baseName = speaker?.name || speakerKey;
-          let presetName = baseName;
-          let counter = 2;
-          while (existing[presetName] || imported[presetName]) {
-            presetName = `${baseName} (${counter})`;
-            counter += 1;
-          }
-          imported[presetName] = {
-            style: JSON.parse(JSON.stringify(speaker?.style || {})),
-            avatar: speaker?.avatar || ''
-          };
-        });
-      }
-
-      if (parsed?.annotations && typeof parsed.annotations === 'object') {
-        Object.entries(parsed.annotations).forEach(([presetName, presetValue]) => {
-          let nextName = presetName;
-          let counter = 2;
-          while (existingAnnotationPresets[nextName] || importedAnnotations[nextName]) {
-            nextName = `${presetName} (${counter})`;
-            counter += 1;
-          }
-          importedAnnotations[nextName] = presetValue;
-        });
-      }
-
-      if (parsed && typeof parsed === 'object' && !parsed.speakers) {
-        Object.entries(parsed).forEach(([presetName, presetValue]) => {
-          imported[presetName] = presetValue;
-        });
-      }
-
-      const speakerCount = parsed?.speakers && typeof parsed.speakers === 'object'
-        ? Object.keys(parsed.speakers).length
-        : 0;
+      const { imported, importedAnnotations, speakerCount } = collectImportedPresets(
+        parsed,
+        existing,
+        existingAnnotationPresets,
+      );
       const presetCount = Object.keys(imported).length;
       const annotationPresetCount = Object.keys(importedAnnotations).length;
       if (presetCount === 0 && annotationPresetCount === 0) {
@@ -7030,46 +7097,11 @@ const [previewScale, setPreviewScale] = useState(1);
       const parsed = JSON.parse(content);
       const existing = { ...presetsRef.current };
       const existingAnnotationPresets = { ...annotationPresetsRef.current };
-      const imported: Record<string, any> = {};
-      const importedAnnotations: Record<string, any> = {};
-
-      if (parsed?.speakers && typeof parsed.speakers === 'object') {
-        Object.entries(parsed.speakers).forEach(([speakerKey, speaker]: [string, any]) => {
-          const baseName = speaker?.name || speakerKey;
-          let presetName = baseName;
-          let counter = 2;
-          while (existing[presetName] || imported[presetName]) {
-            presetName = `${baseName} (${counter})`;
-            counter += 1;
-          }
-          imported[presetName] = {
-            style: JSON.parse(JSON.stringify(speaker?.style || {})),
-            avatar: speaker?.avatar || ''
-          };
-        });
-      }
-
-      if (parsed?.annotations && typeof parsed.annotations === 'object') {
-        Object.entries(parsed.annotations).forEach(([presetName, presetValue]) => {
-          let nextName = presetName;
-          let counter = 2;
-          while (existingAnnotationPresets[nextName] || importedAnnotations[nextName]) {
-            nextName = `${presetName} (${counter})`;
-            counter += 1;
-          }
-          importedAnnotations[nextName] = presetValue;
-        });
-      }
-
-      if (parsed && typeof parsed === 'object' && !parsed.speakers) {
-        Object.entries(parsed).forEach(([presetName, presetValue]) => {
-          imported[presetName] = presetValue;
-        });
-      }
-
-      const speakerCount = parsed?.speakers && typeof parsed.speakers === 'object'
-        ? Object.keys(parsed.speakers).length
-        : 0;
+      const { imported, importedAnnotations, speakerCount } = collectImportedPresets(
+        parsed,
+        existing,
+        existingAnnotationPresets,
+      );
       const presetCount = Object.keys(imported).length;
       const annotationPresetCount = Object.keys(importedAnnotations).length;
       if (presetCount === 0 && annotationPresetCount === 0) {
@@ -7856,7 +7888,7 @@ const [previewScale, setPreviewScale] = useState(1);
             <input
               ref={webPresetInputRef}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.pomchat,application/json"
               className="hidden"
               onChange={handleWebPresetSelected}
             />
@@ -8053,7 +8085,7 @@ const [previewScale, setPreviewScale] = useState(1);
           <input
             ref={webPresetInputRef}
             type="file"
-            accept=".json,application/json"
+            accept=".json,.pomchat,application/json"
             className="hidden"
             onChange={handleWebPresetSelected}
           />

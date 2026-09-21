@@ -20,17 +20,40 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, '..');
 app.disableHardwareAcceleration();
 
-// Configuration file paths (priority order: ~/.config/pomchat > app folder)
-function getConfigFilePath() {
-  const userConfigDir = path.join(os.homedir(), '.config', 'pomchat');
-  const userConfigFile = path.join(userConfigDir, 'config.json');
+// Configuration file paths (priority order: ~/.config/pomchat > legacy/default locations)
+function getConfigFileCandidates() {
+  const homeDir = os.homedir();
+  const primaryConfigFile = path.join(homeDir, '.config', 'pomchat', 'config.json');
+  const legacyConfigFile = path.join(homeDir, '.config', 'podchat', 'config.json');
   const appConfigFile = path.join(process.env.APP_ROOT || '', 'pomchat-config.json');
-  
-  // Check if user config exists, otherwise use app folder
-  if (fs.existsSync(userConfigFile)) {
-    return userConfigFile;
+  const candidates = [primaryConfigFile, legacyConfigFile, appConfigFile];
+
+  // Older builds or manually migrated Windows installations may use Electron's
+  // default per-user directory instead of the project's portable path.
+  try {
+    candidates.splice(2, 0, path.join(app.getPath('userData'), 'config.json'));
+  } catch {
+    // app.getPath() is unavailable before Electron is ready; the other paths remain valid.
   }
-  return appConfigFile;
+
+  return [...new Set(candidates)];
+}
+
+function readConfigFile(filePath: string) {
+  const content = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '');
+  return JSON.parse(content);
+}
+
+function loadConfigFromDisk() {
+  for (const configPath of getConfigFileCandidates()) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      return { configPath, config: readConfigFile(configPath) };
+    } catch (error) {
+      console.error(`[Config] Failed to read ${configPath}:`, error);
+    }
+  }
+  return null;
 }
 
 // Ensure config directory exists
@@ -1222,13 +1245,10 @@ app.on('activate', () => {
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   try {
-    const configPath = getConfigFilePath();
-    if (fs.existsSync(configPath)) {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(content);
-      await applyProxySettings(parsed?.ui?.proxy);
-    } else {
-      await applyProxySettings('');
+    const loadedConfig = loadConfigFromDisk();
+    await applyProxySettings(loadedConfig?.config?.ui?.proxy || '');
+    if (loadedConfig) {
+      console.info(`[Config] Using ${loadedConfig.configPath}`);
     }
   } catch (error) {
     console.error('Failed to apply proxy on startup:', error);
@@ -2250,12 +2270,7 @@ ipcMain.handle('capture-rect-to-clipboard', async (_event, rect) => {
 // Config file handling
 ipcMain.handle('load-config', async () => {
   try {
-    const configPath = getConfigFilePath();
-    if (fs.existsSync(configPath)) {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      return JSON.parse(content);
-    }
-    return null;
+    return loadConfigFromDisk()?.config || null;
   } catch (error: any) {
     console.error('Failed to load config:', error);
     return null;
