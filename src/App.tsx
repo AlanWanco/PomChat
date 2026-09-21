@@ -157,6 +157,7 @@ type ProjectResourceFileType = 'audio' | 'subtitle' | 'image' | 'video' | 'font'
 
 type RenderCacheInfo = {
   remoteAssets: { path: string; files: number; bytes: number };
+  presetAvatars?: { path: string; files: number; bytes: number };
   remotionTemp: { path: string; entries: string[]; files: number; bytes: number };
 };
 
@@ -2068,8 +2069,62 @@ const [previewScale, setPreviewScale] = useState(1);
     });
   };
 
+  const findSpeakerIdForAssMetadata = (speakers: Record<string, any>, actorName = '', styleName = '') => {
+    const keys = Object.keys(speakers || {});
+    const actor = actorName.trim();
+    const style = styleName.trim();
+
+    for (const key of keys) {
+      const speaker = speakers[key] || {};
+      const configuredActor = String(speaker.assActorName || '').trim();
+      const configuredStyle = String(speaker.assStyleName || '').trim();
+      if (actor && style && configuredActor === actor && configuredStyle === style) {
+        return key;
+      }
+    }
+
+    for (const key of keys) {
+      const speaker = speakers[key] || {};
+      const configuredActor = String(speaker.assActorName || '').trim();
+      const configuredStyles = Array.isArray(speaker.assStyleNames) ? speaker.assStyleNames : [];
+      if (style && configuredStyles.some((item: unknown) => String(item || '').trim() === style)
+        && (!configuredActor || configuredActor === actor)) {
+        return key;
+      }
+    }
+
+    for (const key of keys) {
+      const speaker = speakers[key] || {};
+      const configuredActor = String(speaker.assActorName || '').trim();
+      const configuredStyle = String(speaker.assStyleName || '').trim();
+      if (style && configuredStyle === style && (!configuredActor || configuredActor === actor)) {
+        return key;
+      }
+    }
+
+    for (const key of keys) {
+      const configuredActor = String(speakers[key]?.assActorName || '').trim();
+      if (actor && configuredActor === actor) {
+        return key;
+      }
+    }
+
+    const combinedNames = actor && style ? [`${actor}（${style}）`, `${actor} (${style})`] : [];
+    for (const candidate of combinedNames) {
+      const match = keys.find((key) => String(speakers[key]?.name || '').trim() === candidate);
+      if (match) return match;
+    }
+
+    const namedMatch = keys.find((key) => actor && String(speakers[key]?.name || '').trim() === actor);
+    if (namedMatch) return namedMatch;
+    const styledMatch = keys.find((key) => style && String(speakers[key]?.name || '').trim() === style);
+    if (styledMatch) return styledMatch;
+
+    return keys.find((key) => speakers[key]?.type !== 'annotation') || keys[0] || 'A';
+  };
+
   const buildPlainSubtitleProjectContent = (
-    rows: Array<{ start: number; end: number; text: string }>,
+    rows: Array<{ start: number; end: number; text: string; actor?: string; style?: string }>,
     speakers: Record<string, any>
   ) => {
     const defaultSpeakerId = Object.keys(speakers || {}).find((key) => speakers[key]?.type !== 'annotation') || 'A';
@@ -2077,7 +2132,9 @@ const [previewScale, setPreviewScale] = useState(1);
       type: 'text',
       start: Number(row.start.toFixed(2)),
       end: Number(row.end.toFixed(2)),
-      speaker: defaultSpeakerId,
+      speaker: row.actor || row.style
+        ? findSpeakerIdForAssMetadata(speakers, row.actor, row.style)
+        : defaultSpeakerId,
       text: row.text
     }));
   };
@@ -2091,11 +2148,13 @@ const [previewScale, setPreviewScale] = useState(1);
         if (parts.length < 10) return null;
         const start = parseTimeToSeconds(parts[1]);
         const end = parseTimeToSeconds(parts[2]);
+        const style = String(parts[3] || '').trim();
+        const actor = String(parts[4] || '').trim();
         const text = parts.slice(9).join(',').replace(/\\N/g, '\n').trim();
         if (start === null || end === null || !text) return null;
-        return { start, end, text };
+        return { start, end, actor, style, text };
       })
-      .filter((item): item is { start: number; end: number; text: string } => item !== null);
+      .filter((item): item is { start: number; end: number; actor: string; style: string; text: string } => item !== null);
   };
 
   const backupAssIfSpeakerNamesChanged = async (
@@ -3081,6 +3140,53 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     previewHistoryChange('waveformZoomLevel', () => setWaveformZoomLevel(nextZoomLevel));
   }, [previewHistoryChange, waveformZoomLevel]);
+
+  const handleSubtitlePanelCompactModeChange = useCallback((enabled: boolean) => {
+    if (subtitlePanelCompactMode === enabled) {
+      return;
+    }
+    previewHistoryChange('subtitlePanelCompactMode', () => setSubtitlePanelCompactMode(enabled));
+  }, [previewHistoryChange, subtitlePanelCompactMode]);
+
+  const handleBubbleSnapshotBackgroundModeChange = useCallback((value: 'project' | 'transparent' | 'solid' | 'custom-image') => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBackgroundMode(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotBackgroundColorChange = useCallback((value: string) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBackgroundColor(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotCustomBackgroundImageChange = useCallback((value: string) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotCustomBackgroundImage(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotBackgroundImageSizingChange = useCallback((value: 'fit-width' | 'tile') => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBackgroundImageSizing(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotTileAlignChange = useCallback((value: 'left' | 'center' | 'right') => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotTileAlign(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotBackgroundBlurChange = useCallback((value: number) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBackgroundBlur(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotBackgroundBrightnessChange = useCallback((value: number) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBackgroundBrightness(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotSidePaddingChange = useCallback((value: number) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotSidePadding(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotBubbleWidthPercentChange = useCallback((value: number) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotBubbleWidthPercent(value));
+  }, [previewHistoryChange]);
+
+  const handleBubbleSnapshotExportScaleChange = useCallback((value: number) => {
+    previewHistoryChange('bubbleSnapshot', () => setBubbleSnapshotExportScale(value));
+  }, [previewHistoryChange]);
 
   const handleProjectAssetsCacheEnabledChangeTracked = useCallback((enabled: boolean) => {
     pushHistorySnapshot();
@@ -4254,7 +4360,7 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       let uploadPlan;
       try {
-        uploadPlan = await biliup.prepare(currentExportFormat);
+        uploadPlan = await biliup.prepare(currentExportFormat, getProjectFileStem());
       } catch (error) {
         if (!isCurrentExport()) {
           return;
@@ -4338,7 +4444,7 @@ const [previewScale, setPreviewScale] = useState(1);
         exportProgressActiveRef.current = false;
       }
     }
-  }, [biliup, captureProjectLifecycle, ensureBackgroundSlideIntrinsicSizes, exportOutputPathRef, getExportConfig, generateFilename, getHistory, isExportingRef, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, showToast, t, calculateCRF, calculateX264Preset]);
+  }, [biliup, captureProjectLifecycle, ensureBackgroundSlideIntrinsicSizes, exportOutputPathRef, getExportConfig, generateFilename, getHistory, isExportingRef, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, showToast, t, calculateCRF, calculateX264Preset, getProjectFileStem]);
 
   const handleRevealExport = useCallback(async () => {
     const targetPath = lastExportOutputPath || exportOutputPath.trim();
@@ -4716,6 +4822,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const workingConfig = getCurrentConfigWithUi();
     const resources = collectProjectResources(workingConfig);
     const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || '';
+    const presetAvatarDir = renderCacheInfo?.presetAvatars?.path || '';
     const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
     const copyRemoteAssetsCount = resources.filter((resource) => {
       if (!resource.value?.trim()) return false;
@@ -4728,6 +4835,7 @@ const [previewScale, setPreviewScale] = useState(1);
       const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
       if (!resolvedPath || !looksLikeLocalFsPath(resolvedPath)) return false;
       if (isPathInsideDirectory(resolvedPath, remoteCacheDir)) return false;
+      if (isPathInsideDirectory(resolvedPath, presetAvatarDir)) return false;
       if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) return false;
       return true;
     }).length;
@@ -4737,7 +4845,7 @@ const [previewScale, setPreviewScale] = useState(1);
       copyLocalAssetsCount,
       refreshRemoteAssetCacheCount,
     };
-  }, [collectProjectResources, config, fontPresets, getCurrentConfigWithUi, getResolvedProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, renderCacheInfo?.remoteAssets?.path, subtitles]);
+  }, [collectProjectResources, config, fontPresets, getCurrentConfigWithUi, getResolvedProjectAssetPath, isPathInsideDirectory, looksLikeLocalFsPath, projectPath, renderCacheInfo?.presetAvatars?.path, renderCacheInfo?.remoteAssets?.path, subtitles]);
 
   const updateConfigValueByPath = useCallback((target: any, dottedPath: string, nextValue: string) => {
     const markdownImageMatch = dottedPath.match(/^content\.(\d+)\.markdownImage\.(\d+)$/);
@@ -4957,7 +5065,11 @@ const [previewScale, setPreviewScale] = useState(1);
     try {
       const workingConfig = getCurrentConfigWithUi();
       const projectAssetsDir = getResolvedProjectAssetPath('assets', targetProjectPath) || '';
-      const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
+      const cacheInfo = renderCacheInfo?.presetAvatars?.path
+        ? renderCacheInfo
+        : await window.electron.getRenderCacheInfo();
+      const remoteCacheDir = cacheInfo?.remoteAssets?.path || '';
+      const presetAvatarDir = cacheInfo?.presetAvatars?.path || '';
       if (!isProjectResourceOperationCurrent(lifecycle)) return;
       let nextConfig = workingConfig;
       let unlockedCount = 0;
@@ -4968,6 +5080,12 @@ const [previewScale, setPreviewScale] = useState(1);
         if (!resolved || !looksLikeLocalFsPath(resolved)) return;
         if (isPathInsideDirectory(resolved, remoteCacheDir)) return;
         if (isPathInsideDirectory(resolved, projectAssetsDir)) return;
+        // 已持久化到全局 avatar 目录的预设头像是可复用资源，不应被项目资产迁移拆掉锁定关系。
+        const linkedPresetAvatar = spk.preset ? workingConfig.ui?.presets?.[spk.preset]?.avatar : '';
+        const resolvedLinkedPresetAvatar = linkedPresetAvatar
+          ? getResolvedProjectAssetPath(linkedPresetAvatar, targetProjectPath)
+          : '';
+        if (isPathInsideDirectory(resolved, presetAvatarDir) || isPathInsideDirectory(resolvedLinkedPresetAvatar, presetAvatarDir)) return;
         nextSpeakers[spkId] = { ...spk, lockPreset: false, preset: '' };
         unlockedCount += 1;
       });
@@ -4986,6 +5104,7 @@ const [previewScale, setPreviewScale] = useState(1);
         if (!rawValue || !resolvedPath) continue;
         if (!looksLikeLocalFsPath(resolvedPath)) continue;
         if (isPathInsideDirectory(resolvedPath, remoteCacheDir)) continue;
+        if (isPathInsideDirectory(resolvedPath, presetAvatarDir)) continue;
         if (isPathInsideDirectory(resolvedPath, projectAssetsDir)) continue;
         let imported = importedBySource.get(resolvedPath);
         if (typeof imported === 'undefined') {
@@ -5024,7 +5143,7 @@ const [previewScale, setPreviewScale] = useState(1);
         setProjectResourceActionBusy(null);
       }
     }
-  }, [applyProjectResourceMigrationResult, captureProjectResourceOperation, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, looksLikeLocalFsPath, projectPathRef, projectResourceActionBusy, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
+  }, [applyProjectResourceMigrationResult, captureProjectResourceOperation, collectProjectResources, getCurrentConfigWithUi, getResolvedProjectAssetPath, importProjectAssetPath, isPathInsideDirectory, isProjectLifecycleCurrent, isProjectResourceOperationCurrent, looksLikeLocalFsPath, projectPathRef, projectResourceActionBusy, renderCacheInfo?.presetAvatars?.path, renderCacheInfo?.remoteAssets?.path, showToast, t, updateConfigValueByPath]);
 
   const handleRefreshRemoteAssetCache = useCallback(async () => {
     if (projectResourceActionBusy) {
@@ -6217,18 +6336,6 @@ const [previewScale, setPreviewScale] = useState(1);
           setImportAssDataIncremental(true);
         } else {
           const rows = lower.endsWith('.srt') ? parseSrtSubtitles(fileContent) : parseLrcSubtitles(fileContent);
-          const newContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
-          const existingContent = getProjectConfig().content;
-          const mergedContent = [...existingContent, ...newContent];
-          applyTrackedConfigUpdater((prev: any) => ({
-            ...prev,
-            assPath: '',
-            subtitleFormat: lower.endsWith('.srt') ? 'srt' : 'lrc',
-            content: mergedContent
-          }));
-          setWebAssContent(null);
-          showToast(t('app.subtitleIncrementalImported', { count: String(newContent.length) }));
-
           const sortResult = await window.electron.showMessageBox({
             type: 'question',
             title: t('dialog.incrementalImportSortTitle'),
@@ -6236,9 +6343,22 @@ const [previewScale, setPreviewScale] = useState(1);
             buttons: [t('common.yes'), t('common.no')],
             defaultId: 0,
           });
-          if (sortResult.response === 0 && isProjectLifecycleCurrent(lifecycle)) {
-            handleSortSubtitles();
-          }
+          if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) return;
+
+          const newContent = buildPlainSubtitleProjectContent(rows, configRef.current.speakers);
+          const existingContent = getProjectConfig().content;
+          const mergedContent = [...existingContent, ...newContent];
+          const nextContent = sortResult.response === 0
+            ? mergedContent.sort((a, b) => Number(a.start || 0) - Number(b.start || 0) || Number(a.end || 0) - Number(b.end || 0))
+            : mergedContent;
+          applyTrackedConfigUpdater((prev: any) => ({
+            ...prev,
+            assPath: '',
+            subtitleFormat: lower.endsWith('.srt') ? 'srt' : 'lrc',
+            content: nextContent
+          }));
+          setWebAssContent(null);
+          showToast(t('app.subtitleIncrementalImported', { count: String(newContent.length) }));
         }
       }
     } catch (e: any) {
@@ -7976,7 +8096,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 editingSub={editingSub}
                 setEditingSub={setEditingSub}
                 compactMode={subtitlePanelCompactMode}
-                onCompactModeChange={setSubtitlePanelCompactMode}
+                onCompactModeChange={handleSubtitlePanelCompactModeChange}
                 projectPath={projectPath}
                 projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                 showToast={showToast}
@@ -8176,7 +8296,7 @@ const [previewScale, setPreviewScale] = useState(1);
                   editingSub={editingSub}
                   setEditingSub={setEditingSub}
                   compactMode={subtitlePanelCompactMode}
-                  onCompactModeChange={setSubtitlePanelCompactMode}
+                  onCompactModeChange={handleSubtitlePanelCompactModeChange}
                   projectPath={projectPath}
                   projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                   showToast={showToast}
@@ -9044,7 +9164,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     editingSub={editingSub}
                     setEditingSub={setEditingSub}
                     compactMode={subtitlePanelCompactMode}
-                    onCompactModeChange={setSubtitlePanelCompactMode}
+                    onCompactModeChange={handleSubtitlePanelCompactModeChange}
                     projectPath={projectPath}
                     projectAssetsCacheEnabled={projectAssetsCacheEnabled}
                     showToast={showToast}
@@ -9069,25 +9189,25 @@ const [previewScale, setPreviewScale] = useState(1);
         secondaryThemeColor={secondaryThemeColor}
         resolveAssetSrc={resolvePath}
         backgroundMode={bubbleSnapshotBackgroundMode}
-        onBackgroundModeChange={setBubbleSnapshotBackgroundMode}
+        onBackgroundModeChange={handleBubbleSnapshotBackgroundModeChange}
         backgroundColor={bubbleSnapshotBackgroundColor}
-        onBackgroundColorChange={setBubbleSnapshotBackgroundColor}
+        onBackgroundColorChange={handleBubbleSnapshotBackgroundColorChange}
         customBackgroundImage={bubbleSnapshotCustomBackgroundImage}
-        onCustomBackgroundImageChange={setBubbleSnapshotCustomBackgroundImage}
+        onCustomBackgroundImageChange={handleBubbleSnapshotCustomBackgroundImageChange}
         backgroundImageSizing={bubbleSnapshotBackgroundImageSizing}
-        onBackgroundImageSizingChange={setBubbleSnapshotBackgroundImageSizing}
+        onBackgroundImageSizingChange={handleBubbleSnapshotBackgroundImageSizingChange}
         tileAlign={bubbleSnapshotTileAlign}
-        onTileAlignChange={setBubbleSnapshotTileAlign}
+        onTileAlignChange={handleBubbleSnapshotTileAlignChange}
         backgroundBlur={bubbleSnapshotBackgroundBlur}
-        onBackgroundBlurChange={setBubbleSnapshotBackgroundBlur}
+        onBackgroundBlurChange={handleBubbleSnapshotBackgroundBlurChange}
         backgroundBrightness={bubbleSnapshotBackgroundBrightness}
-        onBackgroundBrightnessChange={setBubbleSnapshotBackgroundBrightness}
+        onBackgroundBrightnessChange={handleBubbleSnapshotBackgroundBrightnessChange}
         sidePadding={bubbleSnapshotSidePadding}
-        onSidePaddingChange={setBubbleSnapshotSidePadding}
+        onSidePaddingChange={handleBubbleSnapshotSidePaddingChange}
         bubbleMaxWidthPercent={bubbleSnapshotBubbleWidthPercent}
-        onBubbleMaxWidthPercentChange={setBubbleSnapshotBubbleWidthPercent}
+        onBubbleMaxWidthPercentChange={handleBubbleSnapshotBubbleWidthPercentChange}
         exportScale={bubbleSnapshotExportScale}
-        onExportScaleChange={setBubbleSnapshotExportScale}
+        onExportScaleChange={handleBubbleSnapshotExportScaleChange}
         onClose={handleCloseBubbleSnapshot}
         showToast={showToast}
       />
@@ -9174,8 +9294,8 @@ const [previewScale, setPreviewScale] = useState(1);
         projectAssetsCacheEnabled={projectAssetsCacheEnabled}
         initialPresetName={styleManagerPresetTarget}
         onSelectImage={handleSelectImage}
-        onSpeakerPresetsChange={setPresets}
-        onAnnotationPresetsChange={setAnnotationPresets}
+        onSpeakerPresetsChange={handlePresetsChangeTracked}
+        onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
         onSave={(nextSpeakers, nextPresets, nextAnnotations) => {
           pushHistorySnapshot();
           setConfig((prev: any) => ({ ...prev, speakers: nextSpeakers }));
@@ -9464,6 +9584,7 @@ const [previewScale, setPreviewScale] = useState(1);
             }
             const sanitizedContent = sanitizeImportedAssContent(pendingImport.content);
             const isIncremental = importAssDataIncremental;
+            const existingContent = isIncremental ? getProjectConfig().content : [];
             setImportAssDataIncremental(false);
 
             pushHistorySnapshot();
@@ -9554,7 +9675,7 @@ const [previewScale, setPreviewScale] = useState(1);
               }
 
               const mergedContent = isIncremental
-                ? [...getProjectConfig().content, ...buildPlainSubtitleProjectContent(parseAssDialogueLines(sanitizedContent), nextSpeakers)]
+                ? [...existingContent, ...buildPlainSubtitleProjectContent(parseAssDialogueLines(sanitizedContent), nextSpeakers)]
                 : [];
 
               return {

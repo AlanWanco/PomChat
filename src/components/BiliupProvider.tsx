@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  emptyBiliupPreferences, idleBiliupState, validateBiliupSchedule, validateBiliupTemplate,
+  emptyBiliupPreferences, getBiliupPostUploadOptions, idleBiliupState, validateBiliupSchedule, validateBiliupTemplate,
   type BiliupPreferences, type BiliupUploadPlan,
 } from '../biliup';
 import { translate } from '../i18n';
@@ -68,21 +68,26 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     void window.electron.showNotification({ title: 'PomChat', body: translate(appearance.language, 'biliup.uploadSuccess') }).catch(() => {});
   }, [appearance.language, state.bvid, state.kind, state.phase]);
 
-  const prepare = async (format: string): Promise<BiliupUploadPlan | null> => {
+  const prepare = async (format: string, projectName = ''): Promise<BiliupUploadPlan | null> => {
     if (!autoUpload) return null;
     if (!canAutoUpload || !selected) throw new Error(validateBiliupSchedule(selected?.dtime || '') || 'template');
     if (format !== 'mp4') throw new Error('file');
     const check = unwrapBiliup(await window.electron.biliup.check(preferences.directory));
     if (!check.cookieOk) throw new Error(check.error || 'cookie');
     // Snapshot the settings now: edits during a long render must not change its destination.
-    return { directory: preferences.directory, template: { ...selected } };
+    return {
+      directory: preferences.directory,
+      template: { ...selected },
+      postUpload: getBiliupPostUploadOptions(preferences, projectName, appearance.language),
+    };
   };
   const upload = async (plan: BiliupUploadPlan, filePath: string) => {
     setFocusUpload(true);
     setIsOpen(true);
     setError('');
     try {
-      unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath }));
+      const postUpload = plan.postUpload || getBiliupPostUploadOptions(preferences, '', appearance.language);
+      unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath, postUpload }));
     }
     catch (failure) {
       const code = failure instanceof Error ? failure.message : 'upload';

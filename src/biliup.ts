@@ -70,6 +70,17 @@ export interface BiliupAccount {
   name: string;
   directory: string;
 }
+export const BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE = '{$yyyyMMdd}_{$BVID}_{$ProjectName}';
+
+export interface BiliupPostUploadOptions {
+  createProjectFolder: boolean;
+  projectFolderDirectory: string;
+  projectFolderTemplate: string;
+  checkSubmission: boolean;
+  projectName?: string;
+  language?: 'zh-CN' | 'en';
+}
+
 export interface BiliupPreferences {
   directory: string;
   autoUpload: boolean;
@@ -78,6 +89,10 @@ export interface BiliupPreferences {
   selectedTemplateId: string;
   templates: BiliupTemplate[];
   tagHistory: string[];
+  createProjectFolder: boolean;
+  projectFolderDirectory: string;
+  projectFolderTemplate: string;
+  checkSubmission: boolean;
 }
 export interface BiliupCheck {
   binaryOk: boolean;
@@ -113,10 +128,12 @@ export interface BiliupUploadRequest {
   directory: string;
   template: BiliupTemplate;
   filePath: string;
+  postUpload?: BiliupPostUploadOptions;
 }
 export interface BiliupUploadPlan {
   directory: string;
   template: BiliupTemplate;
+  postUpload?: BiliupPostUploadOptions;
 }
 export interface BiliupResult<T> {
   ok: boolean;
@@ -138,7 +155,21 @@ export interface BiliupApi {
   onState: (callback: (state: BiliupState) => void) => () => void;
 }
 
-export const emptyBiliupPreferences: BiliupPreferences = { directory: '', autoUpload: false, selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [] };
+export const emptyBiliupPreferences: BiliupPreferences = {
+  directory: '', autoUpload: false, selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [],
+  createProjectFolder: false, projectFolderDirectory: '', projectFolderTemplate: BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, checkSubmission: false,
+};
+
+export function getBiliupPostUploadOptions(preferences: BiliupPreferences, projectName = '', language?: 'zh-CN' | 'en'): BiliupPostUploadOptions {
+  return {
+    createProjectFolder: preferences.createProjectFolder === true,
+    projectFolderDirectory: preferences.projectFolderDirectory,
+    projectFolderTemplate: preferences.projectFolderTemplate || BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE,
+    checkSubmission: preferences.checkSubmission === true,
+    projectName: projectName.trim().slice(0, 512) || undefined,
+    language,
+  };
+}
 export const idleBiliupState: BiliupState = {
   busy: false, kind: null, phase: 'idle', logs: [], progress: null, progressText: '', qrImage: null, captchaUrl: null, captchaStatus: '',
 };
@@ -193,12 +224,17 @@ export function normalizeBiliupPreferences(value: unknown): BiliupPreferences {
       // Migrate the removed placeholder instead of ever submitting it literally.
       normalized.title = normalized.title.replaceAll('{filename}', '').trim();
       if (normalized.copyright === 1) normalized.source = '';
+      if (normalized.copyright === 2) normalized.noReprint = false;
       if (normalized.submit !== 'app') normalized.submit = 'app';
       return normalized;
     }) : [];
   const storedTagHistory = Array.isArray(data.tagHistory) ? data.tagHistory.filter((tag): tag is string => typeof tag === 'string') : [];
   const templateTagHistory = templates.flatMap((template) => splitBiliupTags(template.tag));
   const tagHistory = mergeBiliupTags(storedTagHistory, templateTagHistory).slice(0, BILIUP_MAX_TAG_HISTORY);
+  const projectFolderDirectory = typeof data.projectFolderDirectory === 'string' ? data.projectFolderDirectory.slice(0, 4096) : '';
+  const projectFolderTemplate = typeof data.projectFolderTemplate === 'string' && data.projectFolderTemplate.trim()
+    ? data.projectFolderTemplate.slice(0, 512)
+    : BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE;
   return {
     directory: selectedAccount ? selectedAccount.directory : legacyDirectory,
     autoUpload: data.autoUpload === true,
@@ -207,5 +243,9 @@ export function normalizeBiliupPreferences(value: unknown): BiliupPreferences {
     selectedTemplateId: templates.some((t) => t.id === data.selectedTemplateId) ? data.selectedTemplateId! : '',
     templates,
     tagHistory,
+    createProjectFolder: data.createProjectFolder === true,
+    projectFolderDirectory,
+    projectFolderTemplate,
+    checkSubmission: data.checkSubmission === true,
   };
 }

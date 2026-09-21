@@ -1,4 +1,4 @@
-import { app, ipcMain, webContents, type WebContents } from 'electron';
+import { app, ipcMain, webContents, Notification, type WebContents } from 'electron';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
@@ -7,8 +7,8 @@ import path from 'node:path';
 import os from 'node:os';
 import type { IPty } from 'node-pty';
 import {
-  idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
-  type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
+  BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
+  type BiliupPostUploadOptions, type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
 import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
 
@@ -16,6 +16,8 @@ const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
 const settingsPath = path.join(os.homedir(), '.config', 'pomchat', 'biliup.json');
 const allowedErrors = new Set(['directory', 'binary', 'cookie', 'network', 'busy', 'template', 'schedule', 'unsupported', 'native', 'login', 'captcha', 'upload', 'cancelled', 'timeout', 'file', 'input', 'settings']);
+const BILIUP_SUBMISSION_CHECK_INTERVAL_MS = 30_000;
+const BILIUP_SUBMISSION_CHECK_TIMEOUT_MS = 4 * 60 * 60_000;
 const safeError = (error: unknown, fallback: string) => error instanceof Error && allowedErrors.has(error.message) ? error.message : fallback;
 const fail = (message: string): never => { throw new Error(message); };
 const debugBiliup = (...args: unknown[]) => { if (!app.isPackaged) console.info('[biliup]', ...args); };
@@ -104,6 +106,9 @@ function extractCaptchaFields(payload: string): { challenge?: string; validate?:
 interface Runtime { directory: string; binary: string; cookie: string; version: string; help: string }
 interface Job {
   cancelled: boolean;
+  postUpload?: BiliupPostUploadOptions;
+  originalFile?: string;
+  templateTitle?: string;
   pty?: IPty;
   temporary?: string;
   cookiePath?: string;
@@ -126,6 +131,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
   let active: Job | null = null;
   let checking = false;
   let saving = false;
+  const submissionChecks = new Map<string, { cancelled: boolean }>();
 
   const publish = () => {
     const contents = getContents();
@@ -133,6 +139,124 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
   };
   const update = (patch: Partial<BiliupState>) => { state = { ...state, ...patch }; publish(); };
   const checkJob = (job: Job) => { if (job.cancelled || active !== job) fail('cancelled'); };
+
+  function normalizePostUploadOptions(options: BiliupUploadRequest['postUpload'], fallbackProjectName: string): BiliupPostUploadOptions {
+    const value = options && typeof options === 'object' ? options as Partial<BiliupPostUploadOptions> : {};
+    const language = value.language === 'en' || value.language === 'zh-CN' ? value.language : undefined;
+    return {
+      createProjectFolder: value.createProjectFolder === true,
+      projectFolderDirectory: typeof value.projectFolderDirectory === 'string' ? value.projectFolderDirectory.slice(0, 4096) : '',
+      projectFolderTemplate: typeof value.projectFolderTemplate === 'string' && value.projectFolderTemplate.trim()
+        ? value.projectFolderTemplate.slice(0, 512)
+        : BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE,
+      checkSubmission: value.checkSubmission === true,
+      projectName: (typeof value.projectName === 'string' && value.projectName.trim() ? value.projectName : fallbackProjectName).slice(0, 512),
+      language,
+    };
+  }
+
+  function localizedPostUploadMessage(options: BiliupPostUploadOptions, zh: string, en: string): string {
+    return options.language === 'en' ? en : zh;
+  }
+
+  function appendUploadLog(bvid: string, message: string, publishNow = true) {
+    if (state.kind !== 'upload' || state.bvid !== bvid) return;
+    state = { ...state, logs: [...state.logs, message].slice(-300) };
+    if (publishNow) publish();
+  }
+
+  function sanitizeProjectFolderName(value: string): string {
+    const withoutControls = Array.from(value, (character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127 ? '_' : character;
+    }).join('');
+    const sanitized = withoutControls
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .replace(/[. ]+$/g, '')
+      .trim()
+      .slice(0, 180);
+    return sanitized && sanitized !== '.' && sanitized !== '..' ? sanitized : 'Bilibili';
+  }
+
+  async function createProjectFolder(options: BiliupPostUploadOptions, bvid: string, originalFile: string, title: string): Promise<string> {
+    const rawDirectory = options.projectFolderDirectory.trim().replace(/^~(?=[/\\]|$)/, os.homedir());
+    if (!rawDirectory || rawDirectory.includes('\0') || !path.isAbsolute(rawDirectory)) throw new Error('project folder directory');
+    await fs.mkdir(rawDirectory, { recursive: true });
+    const originalFilename = path.basename(originalFile);
+    const extension = path.extname(originalFilename).replace(/^\./, '');
+    const filenameStem = originalFilename.replace(/\.[^.]*$/, '') || originalFilename;
+    const projectName = options.projectName?.trim() || filenameStem;
+    const now = new Date();
+    const yyyy = String(now.getFullYear());
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const HH = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const date = `${yyyy}-${mm}-${dd}`;
+    const compactDate = `${yyyy}${mm}${dd}`;
+    const time = `${HH}-${min}-${ss}`;
+    const variables: Record<string, string> = {
+      BVID: bvid, BV: bvid, ProjectName: projectName, Title: title, Filename: originalFilename,
+      OriginalFilename: originalFilename, FileName: originalFilename, Ext: extension,
+      Unix: String(Math.floor(now.getTime() / 1000)), UnixMs: String(now.getTime()),
+      Date: date, 'yyyy-mm-dd': date, yyyyMMdd: compactDate, Time: time, 'HH-mm-ss': time,
+      yyyy, MM: mm, dd, HH, mm, ss,
+    };
+    const lowerVariables = Object.fromEntries(Object.entries(variables).map(([key, value]) => [key.toLowerCase(), value]));
+    const rawFolderName = (options.projectFolderTemplate || BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE).replace(/\{\$([^}]+)\}/g, (match, key: string) => variables[key] ?? lowerVariables[key.toLowerCase()] ?? match);
+    const folderName = sanitizeProjectFolderName(rawFolderName);
+    const folderPath = path.join(rawDirectory, folderName);
+    await fs.mkdir(folderPath, { recursive: true });
+    return folderPath;
+  }
+
+  async function isBilibiliSubmissionApproved(bvid: string): Promise<boolean> {
+    const response = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (PomChat)' },
+      redirect: 'error', signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json() as { code?: number; data?: unknown };
+    return payload.code === 0 && Boolean(payload.data);
+  }
+
+  async function monitorSubmission(bvid: string, options: BiliupPostUploadOptions) {
+    if (submissionChecks.has(bvid)) return;
+    const monitor = { cancelled: false };
+    submissionChecks.set(bvid, monitor);
+    const zh = options.language !== 'en';
+    appendUploadLog(bvid, zh ? `开始检查 ${bvid} 是否通过审核（每 30 秒检查一次，最多 4 小时）` : `Checking ${bvid} for approval (every 30 seconds, up to 4 hours)`);
+    const deadline = Date.now() + BILIUP_SUBMISSION_CHECK_TIMEOUT_MS;
+    let networkFailures = 0;
+    try {
+      while (!monitor.cancelled && Date.now() < deadline) {
+        try {
+          if (!monitor.cancelled && await isBilibiliSubmissionApproved(bvid)) {
+            appendUploadLog(bvid, localizedPostUploadMessage(options, `投稿 ${bvid} 已通过审核并可访问`, `Submission ${bvid} is approved and accessible`));
+            if (Notification.isSupported()) {
+              const notification = new Notification({
+                title: zh ? 'B 站投稿审核通过' : 'Bilibili submission approved',
+                body: zh ? `${bvid} 已通过审核` : `${bvid} has passed review`,
+              });
+              notification.show();
+            }
+            return;
+          }
+          networkFailures = 0;
+        } catch {
+          networkFailures += 1;
+          if (networkFailures === 1 || networkFailures % 5 === 0) {
+            appendUploadLog(bvid, zh ? '检查投稿状态时网络请求失败，将继续重试' : 'The submission status request failed; retrying');
+          }
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, BILIUP_SUBMISSION_CHECK_INTERVAL_MS));
+      }
+      if (!monitor.cancelled) appendUploadLog(bvid, zh ? `已停止检查 ${bvid}，在 4 小时内未确认审核通过` : `Stopped checking ${bvid}; approval was not confirmed within 4 hours`);
+    } finally {
+      if (submissionChecks.get(bvid) === monitor) submissionChecks.delete(bvid);
+    }
+  }
 
   async function runtime(directory: string): Promise<Runtime> {
     if (typeof directory !== 'string' || !directory.trim() || directory.includes('\0')) fail('directory');
@@ -311,12 +435,27 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     // Do not remove a staging file until the child has exited.
     if (job.temporary) await fs.rm(job.temporary, { recursive: true, force: true }).catch(() => {});
     if (active !== job) return;
-    active = null;
     const uploadMissingBvid = state.kind === 'upload' && !job.cancelled && !job.forcedError && exitCode === 0 && !state.bvid;
     const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : uploadMissingBvid ? 'upload' : undefined);
     const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload' && Boolean(state.bvid);
+    const bvid = state.bvid;
+    if (uploadSucceeded && bvid && job.postUpload?.createProjectFolder) {
+      try {
+        const folderPath = await createProjectFolder(job.postUpload, bvid, job.originalFile || '', job.templateTitle || '');
+        appendUploadLog(bvid, localizedPostUploadMessage(job.postUpload, `已创建项目文件夹：${folderPath}`, `Project folder created: ${folderPath}`), false);
+      } catch (folderError) {
+        const reason = folderError instanceof Error ? folderError.message : 'unknown error';
+        debugBiliup('project folder creation failed', { bvid, reason });
+        appendUploadLog(bvid, localizedPostUploadMessage(job.postUpload, '项目文件夹创建失败，上传本身不受影响', 'Could not create the project folder; the upload itself succeeded'), false);
+      }
+    }
+    if (active !== job) return;
+    active = null;
     update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
       qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: '' });
+    if (uploadSucceeded && bvid && job.postUpload?.checkSubmission) void monitorSubmission(bvid, job.postUpload).catch((monitorError) => {
+      debugBiliup('submission status monitor stopped unexpectedly', monitorError instanceof Error ? monitorError.message : 'unknown');
+    });
   }
 
   function stop(error?: string) {
@@ -579,6 +718,10 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       if (!path.isAbsolute(request.filePath) || !isBiliupVideoPath(request.filePath)) fail('file');
       const original = await fs.realpath(request.filePath);
       if (!(await fs.stat(original)).isFile() || (await fs.stat(original)).size === 0) fail('file');
+      const fallbackProjectName = path.basename(original).replace(/\.[^.]*$/, '') || path.basename(original);
+      job.originalFile = original;
+      job.templateTitle = request.template.title;
+      job.postUpload = normalizePostUploadOptions(request.postUpload, fallbackProjectName);
       let file = original;
       if (Array.from(path.basename(original)).length > 80 || path.basename(original).length > 80) {
         job.temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'pomchat-biliup-'));
@@ -691,7 +834,11 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
   }, 'input');
   handle('cancel', () => { stop(); }, 'cancelled');
   handle('state', () => state, 'input');
-  app.on('before-quit', () => stop());
+  app.on('before-quit', () => {
+    stop();
+    for (const monitor of submissionChecks.values()) monitor.cancelled = true;
+    submissionChecks.clear();
+  });
   app.on('browser-window-created', (_event, window) => {
     window.on('closed', () => stop());
   });

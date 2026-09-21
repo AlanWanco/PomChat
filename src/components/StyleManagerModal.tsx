@@ -137,6 +137,12 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'speakers' | 'presets' | 'annotations'>('speakers');
   const [localPresets, setLocalPresets] = useState<Record<string, any>>({});
+  const localSpeakersRef = useRef(localSpeakers);
+  const localPresetsRef = useRef(localPresets);
+  useLayoutEffect(() => {
+    localSpeakersRef.current = localSpeakers;
+    localPresetsRef.current = localPresets;
+  }, [localPresets, localSpeakers]);
   const [selectedPresetIds, setSelectedPresetIds] = useState<Set<string>>(new Set());
   const [editingPresetName, setEditingPresetName] = useState<string | null>(null);
   const [speakersDirty, setSpeakersDirty] = useState(false);
@@ -245,8 +251,43 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     const next = { ...localPresets, [name]: { style: JSON.parse(JSON.stringify(speaker.style || {})), avatar: speaker.avatar || '', side: speaker.side || 'left' } };
     setLocalPresets(next);
     setPresetsDirty(true);
+    // 覆盖已有预设时，也必须立即把新值传播给仍锁定该预设的说话人。
+    propagatePresetToLockedSpeakers(name, next[name]);
     setPresetSavePromptOpen(false);
     setPresetSaveDraft('');
+  };
+  const handleRenamePreset = (oldName: string, rawNewName: string) => {
+    const newName = rawNewName.trim();
+    if (!newName || newName === oldName || !localPresets[oldName]) return;
+
+    const nextPresets = { ...localPresets };
+    const preset = nextPresets[oldName];
+    delete nextPresets[oldName];
+    nextPresets[newName] = preset;
+
+    const nextSpeakers = { ...localSpeakers };
+    let speakersChanged = false;
+    Object.entries(localSpeakers).forEach(([id, speaker]) => {
+      if (speaker.preset === oldName) {
+        nextSpeakers[id] = { ...speaker, preset: newName };
+        speakersChanged = true;
+        return;
+      }
+      // 若目标名称已存在，重命名会覆盖目标预设；目标预设的锁定使用者也要同步新内容。
+      if (speaker.preset === newName && speaker.lockPreset === true) {
+        nextSpeakers[id] = applyPresetPayload(speaker, normalizePresetPayload(preset));
+        speakersChanged = true;
+      }
+    });
+
+    setLocalPresets(nextPresets);
+    setEditingPresetName(newName);
+    setSelectedPresetIds(new Set([newName]));
+    setPresetsDirty(true);
+    if (speakersChanged) {
+      setLocalSpeakers(nextSpeakers);
+      setSpeakersDirty(true);
+    }
   };
   const jumpToPreset = () => {
     const name = editingSpeaker?.preset;
@@ -262,39 +303,49 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       setToastMsg(t('preset.persistDesktopOnly') || '仅桌面端支持持久化头像');
       return;
     }
-    const entries = Object.entries(localPresets);
+    const entries = Object.entries(localPresetsRef.current).map(([name, preset]) => ({ name, preset, avatar: preset?.avatar }));
     if (entries.length === 0) {
       setToastMsg(t('preset.persistNoPresets') || '暂无预设');
       return;
     }
-    const next = { ...localPresets };
-    let changedCount = 0;
+    const persistedAvatars = new Map<string, { source: string; value: string }>();
     let failedCount = 0;
-    for (const [name, preset] of entries) {
+    for (const { name, preset, avatar } of entries) {
       if (projectIdentityRef.current !== expectedProjectIdentity) return;
-      const avatar = preset?.avatar;
       if (!avatar || !avatar.trim()) continue;
       try {
         const result = await electron.persistPresetAvatar({ value: avatar, projectFilePath: projectPath || null, preferredName: preset?.name || name });
         if (projectIdentityRef.current !== expectedProjectIdentity) return;
         if (result && result !== avatar) {
-          next[name] = { ...preset, avatar: result };
-          changedCount += 1;
+          persistedAvatars.set(name, { source: avatar, value: result });
         }
       } catch {
         failedCount += 1;
       }
     }
     if (projectIdentityRef.current !== expectedProjectIdentity) return;
+
+    const currentPresets = localPresetsRef.current;
+    const next = { ...currentPresets };
+    let changedCount = 0;
+    persistedAvatars.forEach(({ source, value }, name) => {
+      const current = currentPresets[name];
+      // 不覆盖持久化期间用户对同一预设头像做出的新编辑。
+      if (!current || current.avatar !== source) return;
+      next[name] = { ...current, avatar: value };
+      changedCount += 1;
+    });
+
     if (changedCount > 0) {
-      let nextSpeakers = localSpeakers;
+      const currentSpeakers = localSpeakersRef.current;
+      let nextSpeakers = currentSpeakers;
       let speakersChanged = false;
-      const spkNext = { ...localSpeakers };
-      Object.entries(localSpeakers).forEach(([id, spk]) => {
+      const spkNext = { ...currentSpeakers };
+      Object.entries(currentSpeakers).forEach(([id, spk]) => {
         if (spk?.lockPreset !== true || !spk?.preset) return;
         const payload = normalizePresetPayload(next[spk.preset]);
         if (!payload) return;
-        spkNext[id] = { ...spk, avatar: payload.avatar || spk.avatar, side: payload.side || spk.side, style: { ...(spk.style || {}), ...(payload.style || {}) } };
+        spkNext[id] = applyPresetPayload(spk, payload);
         speakersChanged = true;
       });
       if (speakersChanged) nextSpeakers = spkNext;
@@ -326,38 +377,52 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   };
   const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig, keepPreset?: boolean) => { setLocalSpeakers((p) => { const updated = u(p[id]); return { ...p, [id]: keepPreset ? updated : { ...updated, preset: '' } }; }); setSpeakersDirty(true); };
   const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], preset: '', style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
-  const updatePresetStyle = (name: string, k: string, v: any) => {
-    const next = { ...localPresets, [name]: { ...localPresets[name], style: { ...(localPresets[name]?.style || {}), [k]: v } } };
+  const updatePreset = (name: string, updater: (preset: any) => any) => {
+    const current = localPresets[name];
+    if (!current) return;
+    const updated = updater(current);
+    const next = { ...localPresets, [name]: updated };
     setLocalPresets(next);
     setPresetsDirty(true);
-    propagatePresetToLockedSpeakers(name, next[name]);
+    propagatePresetToLockedSpeakers(name, updated);
+  };
+  const updatePresetStyle = (name: string, k: string, v: any) => {
+    updatePreset(name, (preset) => ({
+      ...preset,
+      style: { ...(preset?.style || {}), [k]: v },
+    }));
   };
   const updatePresetField = (name: string, k: string, v: any) => {
-    const next = { ...localPresets, [name]: { ...localPresets[name], [k]: v } };
-    setLocalPresets(next);
-    setPresetsDirty(true);
-    propagatePresetToLockedSpeakers(name, next[name]);
+    updatePreset(name, (preset) => ({ ...preset, [k]: v }));
+  };
+  const swapPresetBackgroundAndText = (name: string) => {
+    updatePreset(name, (preset) => {
+      const style = preset?.style || {};
+      const bg = style.bgColor || '#2563eb';
+      const text = style.textColor || '#ffffff';
+      return {
+        ...preset,
+        style: { ...style, bgColor: text, textColor: bg },
+      };
+    });
   };
   const propagatePresetToLockedSpeakers = (name: string, preset: any) => {
     if (!name || !preset) return;
     const payload = normalizePresetPayload(preset);
-    let changed = false;
-    const spkNext = { ...localSpeakers };
-    Object.entries(localSpeakers).forEach(([id, spk]) => {
-      if (spk.preset === name && spk.lockPreset === true) {
-        spkNext[id] = {
-          ...spk,
-          avatar: payload.avatar || spk.avatar,
-          side: payload.side || spk.side,
-          style: { ...(spk.style || {}), ...(payload.style || {}) },
-        };
-        changed = true;
-      }
-    });
-    if (changed) {
-      setLocalSpeakers(spkNext);
-      setSpeakersDirty(true);
+    if (!Object.values(localSpeakers).some((speaker) => speaker.preset === name && speaker.lockPreset === true)) {
+      return;
     }
+    setLocalSpeakers((previous) => {
+      let changed = false;
+      const nextSpeakers = { ...previous };
+      Object.entries(previous).forEach(([id, speaker]) => {
+        if (speaker.preset !== name || speaker.lockPreset !== true) return;
+        nextSpeakers[id] = applyPresetPayload(speaker, payload);
+        changed = true;
+      });
+      return changed ? nextSpeakers : previous;
+    });
+    setSpeakersDirty(true);
   };
 
   const normalizePresetPayload = (preset: any) => {
@@ -369,6 +434,30 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       avatar: '',
       side: 'left'
     };
+  };
+
+  const applyPresetPayload = (speaker: SpeakerConfig, payload: any): SpeakerConfig => ({
+    ...speaker,
+    avatar: Object.prototype.hasOwnProperty.call(payload, 'avatar') ? (payload.avatar || '') : speaker.avatar,
+    side: Object.prototype.hasOwnProperty.call(payload, 'side') ? (payload.side || 'left') : (speaker.side || 'left'),
+    style: { ...(speaker.style || {}), ...(payload.style || {}) },
+  });
+
+  const toggleSpeakerPresetLock = (id: string) => {
+    updateSpeaker(id, (speaker) => {
+      const nextLocked = speaker.lockPreset !== true;
+      if (!nextLocked || !speaker.preset) {
+        return { ...speaker, lockPreset: nextLocked };
+      }
+      const preset = localPresets[speaker.preset];
+      if (!preset) {
+        return { ...speaker, lockPreset: nextLocked };
+      }
+      return {
+        ...applyPresetPayload(speaker, normalizePresetPayload(preset)),
+        lockPreset: true,
+      };
+    }, true);
   };
 
   const matchesAcceptedExtension = (path: string, extensions: string[]) => {
@@ -1070,24 +1159,24 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       <select value={editingSpeaker.preset || ''} onChange={(e) => {
                         const val = e.target.value;
                         if (val) {
-                          const presetData = normalizePresetPayload(speakerPresets?.[val]);
+                          const presetData = normalizePresetPayload(localPresets[val]);
                           if (isRelativePathLike(presetData?.avatar)) {
                             setToastMsg(t('preset.avatarRelativeWarning') || '该预设头像为相对路径，可能在其他项目失效；可在预设管理器中「持久化预设头像到 avatar 文件夹」');
                           }
                         }
                         updateSpeaker(editingSpeakerId!, (s) => {
                           if (!val) return { ...s, preset: '', lockPreset: false };
-                          const presetData = normalizePresetPayload(speakerPresets?.[val]);
+                          const presetData = normalizePresetPayload(localPresets[val]);
                           if (!presetData) return s;
-                          return { ...s, preset: val, avatar: presetData.avatar || s.avatar, side: presetData.side || s.side, style: { ...s.style, ...(presetData.style || {}) } };
+                          return { ...applyPresetPayload(s, presetData), preset: val };
                         }, true);
                       }} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}>
                         <option value="">{editingSpeaker.preset ? (t('speakers.custom') || 'Custom') : (t('speakers.applyPreset') || 'Apply preset')}</option>
-                        {speakerPresets && Object.keys(speakerPresets).map((p) => <option key={p} value={p}>{p}</option>)}
+                        {Object.keys(localPresets).map((p) => <option key={p} value={p}>{p}</option>)}
                       </select>
                       <Tooltip content={t('speakers.lockPresetHint') || '锁定预设：开启后样式只能通过预设修改，此处除名称与预设外均不可编辑'} placement="top" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                         <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none" style={{ opacity: editingSpeaker.preset ? 1 : 0.45 }}>
-                          <input type="checkbox" disabled={!editingSpeaker.preset} checked={locked} onChange={() => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, lockPreset: !(s.lockPreset === true) }), true)} className="w-3.5 h-3.5" style={{ accentColor: secondaryThemeColor }} />
+                          <input type="checkbox" disabled={!editingSpeaker.preset} checked={locked} onChange={() => toggleSpeakerPresetLock(editingSpeakerId!)} className="w-3.5 h-3.5" style={{ accentColor: secondaryThemeColor }} />
                           <span className="text-[0.625rem] whitespace-nowrap">{t('speakers.lockPreset') || '锁定预设'}</span>
                         </label>
                       </Tooltip>
@@ -1197,19 +1286,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                 <div className="p-4 space-y-3">
                 {renderSection('预设配置', 'basic', <>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
-                    <input type="text" value={editingPresetName || ''} onChange={(e) => {
-                      const newName = e.target.value;
-                      if (newName && newName !== editingPresetName) {
-                        const ordered: Record<string, any> = {};
-                        for (const [k, v] of Object.entries(localPresets)) {
-                          if (k === editingPresetName) ordered[newName] = v;
-                          else ordered[k] = v;
-                        }
-                        setLocalPresets(ordered);
-                        setEditingPresetName(newName);
-                        setPresetsDirty(true);
-                      }
-                    }} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                    <input type="text" value={editingPresetName || ''} onChange={(e) => handleRenamePreset(editingPresetName!, e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
@@ -1233,15 +1310,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                     <select value={editingPreset.side || 'left'} onChange={(e) => updatePresetField(editingPresetName!, 'side', e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}><option value="left">{t('speakers.side.left') || 'Left'}</option><option value="right">{t('speakers.side.right') || 'Right'}</option></select>
                   </div>
                 </>)}
-                {renderEditorFields(editingPreset.style, (k, v) => updatePresetStyle(editingPresetName!, k, v), () => {
-                  setLocalPresets((p) => {
-                    const s = p[editingPresetName!]?.style || {};
-                    const bg = s.bgColor || '#2563eb';
-                    const tc = s.textColor || '#ffffff';
-                    return { ...p, [editingPresetName!]: { ...p[editingPresetName!], style: { ...s, bgColor: tc, textColor: bg } } };
-                  });
-                  setPresetsDirty(true);
-                })}
+                {renderEditorFields(editingPreset.style, (k, v) => updatePresetStyle(editingPresetName!, k, v), () => swapPresetBackgroundAndText(editingPresetName!))}
               </div>
                 </div>
             ); })() : leftTab === 'annotations' ? (() => {

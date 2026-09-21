@@ -53,6 +53,8 @@ try {
   assert(!originalWithSource.includes('--source'));
   const repost = buildBiliupUploadArgs({ ...template, copyright: 2, source: 'source-name' }, file, 'cookies.json', help);
   assert.equal(repost[repost.indexOf('--source') + 1], 'source-name');
+  const repostNoReprint = buildBiliupUploadArgs({ ...template, copyright: 2, source: 'source-name', noReprint: true }, file, 'cookies.json', help);
+  assert(!repostNoReprint.includes('--no-reprint'));
   const multiline = buildBiliupUploadArgs({ ...template, desc: '第一行\r\n第二行' }, file, 'cookies.json', help);
   assert.equal(multiline[multiline.indexOf('--desc') + 1], '第一行\n第二行');
   const extended = buildBiliupUploadArgs({ ...template, interactive: 1, missionId: '123', isOnlySelf: '1', chargingPay: true, upSelectionReply: true }, file, 'cookies.json', `${help} --interactive --mission-id --is-only-self --charging-pay --up-selection-reply`);
@@ -65,7 +67,10 @@ try {
   assert.equal(validateBiliupSchedule(String(now + BILIUP_SCHEDULE_MIN_LEAD_SECONDS - 1), now), 'schedule');
   assert.equal(validateBiliupSchedule(String(now + BILIUP_SCHEDULE_MAX_AHEAD_SECONDS + 1), now), 'schedule');
   assert.throws(() => buildBiliupUploadArgs({ ...template, dtime: '1000000000' }, file, 'cookies.json', help), /schedule/);
-  assert.deepEqual(normalizeBiliupPreferences(null), { directory: '', autoUpload: false, selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [] });
+  assert.deepEqual(normalizeBiliupPreferences(null), {
+    directory: '', autoUpload: false, selectedAccountId: '', accounts: [], selectedTemplateId: '', templates: [], tagHistory: [],
+    createProjectFolder: false, projectFolderDirectory: '', projectFolderTemplate: '{$yyyyMMdd}_{$BVID}_{$ProjectName}', checkSubmission: false,
+  });
   const normalized = normalizeBiliupPreferences({ directory: '/app', autoUpload: true, selectedTemplateId: 'one', templates: [{ ...template, secret: 'not-a-setting' }] });
   assert.equal(normalized.autoUpload, true);
   assert.equal(normalized.templates.length, 1);
@@ -73,6 +78,8 @@ try {
   assert.deepEqual(normalized.accounts, [{ id: 'default', name: 'Default account', directory: '/app' }]);
   assert.equal(normalized.selectedAccountId, 'default');
   assert.deepEqual(normalized.tagHistory, ['one', 'two']);
+  assert.equal(normalized.projectFolderTemplate, '{$yyyyMMdd}_{$BVID}_{$ProjectName}');
+  assert.equal(normalized.checkSubmission, false);
   console.log('biliup tests passed: byte progress, ANSI, redaction, args, title limits, tags, validation, preferences, accounts');
 } finally {
   rmSync(temporary, { recursive: true, force: true });

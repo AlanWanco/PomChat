@@ -729,6 +729,13 @@ export function SettingsPanel({
     side: speaker.side || 'left'
   });
 
+  const applyPresetPayload = (speaker: any, presetData: any) => ({
+    ...speaker,
+    avatar: Object.prototype.hasOwnProperty.call(presetData, 'avatar') ? (presetData.avatar || '') : speaker.avatar,
+    side: Object.prototype.hasOwnProperty.call(presetData, 'side') ? (presetData.side || 'left') : (speaker.side || 'left'),
+    style: { ...(speaker.style || {}), ...(presetData?.style || {}) },
+  });
+
   const isRelativePathLike = (value?: string) => {
     const trimmed = (value || '').trim();
     if (!trimmed) return false;
@@ -2447,10 +2454,10 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.start ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Math.max(0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                               <button type="button" onClick={() => onSeek?.(currentBackgroundSlide.start ?? 0)} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.jumpToTime')}>
-                                <SkipForward size={12} style={{ transform: 'scaleX(-1)' }} />
+                                <Clock3 size={12} />
                               </button>
                               <button type="button" onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, start: Number(currentTime.toFixed(2)) }))} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.useCurrentTime')}>
-                                <Clock3 size={12} />
+                                <SkipForward size={12} style={{ color: secondaryThemeColor, transform: 'scaleX(-1)' }} />
                               </button>
                             </div>
                           </div>
@@ -2461,10 +2468,10 @@ export function SettingsPanel({
                                 {renderNumberInput(currentBackgroundSlide.end ?? 3, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, end: Math.max(slide.start ?? 0, Number(value.toFixed(2))) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                               </div>
                               <button type="button" onClick={() => onSeek?.(currentBackgroundSlide.end ?? 0)} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.jumpToTime')}>
-                                <SkipForward size={12} />
+                                <Clock3 size={12} />
                               </button>
                               <button type="button" onClick={() => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, end: Math.max(slide.start ?? 0, Number(currentTime.toFixed(2))) }))} className="px-2 border rounded-md text-xs shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }} title={t('project.useCurrentTime')}>
-                                <Clock3 size={12} />
+                                <SkipForward size={12} style={{ color: secondaryThemeColor }} />
                               </button>
                             </div>
                           </div>
@@ -2856,22 +2863,10 @@ export function SettingsPanel({
                               const val = e.target.value;
                               if (val) warnRelativePresetAvatar(normalizePresetPayload(presets[val]));
                               updateSpeaker(key, (currentSpeaker) => {
-                                const nextSpeaker = { ...currentSpeaker, style: { ...(currentSpeaker.style || {}) } };
-                                if (val) {
-                                  const presetData = normalizePresetPayload(presets[val]);
-                                  if (presetData?.style) {
-                                    nextSpeaker.style = { ...nextSpeaker.style, ...presetData.style };
-                                  }
-                                  if (presetData?.avatar) {
-                                    nextSpeaker.avatar = presetData.avatar;
-                                  }
-                                  if (presetData?.side) {
-                                    nextSpeaker.side = presetData.side;
-                                  }
-                                }
-                                nextSpeaker.preset = val;
-                                if (!val) nextSpeaker.lockPreset = false;
-                                return nextSpeaker;
+                                if (!val) return { ...currentSpeaker, preset: '', lockPreset: false };
+                                const presetData = normalizePresetPayload(presets[val]);
+                                if (!presetData) return currentSpeaker;
+                                return { ...applyPresetPayload(currentSpeaker, presetData), preset: val };
                               }, { preservePreset: true });
                             }}
                             className={`flex-1 border rounded px-1 py-1 text-xs focus:outline-none w-full ${inputClass}`}
@@ -2888,7 +2883,20 @@ export function SettingsPanel({
                                 type="checkbox"
                                 disabled={!speaker.preset}
                                 checked={speaker.lockPreset === true}
-                                onChange={() => updateSpeaker(key, (currentSpeaker) => ({ ...currentSpeaker, lockPreset: !(currentSpeaker.lockPreset === true) }), { preservePreset: true })}
+                                onChange={() => updateSpeaker(key, (currentSpeaker) => {
+                                  const nextLocked = currentSpeaker.lockPreset !== true;
+                                  if (!nextLocked || !currentSpeaker.preset) {
+                                    return { ...currentSpeaker, lockPreset: nextLocked };
+                                  }
+                                  const presetData = normalizePresetPayload(presets[currentSpeaker.preset]);
+                                  if (!presetData) {
+                                    return { ...currentSpeaker, lockPreset: nextLocked };
+                                  }
+                                  return {
+                                    ...applyPresetPayload(currentSpeaker, presetData),
+                                    lockPreset: true,
+                                  };
+                                }, { preservePreset: true })}
                                 className="w-3.5 h-3.5"
                                 style={{ accentColor: secondaryThemeColor }}
                               />

@@ -57,7 +57,7 @@ export function buildBiliupUploadArgs(template: BiliupTemplate, filename: string
     ['--desc', template.desc.replace(/\r\n?/g, '\n')], ['--dynamic', template.dynamic],
     ['--cover', template.cover], ['--dtime', template.dtime], ['--line', template.line], ['--submit', template.submit],
   ]) if (value) add(flag, value);
-  for (const [flag, enabled] of [['--no-reprint', template.noReprint], ['--dolby', template.dolby], ['--hires', template.hires], ['--charging-pay', template.chargingPay], ['--up-selection-reply', template.upSelectionReply]] as const) {
+  for (const [flag, enabled] of [['--no-reprint', template.copyright === 1 && template.noReprint], ['--dolby', template.dolby], ['--hires', template.hires], ['--charging-pay', template.chargingPay], ['--up-selection-reply', template.upSelectionReply]] as const) {
     if (enabled) add(flag, 1);
   }
   if (template.interactive) add('--interactive', template.interactive);

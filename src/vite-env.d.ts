@@ -27,6 +27,7 @@ interface Window {
     showOpenDialog: (options: any) => Promise<any>;
     getRenderCacheInfo: () => Promise<{
       remoteAssets: { path: string; files: number; bytes: number };
+      presetAvatars?: { path: string; files: number; bytes: number };
       remotionTemp: { path: string; entries: string[]; files: number; bytes: number };
     }>;
     clearRenderCache: (type: 'remote-assets' | 'remotion-temp') => Promise<{ cleared: boolean; type: string; targets?: string[] }>;

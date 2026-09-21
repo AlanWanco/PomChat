@@ -93,8 +93,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const [bulkSpeakerId, setBulkSpeakerId] = useState('');
   const [showSelectionSpeakerPicker, setShowSelectionSpeakerPicker] = useState(false);
   const [showBulkSpeakerPicker, setShowBulkSpeakerPicker] = useState(false);
-  const [pendingBulkAction, setPendingBulkAction] = useState<null | { type: 'delete' } | { type: 'speaker'; speakerId: string } | { type: 'visibility'; visible: boolean }>(null);
-  const [contextMenu, setContextMenu] = useState<{ subtitle: SubtitleItem; x: number; y: number } | null>(null);
+  const [bulkSpeakerModalIds, setBulkSpeakerModalIds] = useState<string[] | null>(null);
+  const [pendingBulkAction, setPendingBulkAction] = useState<
+    | null
+    | { type: 'delete'; ids: string[] }
+    | { type: 'speaker'; speakerId: string; ids: string[] }
+    | { type: 'visibility'; visible: boolean; ids: string[] }
+  >(null);
+  const [contextMenu, setContextMenu] = useState<{ subtitle: SubtitleItem; x: number; y: number; selectedIds: string[] } | null>(null);
   const [editModalSubtitleId, setEditModalSubtitleId] = useState<string | null>(null);
   const [speakerModalSubtitleId, setSpeakerModalSubtitleId] = useState<string | null>(null);
   const [modalEditForm, setModalEditForm] = useState<{ start: string; end: string; text: string; visible: boolean; clearBubblesBefore: boolean }>({ start: '', end: '', text: '', visible: true, clearBubblesBefore: false });
@@ -110,9 +116,13 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     () => new Map(subtitles.map((subtitle, index) => [subtitle.id, index + 1])),
     [subtitles]
   );
-  const selectedSubtitles = useMemo(
-    () => subtitles.filter((sub) => selectedSubtitleIdSet.has(sub.id)),
-    [selectedSubtitleIdSet, subtitles]
+  const pendingSelectedSubtitleIds = useMemo(
+    () => pendingBulkAction?.ids.filter((id) => subtitles.some((sub) => sub.id === id)) ?? [],
+    [pendingBulkAction, subtitles]
+  );
+  const pendingSelectedSubtitles = useMemo(
+    () => subtitles.filter((sub) => pendingSelectedSubtitleIds.includes(sub.id)),
+    [pendingSelectedSubtitleIds, subtitles]
   );
   const pendingSpeakerName = pendingBulkAction?.type === 'speaker'
     ? (speakers[pendingBulkAction.speakerId]?.name || pendingBulkAction.speakerId)
@@ -133,6 +143,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     setSelectedSubtitleIds([]);
     setLastSelectedSubtitleId(null);
     setPendingBulkAction(null);
+    setBulkSpeakerModalIds(null);
     setShowSelectionSpeakerPicker(false);
     setShowBulkSpeakerPicker(false);
   }, []);
@@ -296,37 +307,27 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const handleApplyBulkSpeaker = () => {
     if (validSelectedSubtitleIds.length === 0 || !effectiveBulkSpeakerId) return;
-    setPendingBulkAction({ type: 'speaker', speakerId: effectiveBulkSpeakerId });
+    setPendingBulkAction({ type: 'speaker', speakerId: effectiveBulkSpeakerId, ids: validSelectedSubtitleIds });
     setShowBulkSpeakerPicker(false);
   };
 
-  const handleBulkVisibility = (visible: boolean) => {
-    if (validSelectedSubtitleIds.length === 0) return;
-    setPendingBulkAction({ type: 'visibility', visible });
-  };
-
-  const handleBulkDelete = () => {
-    if (validSelectedSubtitleIds.length === 0) return;
-    setPendingBulkAction({ type: 'delete' });
-  };
-
-  const handleCreateBubbleSnapshot = () => {
-    if (validSelectedSubtitleIds.length === 0) return;
-    if (validSelectedSubtitleIds.length > 100) {
+  const handleCreateBubbleSnapshot = (ids = validSelectedSubtitleIds) => {
+    if (ids.length === 0) return;
+    if (ids.length > 100) {
       showToast?.(t('subtitle.bubbleSnapshotLimit', { count: 100 }));
       return;
     }
-    void onCreateBubbleSnapshot?.(validSelectedSubtitleIds);
+    void onCreateBubbleSnapshot?.(ids);
   };
 
   const confirmBulkAction = () => {
-    if (!pendingBulkAction || validSelectedSubtitleIds.length === 0) return;
+    if (!pendingBulkAction || pendingSelectedSubtitleIds.length === 0) return;
     if (pendingBulkAction.type === 'delete') {
-      void onBulkDeleteSubtitles(validSelectedSubtitleIds);
+      void onBulkDeleteSubtitles(pendingSelectedSubtitleIds);
     } else if (pendingBulkAction.type === 'speaker') {
-      void onBulkUpdateSpeaker(validSelectedSubtitleIds, pendingBulkAction.speakerId);
+      void onBulkUpdateSpeaker(pendingSelectedSubtitleIds, pendingBulkAction.speakerId);
     } else {
-      void onBulkUpdateVisibility(validSelectedSubtitleIds, pendingBulkAction.visible);
+      void onBulkUpdateVisibility(pendingSelectedSubtitleIds, pendingBulkAction.visible);
     }
     resetMultiSelectState();
   };
@@ -345,6 +346,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const focusSubtitle = (sub: SubtitleItem) => {
     setFocusedSubtitleId(sub.id);
+    setLastSelectedSubtitleId(sub.id);
     onSeek(sub.start);
   };
 
@@ -375,10 +377,31 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     onUpdateSubtitle(sub.id, { clearBubblesBefore: sub.clearBubblesBefore !== true });
   };
 
+  const handleSubtitleListClick = (sub: SubtitleItem, event: React.MouseEvent, isInlineEditing = false) => {
+    if (isInlineEditing) return;
+    const hasSelectionModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+    if (multiSelectMode || hasSelectionModifier) {
+      if (!multiSelectMode) {
+        setMultiSelectMode(true);
+      }
+      toggleSelectedSubtitle(sub.id, event.shiftKey);
+      return;
+    }
+    focusSubtitle(sub);
+  };
+
   const openSubtitleContextMenu = (sub: SubtitleItem, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    setContextMenu({ subtitle: sub, x: event.clientX, y: event.clientY });
+    const selectedIds = selectedSubtitleIdSet.has(sub.id) ? validSelectedSubtitleIds : [];
+    setContextMenu({ subtitle: sub, x: event.clientX, y: event.clientY, selectedIds });
+  };
+
+  const openBulkSpeakerModal = (ids = validSelectedSubtitleIds) => {
+    if (ids.length === 0 || bulkSpeakerOptions.length === 0) return;
+    setContextMenu(null);
+    setShowBulkSpeakerPicker(false);
+    setBulkSpeakerModalIds(ids);
   };
 
   const openEditModal = (sub: SubtitleItem) => {
@@ -629,6 +652,58 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [editingSub, inlineEditingId, setEditingSub]);
 
+  const contextMenuItems = contextMenu
+    ? contextMenu.selectedIds.length > 0
+      ? [
+          {
+            key: 'bulk-delete',
+            label: t('subtitle.contextBulkDelete', { count: contextMenu.selectedIds.length }),
+            action: () => {
+              setContextMenu(null);
+              setPendingBulkAction({ type: 'delete', ids: contextMenu.selectedIds });
+            },
+          },
+          {
+            key: 'bulk-show',
+            label: t('subtitle.contextBulkShow', { count: contextMenu.selectedIds.length }),
+            action: () => {
+              setContextMenu(null);
+              setPendingBulkAction({ type: 'visibility', visible: true, ids: contextMenu.selectedIds });
+            },
+          },
+          {
+            key: 'bulk-hide',
+            label: t('subtitle.contextBulkHide', { count: contextMenu.selectedIds.length }),
+            action: () => {
+              setContextMenu(null);
+              setPendingBulkAction({ type: 'visibility', visible: false, ids: contextMenu.selectedIds });
+            },
+          },
+          {
+            key: 'bulk-speaker',
+            label: t('subtitle.contextBulkChangeSpeaker', { count: contextMenu.selectedIds.length }),
+            action: () => openBulkSpeakerModal(contextMenu.selectedIds),
+          },
+          {
+            key: 'bulk-snapshot',
+            label: t('subtitle.contextBulkSnapshot', { count: contextMenu.selectedIds.length }),
+            action: () => {
+              setContextMenu(null);
+              handleCreateBubbleSnapshot(contextMenu.selectedIds);
+            },
+          },
+        ]
+      : [
+          { key: 'duplicate', label: t('subtitle.contextDuplicate'), action: () => handleDuplicateSubtitle(contextMenu.subtitle) },
+          { key: 'delete', label: t('subtitle.contextDelete'), action: () => handleDeleteOne(contextMenu.subtitle) },
+          { key: 'edit', label: t('subtitle.contextEdit'), action: () => openEditModal(contextMenu.subtitle) },
+          { key: 'copy-text', label: t('subtitle.contextCopyText'), action: () => { void handleCopySubtitleText(contextMenu.subtitle); } },
+          { key: 'speaker', label: t('subtitle.contextChangeSpeaker'), action: () => openSpeakerModal(contextMenu.subtitle) },
+          { key: 'clear-bubbles', label: contextMenu.subtitle.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore'), action: () => { toggleClearBubblesBefore(contextMenu.subtitle); setContextMenu(null); } },
+          { key: 'duration', label: t('subtitle.contextAdjustDuration'), action: () => openDurationModal(contextMenu.subtitle) },
+        ]
+    : [];
+
   return (
     <div className="h-full flex flex-col overflow-hidden relative" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.textMuted }}>
       <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
@@ -731,33 +806,6 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </div>
           <button
             type="button"
-            disabled={validSelectedSubtitleIds.length === 0}
-            onClick={handleBulkDelete}
-            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
-            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-          >
-            {t('subtitle.bulkDelete')}
-          </button>
-          <button
-            type="button"
-            disabled={validSelectedSubtitleIds.length === 0}
-            onClick={() => handleBulkVisibility(true)}
-            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
-            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-          >
-            {t('subtitle.bulkShow')}
-          </button>
-          <button
-            type="button"
-            disabled={validSelectedSubtitleIds.length === 0}
-            onClick={() => handleBulkVisibility(false)}
-            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
-            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-          >
-            {t('subtitle.bulkHide')}
-          </button>
-          <button
-            type="button"
             disabled={subtitleSpeakerOptions.length === 0}
             onClick={() => {
               setShowSelectionSpeakerPicker((prev) => !prev);
@@ -779,15 +827,6 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
           >
             {t('subtitle.bulkChangeSpeaker')}
-          </button>
-          <button
-            type="button"
-            disabled={validSelectedSubtitleIds.length === 0}
-            onClick={handleCreateBubbleSnapshot}
-            className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
-            style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-          >
-            {t('subtitle.bubbleSnapshot')}
           </button>
           {showSelectionSpeakerPicker ? (
             <>
@@ -861,7 +900,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                         key={`compact-${sub.id}`}
                         role="button"
                         tabIndex={0}
-                        onClick={(event) => multiSelectMode ? toggleSelectedSubtitle(sub.id, event.shiftKey) : focusSubtitle(sub)}
+                        onClick={(event) => handleSubtitleListClick(sub, event)}
                         onContextMenu={(event) => openSubtitleContextMenu(sub, event)}
                         onKeyDown={(event) => {
                           if (event.key !== 'Enter' && event.key !== ' ') {
@@ -955,14 +994,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 key={sub.id}
                 id={`sub-${sub.id}`}
                 onContextMenu={(e) => openSubtitleContextMenu(sub, e)}
-                onClick={(e) => {
-                  if (isInlineEditing) return;
-                  if (multiSelectMode) {
-                    toggleSelectedSubtitle(sub.id, e.shiftKey);
-                    return;
-                  }
-                  focusSubtitle(sub);
-                }}
+                onClick={(e) => handleSubtitleListClick(sub, e, isInlineEditing)}
                 onDoubleClick={(e) => {
                   if (!isInlineEditing && !multiSelectMode) startInlineEdit(sub, e);
                 }}
@@ -1208,17 +1240,17 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             <div className="px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
 	              <div className="text-sm font-semibold">
 	                {pendingBulkAction.type === 'delete'
-	                  ? t('subtitle.bulkDeleteConfirmTitle', { count: validSelectedSubtitleIds.length })
+	                  ? t('subtitle.bulkDeleteConfirmTitle', { count: pendingSelectedSubtitleIds.length })
 	                  : pendingBulkAction.type === 'speaker'
-	                    ? t('subtitle.bulkSpeakerConfirmTitle', { count: validSelectedSubtitleIds.length, speaker: pendingSpeakerName })
-	                    : (pendingBulkAction.visible ? t('subtitle.bulkShowConfirmTitle', { count: validSelectedSubtitleIds.length }) : t('subtitle.bulkHideConfirmTitle', { count: validSelectedSubtitleIds.length }))}
+	                    ? t('subtitle.bulkSpeakerConfirmTitle', { count: pendingSelectedSubtitleIds.length, speaker: pendingSpeakerName })
+	                    : (pendingBulkAction.visible ? t('subtitle.bulkShowConfirmTitle', { count: pendingSelectedSubtitleIds.length }) : t('subtitle.bulkHideConfirmTitle', { count: pendingSelectedSubtitleIds.length }))}
 	              </div>
               <div className="mt-1 text-xs" style={{ color: uiTheme.textMuted }}>
                 {pendingBulkAction.type === 'delete' ? t('subtitle.bulkDeleteConfirmDesc') : pendingBulkAction.type === 'speaker' ? t('subtitle.bulkSpeakerConfirmDesc') : t('subtitle.bulkVisibilityConfirmDesc')}
               </div>
             </div>
             <div className="max-h-56 overflow-y-auto custom-scrollbar p-3 space-y-2" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
-              {selectedSubtitles.map((sub) => (
+              {pendingSelectedSubtitles.map((sub) => (
                 <div key={`bulk-preview-${sub.id}`} className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
                   <div className="flex items-center gap-2 mb-1" style={{ color: uiTheme.textMuted }}>
                     <span className="font-mono">{formatTime(sub.start)} - {formatTime(sub.end)}</span>
@@ -1260,21 +1292,58 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           </div>
         </div>
       )}
+      {bulkSpeakerModalIds ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
+            <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
+              <div>
+                <h3 className="text-xl font-semibold">{t('subtitle.contextBulkChangeSpeaker', { count: bulkSpeakerModalIds.length })}</h3>
+                <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{t('subtitle.contextBulkChangeSpeakerHint')}</p>
+              </div>
+              <button type="button" onClick={() => setBulkSpeakerModalIds(null)} className="rounded-full p-2" style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08) }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-6">
+              <div className="rounded-2xl border p-3 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
+                {t('subtitle.contextBulkSelectionHint', { count: bulkSpeakerModalIds.length })}
+              </div>
+              <SpeakerPicker
+                options={bulkSpeakerOptions}
+                value={effectiveBulkSpeakerId}
+                onChange={setBulkSpeakerId}
+                accentColor={themeColor}
+                theme={uiTheme}
+                ariaLabel={t('subtitle.bulkChangeSpeaker')}
+                buttonClassName="w-full rounded-xl px-3 py-2 text-sm outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
+              <button type="button" onClick={() => setBulkSpeakerModalIds(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
+              <button
+                type="button"
+                disabled={!effectiveBulkSpeakerId}
+                onClick={() => {
+                  if (!bulkSpeakerModalIds || !effectiveBulkSpeakerId) return;
+                  setPendingBulkAction({ type: 'speaker', speakerId: effectiveBulkSpeakerId, ids: bulkSpeakerModalIds });
+                  setBulkSpeakerModalIds(null);
+                }}
+                className="rounded-xl px-4 py-2 text-sm text-white disabled:opacity-40"
+                style={{ backgroundColor: secondaryThemeColor }}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {contextMenu && typeof document !== 'undefined' ? createPortal(
         <div
           className="fixed z-[1200] min-w-[12rem] overflow-hidden rounded-2xl border shadow-2xl"
-          style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260), backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
+          style={{ left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - (contextMenu.selectedIds.length > 0 ? 330 : 260))), backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
           onClick={(event) => event.stopPropagation()}
         >
-          {[
-            { key: 'duplicate', label: t('subtitle.contextDuplicate'), action: () => handleDuplicateSubtitle(contextMenu.subtitle) },
-            { key: 'delete', label: t('subtitle.contextDelete'), action: () => handleDeleteOne(contextMenu.subtitle) },
-            { key: 'edit', label: t('subtitle.contextEdit'), action: () => openEditModal(contextMenu.subtitle) },
-            { key: 'copy-text', label: t('subtitle.contextCopyText'), action: () => { void handleCopySubtitleText(contextMenu.subtitle); } },
-            { key: 'speaker', label: t('subtitle.contextChangeSpeaker'), action: () => openSpeakerModal(contextMenu.subtitle) },
-            { key: 'clear-bubbles', label: contextMenu.subtitle.clearBubblesBefore ? t('subtitle.clearBubblesBeforeActive') : t('subtitle.clearBubblesBefore'), action: () => { toggleClearBubblesBefore(contextMenu.subtitle); setContextMenu(null); } },
-            { key: 'duration', label: t('subtitle.contextAdjustDuration'), action: () => openDurationModal(contextMenu.subtitle) },
-          ].map((item, index) => (
+          {contextMenuItems.map((item, index) => (
             <button
               key={item.key}
               type="button"

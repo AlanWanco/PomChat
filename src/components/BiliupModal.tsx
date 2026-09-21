@@ -294,6 +294,77 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
   </div>;
 }
 
+export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, secondaryThemeColor }: Appearance) {
+  const biliup = useBiliup();
+  const t = (key: string) => translate(language, key);
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const accentStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
+  const [directoryDraft, setDirectoryDraft] = useState<{ base: string; value: string } | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<{ base: string; value: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const projectFolderDirectory = directoryDraft?.base === biliup.preferences.projectFolderDirectory ? directoryDraft.value : biliup.preferences.projectFolderDirectory;
+  const projectFolderTemplate = templateDraft?.base === biliup.preferences.projectFolderTemplate ? templateDraft.value : biliup.preferences.projectFolderTemplate;
+  const disabled = !window.electron || !biliup.loaded || biliup.state.busy || saving;
+  const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' };
+  const inputClass = 'w-full border rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50';
+  const savePreferences = (patch: Partial<typeof biliup.preferences>) => {
+    setSaving(true);
+    void biliup.save({
+      ...biliup.preferences,
+      projectFolderDirectory,
+      projectFolderTemplate,
+      ...patch,
+    }).catch((error: Error) => biliup.setError(error.message)).finally(() => setSaving(false));
+  };
+  const saveDirectory = () => {
+    if (projectFolderDirectory !== biliup.preferences.projectFolderDirectory) savePreferences({});
+  };
+  const saveTemplate = () => {
+    if (projectFolderTemplate !== biliup.preferences.projectFolderTemplate) savePreferences({});
+  };
+  const chooseProjectFolderDirectory = () => void (async () => {
+    if (disabled) return;
+    try {
+      const result = await window.electron.showOpenDialog({ title: t('biliup.chooseProjectFolderDirectory'), properties: ['openDirectory', 'createDirectory'] });
+      if (!result.canceled && result.filePaths?.[0]) {
+        setDirectoryDraft(null);
+        savePreferences({ projectFolderDirectory: result.filePaths[0] });
+      }
+    } catch (error) {
+      biliup.setError(error instanceof Error ? error.message : 'settings');
+    }
+  })();
+  return <section className="space-y-3 rounded-2xl border p-3 text-sm" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, color: theme.text }}>
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h3 className="font-medium">{t('biliup.postUploadTitle')}</h3>
+        <p className="mt-1 text-xs opacity-70">{t('biliup.postUploadHint')}</p>
+      </div>
+      {saving && <span className="shrink-0 text-xs opacity-60">{t('global.resourceActionRunning')}</span>}
+    </div>
+    <label className="flex items-start gap-2 text-xs">
+      <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" style={{ accentColor: secondaryThemeColor }} checked={biliup.preferences.createProjectFolder} disabled={disabled} onChange={(event) => savePreferences({ createProjectFolder: event.target.checked })} />
+      <span><span className="font-medium">{t('biliup.createProjectFolder')}</span><span className="mt-0.5 block opacity-70">{t('biliup.createProjectFolderHint')}</span></span>
+    </label>
+    {biliup.preferences.createProjectFolder && <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.border, backgroundColor: theme.panelBgSubtle }}>
+      <label className="block space-y-1 text-xs"><span>{t('biliup.projectFolderDirectory')}</span>
+        <div className="flex min-w-0 gap-2">
+          <input aria-label={t('biliup.projectFolderDirectory')} className={`${inputClass} min-w-0 flex-1`} style={surface} value={projectFolderDirectory} disabled={disabled} onChange={(event) => setDirectoryDraft({ base: biliup.preferences.projectFolderDirectory, value: event.target.value })} onBlur={saveDirectory} />
+          <button type="button" className="inline-flex shrink-0 items-center gap-1.5 rounded border px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={disabled} onClick={chooseProjectFolderDirectory}><FolderOpen size={12} />{t('biliup.chooseProjectFolderDirectory')}</button>
+        </div>
+      </label>
+      <label className="block space-y-1 text-xs"><span>{t('biliup.projectFolderTemplate')}</span>
+        <input aria-label={t('biliup.projectFolderTemplate')} className={inputClass} style={surface} value={projectFolderTemplate} disabled={disabled} placeholder={t('biliup.projectFolderTemplatePlaceholder')} onChange={(event) => setTemplateDraft({ base: biliup.preferences.projectFolderTemplate, value: event.target.value })} onBlur={saveTemplate} />
+      </label>
+      <p className="text-[0.6875rem] leading-5 opacity-70">{t('biliup.projectFolderVariables')}</p>
+    </div>}
+    <label className="flex items-start gap-2 text-xs">
+      <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" style={{ accentColor: secondaryThemeColor }} checked={biliup.preferences.checkSubmission} disabled={disabled} onChange={(event) => savePreferences({ checkSubmission: event.target.checked })} />
+      <span><span className="font-medium">{t('biliup.checkSubmission')}</span><span className="mt-0.5 block opacity-70">{t('biliup.checkSubmissionHint')}</span></span>
+    </label>
+  </section>;
+}
+
 export function BiliupExportControls({ language, isDarkMode, themeColor, secondaryThemeColor, isExporting, exportFormat }: { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string; isExporting: boolean; exportFormat: string }) {
   const biliup = useBiliup();
   const t = (key: string) => translate(language, key);
@@ -678,7 +749,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <div className="space-y-1 text-xs"><span className="block">{t('biliup.field.copyright')}</span>
             <div className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }} role="group" aria-label={t('biliup.field.copyright')}>
               <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-md transition-transform duration-200 ease-out" style={{ backgroundColor: secondaryThemeColor, boxShadow: `0 4px 12px ${secondaryThemeColor}44`, transform: draft.copyright === 2 ? 'translateX(100%)' : 'translateX(0)' }} />
-              {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={templateBusy} onClick={() => { set('copyright', value); if (value === 1) set('source', ''); }}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
+              {([1, 2] as const).map((value) => <button key={value} type="button" aria-pressed={draft.copyright === value} className="relative z-10 flex-1 rounded-md px-3 py-2 transition-colors duration-200 focus:outline-none focus:ring-0" style={draft.copyright === value ? { color: '#ffffff' } : { color: theme.textMuted }} disabled={templateBusy} onClick={() => { set('copyright', value); if (value === 1) set('source', ''); else set('noReprint', false); }}>{value === 1 ? t('biliup.original') : t('biliup.repost')}</button>)}
             </div>
           </div>
           <label className="space-y-1 text-xs"><span>{t('biliup.field.source')}</span><input className={singleLineInputClass} style={{ ...surface, opacity: draft.copyright === 2 ? 1 : 0.5 }} disabled={templateBusy || draft.copyright !== 2} value={draft.source} onChange={(event) => set('source', event.target.value)} /></label>
@@ -699,8 +770,11 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <option value="app">app</option></select></label>
       </div>
       <label className="block text-xs space-y-1"><span>{t('biliup.field.desc')}</span><textarea rows={3} className={`${inputClass} my-[3px]`} style={surface} disabled={templateBusy} value={draft.desc} onChange={(event) => set('desc', event.target.value)} /></label>
-      <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => <label key={key} className="flex gap-1 items-center">
-        <input type="checkbox" disabled={templateBusy} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>)}</div>
+      <div className="flex flex-wrap gap-3 text-xs">{(['noReprint', 'dolby', 'hires', 'chargingPay', 'upSelectionReply', 'closeReply', 'closeDanmu'] as const).map((key) => {
+        const noReprintDisabled = key === 'noReprint' && draft.copyright === 2;
+        return <label key={key} className={`flex gap-1 items-center ${noReprintDisabled ? 'opacity-50' : ''}`}>
+          <input type="checkbox" disabled={templateBusy || noReprintDisabled} checked={draft[key]} onChange={(event) => set(key, event.target.checked)} />{t(`biliup.field.${key}`)}</label>;
+      })}</div>
       <p className="text-xs opacity-70">{t('biliup.templateHint')}</p>
       <div className="space-y-3">
         <div className="space-y-2">
@@ -735,6 +809,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
           <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{state.progress === null ? t('biliup.waitProgress') : <>{state.progress.toFixed(1)}%{state.progressText && <span className="ml-2 opacity-80">{state.progressText}</span>}</>}</p>
         </>}
         <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 select-text overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{state.logs.join('\n') || t('biliup.consoleHint')}</pre>
+        <BiliupPostUploadSettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
         {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}
         {state.bvid && <p className="text-sm select-text">{[state.bvid, activeUploadTitle || savedTemplate?.title].filter(Boolean).join(' · ')}</p>}
         <button className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={!state.busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>

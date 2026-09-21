@@ -1642,8 +1642,10 @@ ipcMain.handle('get-export-paths', async (_event, options) => {
 ipcMain.handle('get-render-cache-info', async () => {
   const remoteAssetsDir = getRemoteAssetCacheDir();
   const avatarGifDir = getAvatarGifTranscodeDir();
+  const presetAvatarDir = getPresetAvatarDir();
   const remoteStats = getPathSizeStats(remoteAssetsDir);
   const avatarGifStats = getPathSizeStats(avatarGifDir);
+  const presetAvatarStats = getPathSizeStats(presetAvatarDir);
 
   const remotionEntries = getPomchatRemotionTempEntries();
   const remotionStats = remotionEntries.reduce((acc, entryPath) => {
@@ -1659,6 +1661,11 @@ ipcMain.handle('get-render-cache-info', async () => {
       path: remoteAssetsDir,
       files: remoteStats.files + avatarGifStats.files,
       bytes: remoteStats.bytes + avatarGifStats.bytes,
+    },
+    presetAvatars: {
+      path: presetAvatarDir,
+      files: presetAvatarStats.files,
+      bytes: presetAvatarStats.bytes,
     },
     remotionTemp: {
       path: os.tmpdir(),
