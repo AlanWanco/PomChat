@@ -259,7 +259,7 @@ export function ExportModal({
   const [endInput, setEndInput] = useState(formatTime(rangeEnd));
   const [localCustomFilename, setLocalCustomFilename] = useState(customFilename);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [previewNow, setPreviewNow] = useState(() => new Date());
+  const [previewNow] = useState(() => new Date());
 
   useEffect(() => {
     if (!isOpen) return;
@@ -278,12 +278,6 @@ export function ExportModal({
     const timer = window.setTimeout(() => setLocalCustomFilename(customFilename), 0);
     return () => window.clearTimeout(timer);
   }, [isOpen, customFilename]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    setPreviewNow(new Date());
-  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;

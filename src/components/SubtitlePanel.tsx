@@ -1,5 +1,5 @@
 import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square, Eye, EyeOff, Eraser } from 'lucide-react';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { SubtitleItem } from '../hooks/useAssSubtitle';
 import { translate, type Language } from '../i18n';
@@ -8,6 +8,7 @@ import { withCjkFontFallback } from '../fontPresets';
 import type { SharedChatSpeaker } from './chat/SharedChatBubbles';
 import { Tooltip } from './ui/Tooltip';
 import { SpeakerPicker } from './SpeakerPicker';
+import { captureTextInsertion, insertTextUndoably } from '../utils/undoableTextInput';
 
 interface SubtitlePanelProps {
   subtitles: SubtitleItem[];
@@ -76,6 +77,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   const [lastSelectedSubtitleId, setLastSelectedSubtitleId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const compactListRef = useRef<HTMLDivElement>(null);
+  const projectPathRef = useRef(projectPath);
+  useLayoutEffect(() => {
+    projectPathRef.current = projectPath;
+  }, [projectPath]);
   const [compactScrollTop, setCompactScrollTop] = useState(0);
   const [compactViewportHeight, setCompactViewportHeight] = useState(0);
   const COMPACT_ROW_HEIGHT = 34;
@@ -183,7 +188,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     };
   }, [contextMenu]);
 
-  const scrollToSubtitle = (subtitleId: string) => {
+  const scrollToSubtitle = useCallback((subtitleId: string) => {
     const subtitleIndex = subtitles.findIndex((sub) => sub.id === subtitleId);
     if (compactMode) {
       const container = compactListRef.current;
@@ -203,7 +208,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       const targetScrollTop = container.scrollTop + relativeTop - (containerRect.height / 2) + (elRect.height / 2);
       container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
     }
-  };
+  }, [compactMode, subtitles]);
   
   // Find current or most recently active subtitle
   let activeSubId: string | undefined;
@@ -218,7 +223,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     if (activeSubId && !inlineEditingId) {
       scrollToSubtitle(activeSubId);
     }
-  }, [activeSubId, inlineEditingId]);
+  }, [activeSubId, inlineEditingId, scrollToSubtitle]);
 
   useEffect(() => {
     if (!activeSubId || inlineEditingId) {
@@ -230,7 +235,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [compactMode, activeSubId, inlineEditingId]);
+  }, [compactMode, activeSubId, inlineEditingId, scrollToSubtitle]);
 
   useEffect(() => {
     if (!compactMode || !compactListRef.current) {
@@ -543,93 +548,67 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
     if (setEditingSub) setEditingSub(null);
   };
 
-  const insertImageMarkdown = (markdown: string, textarea: HTMLTextAreaElement | null, mode: 'inline' | 'modal') => {
-    const currentText = mode === 'modal' ? modalEditForm.text : editForm.text;
-    const selectionStart = textarea?.selectionStart ?? currentText.length;
-    const selectionEnd = textarea?.selectionEnd ?? currentText.length;
-    const nextText = `${currentText.slice(0, selectionStart)}${markdown}${currentText.slice(selectionEnd)}`;
+  const handleEditorPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    const file = imageItem?.getAsFile();
+    if (!file) return;
 
-    if (mode === 'modal') {
-      setModalEditForm((prev) => ({ ...prev, text: nextText }));
-    } else {
-      setEditForm((prev) => ({ ...prev, text: nextText }));
-    }
-
-    window.requestAnimationFrame(() => {
-      const target = mode === 'modal' ? modalEditTextareaRef.current : editTextareaRef.current;
-      if (!target) {
-        return;
-      }
-      const caret = selectionStart + markdown.length;
-      target.focus();
-      target.setSelectionRange(caret, caret);
-    });
-  };
-
-  const handleEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>, mode: 'inline' | 'modal') => {
-    const clipboardItems = Array.from(event.clipboardData?.items || []);
-    const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
-    if (!imageItem) {
-      return;
-    }
-
-    const file = imageItem.getAsFile();
-    if (!file) {
-      return;
-    }
-
+    const insertion = captureTextInsertion(event.currentTarget);
+    const expectedProjectPath = projectPath;
+    const expectedEditorOwner = event.currentTarget.dataset.pasteOwner;
+    const useProjectAssets = projectAssetsCacheEnabled && Boolean(expectedProjectPath) && expectedProjectPath !== 'web-demo';
+    const electron = window.electron;
     event.preventDefault();
     event.stopPropagation();
 
-    try {
-      let imagePath = '';
-
-      if (window.electron) {
-        imagePath = window.electron.getDroppedFilePath(file) || '';
-        if (imagePath && projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
-          const imported = await window.electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: imagePath, preferredName: file.name });
-          imagePath = imported?.storedPath || imagePath;
-        }
-      }
-
-      if (!imagePath) {
-        if (window.electron) {
-          const arrayBuffer = await file.arrayBuffer();
-          if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
-            imagePath = await window.electron.saveClipboardImageToProjectAssets({
-              projectFilePath: projectPath,
-              bytes: Array.from(new Uint8Array(arrayBuffer)),
-              contentType: file.type,
-              preferredName: file.name,
-            }).then((result) => result?.storedPath || '');
-          } else {
-            imagePath = await window.electron.saveClipboardImageToCache({
-              bytes: Array.from(new Uint8Array(arrayBuffer)),
-              contentType: file.type,
-              preferredName: file.name,
-            }) || '';
+    void (async () => {
+      try {
+        let imagePath = '';
+        if (electron) {
+          imagePath = electron.getDroppedFilePath(file) || '';
+          if (imagePath && useProjectAssets) {
+            const imported = await electron.importProjectAsset({ projectFilePath: expectedProjectPath!, sourcePath: imagePath, preferredName: file.name });
+            imagePath = imported?.storedPath || imagePath;
           }
-        } else {
-          imagePath = URL.createObjectURL(file);
         }
+
+        if (!imagePath) {
+          if (electron) {
+            const arrayBuffer = await file.arrayBuffer();
+            if (projectPathRef.current !== expectedProjectPath) return;
+            if (useProjectAssets) {
+              imagePath = await electron.saveClipboardImageToProjectAssets({
+                projectFilePath: expectedProjectPath!,
+                bytes: Array.from(new Uint8Array(arrayBuffer)),
+                contentType: file.type,
+                preferredName: file.name,
+              }).then((result) => result?.storedPath || '');
+            } else {
+              imagePath = await electron.saveClipboardImageToCache({
+                bytes: Array.from(new Uint8Array(arrayBuffer)),
+                contentType: file.type,
+                preferredName: file.name,
+              }) || '';
+            }
+          } else {
+            imagePath = URL.createObjectURL(file);
+          }
+        }
+
+        if (!imagePath) return;
+        if (
+          projectPathRef.current !== expectedProjectPath
+          || insertion.target.dataset.pasteOwner !== expectedEditorOwner
+        ) {
+          if (imagePath.startsWith('blob:')) URL.revokeObjectURL(imagePath);
+          return;
+        }
+        const inserted = insertTextUndoably(insertion, `![img](${imagePath})`, { abortIfFocusChanged: true });
+        if (!inserted && imagePath.startsWith('blob:')) URL.revokeObjectURL(imagePath);
+      } catch (error) {
+        console.error('Failed to paste clipboard image:', error);
       }
-
-      if (!imagePath) {
-        return;
-      }
-
-      insertImageMarkdown(`![img](${imagePath})`, event.currentTarget, mode);
-    } catch (error) {
-      console.error('Failed to paste clipboard image:', error);
-    }
-  };
-
-  const handleInlineEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    await handleEditorPaste(event, 'inline');
-  };
-
-  const handleModalEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    await handleEditorPaste(event, 'modal');
+    })();
   };
 
   // Global shortcuts for Region Edit
@@ -1173,9 +1152,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     
                     <textarea
                       ref={editTextareaRef}
+                      data-paste-owner={`inline:${inlineEditingId ?? ''}`}
                       value={editForm.text}
                       onChange={(e) => setEditForm({...editForm, text: e.target.value})}
-                      onPaste={(e) => { void handleInlineEditorPaste(e); }}
+                      onPaste={handleEditorPaste}
                       onContextMenu={(e) => e.stopPropagation()}
                       className="w-full p-2 rounded border text-xs min-h-[60px] resize-y focus:outline-none"
                       style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
@@ -1381,7 +1361,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 <input value={modalEditForm.end} onChange={(e) => setModalEditForm((prev) => ({ ...prev, end: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
               </div>
               <div className="space-y-1.5">
-                <textarea ref={modalEditTextareaRef} value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} onPaste={(e) => { void handleModalEditorPaste(e); }} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveModalEdit(); } }} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+                <textarea ref={modalEditTextareaRef} data-paste-owner={`modal:${editModalSubtitleId ?? ''}`} value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} onPaste={handleEditorPaste} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveModalEdit(); } }} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
                 <div className="text-[0.6875rem] leading-5" style={{ color: uiTheme.textMuted }}>{t('subtitle.markdownHint')}</div>
                 <div className="text-[0.6875rem]" style={{ color: uiTheme.textMuted }}>{t('subtitle.imagePasteHint')}</div>
               </div>

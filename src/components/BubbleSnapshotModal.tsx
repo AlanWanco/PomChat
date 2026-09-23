@@ -657,23 +657,7 @@ export function BubbleSnapshotModal({
     } finally {
       setIsGenerating(false);
     }
-  }, [
-    backgroundImageSrc,
-    localBackgroundColor,
-    localBackgroundMode,
-    contentWidth,
-    effectiveBackgroundBlur,
-    effectiveBackgroundBrightness,
-    open,
-    renderAvatar,
-    renderInlineImage,
-    localSidePadding,
-    snapshotChatLayout,
-    speakers,
-    subtitleSignature,
-    subtitles.length,
-    localTileAlign,
-  ]);
+  }, [open, subtitles.length]);
 
   const handleCopyImage = useCallback(async () => {
     if (subtitles.length === 0) {

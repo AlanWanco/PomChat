@@ -5,7 +5,53 @@ import { createThemeTokens, rgba } from '../theme';
 import { formatFontFamilyValue } from '../fontPresets';
 import { Tooltip } from './ui/Tooltip';
 import { SpeakerDot } from './SpeakerPicker';
-import type { SpeakerConfig, FontPreset } from '../remotion/types';
+import type { SpeakerConfig, FontPreset, SpeakerStyle } from '../remotion/types';
+import { captureTextInsertion, insertTextUndoably } from '../utils/undoableTextInput';
+
+type SpeakerPresetPayload = {
+  style: SpeakerStyle;
+  avatar?: string;
+  side?: SpeakerConfig['side'];
+  name?: string;
+  [key: string]: unknown;
+};
+
+type SpeakerPresetCollection = Record<string, SpeakerPresetPayload>;
+type StyleEditorData = SpeakerStyle & { annotationStyle?: boolean };
+type StyleUpdateValue = string | number | boolean;
+type StyleEditorUpdate = (key: keyof SpeakerStyle, value: StyleUpdateValue) => void;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizePresetPayload(value: unknown): SpeakerPresetPayload | null {
+  if (!isRecord(value)) return null;
+  const hasPayloadStyle = Object.prototype.hasOwnProperty.call(value, 'style');
+  const style = hasPayloadStyle ? value.style : value;
+  if (!isRecord(style)) return null;
+
+  const payload: SpeakerPresetPayload = { ...value, style: style as SpeakerStyle };
+  if (!hasPayloadStyle) {
+    payload.avatar = '';
+    payload.side = 'left';
+  } else {
+    if (typeof value.avatar === 'string') payload.avatar = value.avatar;
+    else delete payload.avatar;
+    if (value.side === 'left' || value.side === 'right' || value.side === 'center') payload.side = value.side;
+    else delete payload.side;
+  }
+  return payload;
+}
+
+function normalizePresetCollection(value?: Record<string, unknown>): SpeakerPresetCollection {
+  const result: SpeakerPresetCollection = {};
+  Object.entries(value || {}).forEach(([name, preset]) => {
+    const normalized = normalizePresetPayload(preset);
+    if (normalized) result[name] = normalized;
+  });
+  return result;
+}
 
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
@@ -98,16 +144,16 @@ interface StyleManagerModalProps {
   secondaryThemeColor: string;
   speakers: Record<string, SpeakerConfig>;
   fontPresets?: Record<string, FontPreset>;
-  speakerPresets?: Record<string, any>;
-  annotationPresets?: Record<string, any>;
+  speakerPresets?: Record<string, unknown>;
+  annotationPresets?: Record<string, unknown>;
   projectPath?: string;
   projectIdentity?: string;
   projectAssetsCacheEnabled?: boolean;
   initialPresetName?: string | null;
   onSelectImage?: () => Promise<string | null>;
-  onSave: (speakers: Record<string, SpeakerConfig>, presets?: StyleManagerModalProps['speakerPresets'], annotations?: StyleManagerModalProps['annotationPresets']) => void;
-  onSpeakerPresetsChange?: (presets: Record<string, any>) => void;
-  onAnnotationPresetsChange?: (presets: Record<string, any>) => void;
+  onSave: (speakers: Record<string, SpeakerConfig>, presets?: SpeakerPresetCollection, annotations?: SpeakerPresetCollection) => void;
+  onSpeakerPresetsChange?: (presets: SpeakerPresetCollection) => void;
+  onAnnotationPresetsChange?: (presets: SpeakerPresetCollection) => void;
   onClose: () => void;
 }
 
@@ -132,24 +178,24 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   useLayoutEffect(() => {
     projectIdentityRef.current = currentProjectIdentity;
   }, [currentProjectIdentity]);
-  const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>({});
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
-  const [leftTab, setLeftTab] = useState<'speakers' | 'presets' | 'annotations'>('speakers');
-  const [localPresets, setLocalPresets] = useState<Record<string, any>>({});
+  const [localSpeakers, setLocalSpeakers] = useState<Record<string, SpeakerConfig>>(() => structuredClone(speakers || {}));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(() => null);
+  const [leftTab, setLeftTab] = useState<'speakers' | 'presets' | 'annotations'>(() => initialPresetName ? 'presets' : 'speakers');
+  const [localPresets, setLocalPresets] = useState<SpeakerPresetCollection>(() => normalizePresetCollection(speakerPresets));
   const localSpeakersRef = useRef(localSpeakers);
   const localPresetsRef = useRef(localPresets);
   useLayoutEffect(() => {
     localSpeakersRef.current = localSpeakers;
     localPresetsRef.current = localPresets;
   }, [localPresets, localSpeakers]);
-  const [selectedPresetIds, setSelectedPresetIds] = useState<Set<string>>(new Set());
-  const [editingPresetName, setEditingPresetName] = useState<string | null>(null);
+  const [selectedPresetIds, setSelectedPresetIds] = useState<Set<string>>(() => new Set(initialPresetName ? [initialPresetName] : []));
+  const [editingPresetName, setEditingPresetName] = useState<string | null>(() => initialPresetName || null);
   const [speakersDirty, setSpeakersDirty] = useState(false);
   const [presetsDirty, setPresetsDirty] = useState(false);
   const [presetSavePromptOpen, setPresetSavePromptOpen] = useState(false);
   const [presetSaveDraft, setPresetSaveDraft] = useState('');
-  const [localAnnotationPresets, setLocalAnnotationPresets] = useState<Record<string, any>>({});
+  const [localAnnotationPresets, setLocalAnnotationPresets] = useState<SpeakerPresetCollection>(() => normalizePresetCollection(annotationPresets));
   const [editingAnnotPresetName, setEditingAnnotPresetName] = useState<string | null>(null);
   const [selectedAnnotPresetIds, setSelectedAnnotPresetIds] = useState<Set<string>>(new Set());
   const [annotPresetsDirty, setAnnotPresetsDirty] = useState(false);
@@ -170,29 +216,6 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       localStorage.setItem(COLLAPSED_SECTIONS_STORAGE_KEY, JSON.stringify(Array.from(collapsedSections)));
     } catch { /* ignore */ }
   }, [collapsedSections]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setLocalSpeakers(JSON.parse(JSON.stringify(speakers || {})));
-      setSelectedIds(new Set());
-      setEditingSpeakerId(null);
-      setLocalPresets(JSON.parse(JSON.stringify(speakerPresets || {})));
-      setSelectedPresetIds(new Set());
-      setEditingPresetName(null);
-      setSpeakersDirty(false);
-      setPresetsDirty(false);
-      setLocalAnnotationPresets(JSON.parse(JSON.stringify(annotationPresets || {})));
-      setSelectedAnnotPresetIds(new Set());
-      setEditingAnnotPresetName(null);
-      setAnnotPresetsDirty(false);
-      const target = initialPresetName;
-      if (target) {
-        setLeftTab('presets');
-        setEditingPresetName(target);
-        setSelectedPresetIds(new Set([target]));
-      }
-    }
-  }, [isOpen, initialPresetName]);
 
   if (!isOpen) return null;
 
@@ -275,7 +298,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       }
       // 若目标名称已存在，重命名会覆盖目标预设；目标预设的锁定使用者也要同步新内容。
       if (speaker.preset === newName && speaker.lockPreset === true) {
-        nextSpeakers[id] = applyPresetPayload(speaker, normalizePresetPayload(preset));
+        nextSpeakers[id] = applyPresetPayload(speaker, preset);
         speakersChanged = true;
       }
     });
@@ -343,7 +366,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       const spkNext = { ...currentSpeakers };
       Object.entries(currentSpeakers).forEach(([id, spk]) => {
         if (spk?.lockPreset !== true || !spk?.preset) return;
-        const payload = normalizePresetPayload(next[spk.preset]);
+        const payload = next[spk.preset];
         if (!payload) return;
         spkNext[id] = applyPresetPayload(spk, payload);
         speakersChanged = true;
@@ -376,8 +399,14 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     });
   };
   const updateSpeaker = (id: string, u: (s: SpeakerConfig) => SpeakerConfig, keepPreset?: boolean) => { setLocalSpeakers((p) => { const updated = u(p[id]); return { ...p, [id]: keepPreset ? updated : { ...updated, preset: '' } }; }); setSpeakersDirty(true); };
-  const updateStyle = (id: string, k: string, v: any) => { setLocalSpeakers((p) => ({ ...p, [id]: { ...p[id], preset: '', style: { ...(p[id]?.style || {}), [k]: v } } })); setSpeakersDirty(true); };
-  const updatePreset = (name: string, updater: (preset: any) => any) => {
+  const updateStyle = (id: string, key: keyof SpeakerStyle, value: StyleUpdateValue) => {
+    setLocalSpeakers((previous) => ({
+      ...previous,
+      [id]: { ...previous[id], preset: '', style: { ...(previous[id]?.style || {}), [key]: value } },
+    }));
+    setSpeakersDirty(true);
+  };
+  const updatePreset = (name: string, updater: (preset: SpeakerPresetPayload) => SpeakerPresetPayload) => {
     const current = localPresets[name];
     if (!current) return;
     const updated = updater(current);
@@ -386,14 +415,16 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setPresetsDirty(true);
     propagatePresetToLockedSpeakers(name, updated);
   };
-  const updatePresetStyle = (name: string, k: string, v: any) => {
+  const updatePresetStyle = (name: string, key: keyof SpeakerStyle, value: StyleUpdateValue) => {
     updatePreset(name, (preset) => ({
       ...preset,
-      style: { ...(preset?.style || {}), [k]: v },
+      style: { ...(preset.style || {}), [key]: value },
     }));
   };
-  const updatePresetField = (name: string, k: string, v: any) => {
-    updatePreset(name, (preset) => ({ ...preset, [k]: v }));
+  const updatePresetField = (name: string, key: 'avatar' | 'side', value: string) => {
+    updatePreset(name, (preset) => key === 'side'
+      ? { ...preset, side: value as SpeakerConfig['side'] }
+      : { ...preset, avatar: value });
   };
   const swapPresetBackgroundAndText = (name: string) => {
     updatePreset(name, (preset) => {
@@ -406,9 +437,9 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       };
     });
   };
-  const propagatePresetToLockedSpeakers = (name: string, preset: any) => {
-    if (!name || !preset) return;
-    const payload = normalizePresetPayload(preset);
+  const propagatePresetToLockedSpeakers = (name: string, preset: SpeakerPresetPayload) => {
+    if (!name) return;
+    const payload = preset;
     if (!Object.values(localSpeakers).some((speaker) => speaker.preset === name && speaker.lockPreset === true)) {
       return;
     }
@@ -425,18 +456,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     setSpeakersDirty(true);
   };
 
-  const normalizePresetPayload = (preset: any) => {
-    if (preset && typeof preset === 'object' && 'style' in preset) {
-      return preset;
-    }
-    return {
-      style: preset || {},
-      avatar: '',
-      side: 'left'
-    };
-  };
-
-  const applyPresetPayload = (speaker: SpeakerConfig, payload: any): SpeakerConfig => ({
+  const applyPresetPayload = (speaker: SpeakerConfig, payload: SpeakerPresetPayload): SpeakerConfig => ({
     ...speaker,
     avatar: Object.prototype.hasOwnProperty.call(payload, 'avatar') ? (payload.avatar || '') : speaker.avatar,
     side: Object.prototype.hasOwnProperty.call(payload, 'side') ? (payload.side || 'left') : (speaker.side || 'left'),
@@ -454,7 +474,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
         return { ...speaker, lockPreset: nextLocked };
       }
       return {
-        ...applyPresetPayload(speaker, normalizePresetPayload(preset)),
+        ...applyPresetPayload(speaker, preset),
         lockPreset: true,
       };
     }, true);
@@ -476,21 +496,19 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     if (text && matchesAcceptedExtension(text, extensions)) return text.replace(/^['"]|['"]$/g, '');
     return '';
   };
-  const saveClipboardImageToCache = async (event: React.ClipboardEvent<HTMLInputElement>) => {
-    const electron = window.electron; if (!electron) return '';
-    const clipboardItems = Array.from(event.clipboardData?.items || []);
-    const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
-    if (!imageItem) return '';
-    const file = imageItem.getAsFile(); if (!file) return '';
+  const saveClipboardImageToCache = async (file: File, expectedProjectIdentity: string) => {
+    const electron = window.electron;
+    if (!electron || projectIdentityRef.current !== expectedProjectIdentity) return '';
     const directPath = electron.getDroppedFilePath(file) || '';
     if (directPath) {
       if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
         const imported = await electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: directPath, preferredName: file.name });
-        return imported?.storedPath || directPath;
+        return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || directPath) : '';
       }
       return directPath;
     }
     const arrayBuffer = await file.arrayBuffer();
+    if (projectIdentityRef.current !== expectedProjectIdentity) return '';
     if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
       const imported = await electron.saveClipboardImageToProjectAssets({
         projectFilePath: projectPath,
@@ -498,18 +516,35 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
         contentType: file.type,
         preferredName: file.name,
       });
-      return imported?.storedPath || '';
+      return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || '') : '';
     }
-    return await electron.saveClipboardImageToCache({ bytes: Array.from(new Uint8Array(arrayBuffer)), contentType: file.type, preferredName: file.name }) || '';
+    const cachedPath = await electron.saveClipboardImageToCache({ bytes: Array.from(new Uint8Array(arrayBuffer)), contentType: file.type, preferredName: file.name });
+    return projectIdentityRef.current === expectedProjectIdentity ? (cachedPath || '') : '';
   };
-  const createImageAwarePathPasteHandler = (extensions: string[], onPath: (path: string) => void | Promise<void>) => {
+  const createImageAwarePathPasteHandler = (extensions: string[], targetOwner: string) => {
     return (event: React.ClipboardEvent<HTMLInputElement>) => {
       const textOrFilePath = extractClipboardFilePath(event, extensions);
-      if (textOrFilePath) { event.preventDefault(); void onPath(textOrFilePath); return; }
+      const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+      const file = imageItem?.getAsFile();
+      if (!textOrFilePath && (!file || !window.electron)) return;
+
+      const insertion = captureTextInsertion(event.currentTarget);
+      const expectedProjectIdentity = projectIdentityRef.current;
+      const expectedTargetOwner = targetOwner;
+      event.preventDefault();
+      if (textOrFilePath) {
+        insertTextUndoably(insertion, textOrFilePath, { replaceAll: true });
+        return;
+      }
+
       void (async () => {
-        const cachedImagePath = await saveClipboardImageToCache(event);
-        if (!cachedImagePath) return;
-        event.preventDefault(); await onPath(cachedImagePath);
+        const cachedImagePath = await saveClipboardImageToCache(file!, expectedProjectIdentity);
+        if (
+          !cachedImagePath
+          || projectIdentityRef.current !== expectedProjectIdentity
+          || insertion.target.dataset.pasteOwner !== expectedTargetOwner
+        ) return;
+        insertTextUndoably(insertion, cachedImagePath, { replaceAll: true, abortIfChanged: true, abortIfFocusChanged: true });
       })();
     };
   };
@@ -607,7 +642,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     return `/${trimmed}`;
   };
 
-  const renderFontField = (updateFn: (k: string, v: any) => void, value: string | undefined, disabled?: boolean) => {
+  const renderFontField = (updateFn: StyleEditorUpdate, value: string | undefined, disabled?: boolean) => {
     const presetEntries = Object.entries(fontPresets || {});
     const fontPresetOptions = presetEntries.map(([id_, p]) => ({
       label: `${t('fontPresets.optionPrefix')} ${p.name}`,
@@ -636,7 +671,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       </div>
     );
   };
-  const renderColor = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, disabled?: boolean) => (
+  const renderColor = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: string | undefined, disabled?: boolean) => (
     <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle, opacity: disabled ? 0.5 : 1 }}>
       <input type="color" disabled={disabled} value={value || '#000000'} onChange={(e) => {
         const nextHex = e.target.value.toUpperCase();
@@ -654,7 +689,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
         style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
     </div>
   );
-  const renderNum = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min?: number, max?: number, step?: number, disabled?: boolean) => {
+  const renderNum = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: number | undefined, min?: number, max?: number, step?: number, disabled?: boolean) => {
     const s = step || 1;
     const safeVal = Number.isFinite(value ?? 0) ? (value ?? 0) : 0;
     const getPrecision = (targetStep: number) => {
@@ -687,10 +722,10 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       </div>
     );
   };
-  const renderRange = (updateFn: (k: string, v: any) => void, key: string, value: number | undefined, min: number, max: number, step: number, disabled?: boolean) => (
+  const renderRange = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: number | undefined, min: number, max: number, step: number, disabled?: boolean) => (
     <div className="flex items-center gap-2" style={{ opacity: disabled ? 0.5 : 1 }}><input type="range" disabled={disabled} min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
   );
-  const renderSel = (updateFn: (k: string, v: any) => void, key: string, value: string | undefined, opts: string[], disabled?: boolean) => (
+  const renderSel = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: string | undefined, opts: string[], disabled?: boolean) => (
     <select disabled={disabled} value={value || ''} onChange={(e) => updateFn(key, e.target.value)}
       className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text, opacity: disabled ? 0.5 : 1 }}>
       {opts.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -721,7 +756,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
     <CollapsibleSection title={title} collapsed={collapsedSections.has(sectionKey)} onToggle={() => toggleSection(sectionKey)} sectionStyle={sectionStyle} chevronColor={uiTheme.textMuted}>{children}</CollapsibleSection>
   );
 
-  const renderEditorFields = (style: any, updateFn: (k: string, v: any) => void, swapBgText?: () => void, disabled?: boolean) => {
+  const renderEditorFields = (style: StyleEditorData | undefined, updateFn: StyleEditorUpdate, swapBgText?: () => void, disabled?: boolean) => {
     const isAnnotationStyle = Boolean(style?.annotationStyle);
     return (
     <>
@@ -924,7 +959,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           if (fromIdx < 0 || toIdx < 0) return;
                           const [moved] = entries.splice(fromIdx, 1);
                           entries.splice(toIdx, 0, moved);
-                          const ordered: Record<string, any> = {};
+                          const ordered: SpeakerPresetCollection = {};
                           entries.forEach(([k, v]) => { ordered[k] = v; });
                           setLocalPresets(ordered);
                           setPresetsDirty(true);
@@ -1007,7 +1042,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                           if (fromIdx < 0 || toIdx < 0) return;
                           const [moved] = entries.splice(fromIdx, 1);
                           entries.splice(toIdx, 0, moved);
-                          const ordered: Record<string, any> = {};
+                          const ordered: SpeakerPresetCollection = {};
                           entries.forEach(([k, v]) => { ordered[k] = v; });
                           setLocalAnnotationPresets(ordered);
                           setAnnotPresetsDirty(true);
@@ -1134,8 +1169,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`; }}
                       />
-                      <input type="text" disabled={locked} value={editingSpeaker.avatar || ''} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }), true)}
-                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path }), true))}
+                      <input type="text" disabled={locked} value={editingSpeaker.avatar || ''} data-paste-owner={`speaker:${editingSpeakerId}`} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }), true)}
+                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], `speaker:${editingSpeakerId}`)}
                         className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text, opacity: locked ? 0.5 : 1 }}
                         title={t('project.quickPasteFilePathTip') || '支持右键粘贴文件路径；若剪贴板里是图片，也会自动保存到缓存并填入路径。'} />
                       <button disabled={locked} onClick={async () => { const path = await handleBrowseFile(); if (path) updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: path }), true); }}
@@ -1296,8 +1331,8 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         referrerPolicy="no-referrer"
                         onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }}
                       />
-                      <input type="text" value={editingPreset.avatar || ''} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)}
-                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updatePresetField(editingPresetName!, 'avatar', path))}
+                      <input type="text" value={editingPreset.avatar || ''} data-paste-owner={`preset:${editingPresetName}`} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)}
+                        onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], `preset:${editingPresetName}`)}
                         className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
                         title={t('project.quickPasteFilePathTip') || '支持右键粘贴文件路径；若剪贴板里是图片，也会自动保存到缓存并填入路径。'} />
                       <button onClick={async () => { const path = await handleBrowseFile(); if (path) updatePresetField(editingPresetName!, 'avatar', path); }}
@@ -1336,7 +1371,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
-                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as any, lineHeight: 1.35 }}>
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: s?.fontWeight || 'normal', borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: (s?.annotationTextAlign || 'center') as React.CSSProperties['textAlign'], lineHeight: 1.35 }}>
                       {editingAnnotPresetName}
                     </div>
                   </div>
@@ -1347,7 +1382,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                       onChange={(e) => {
                         const newName = e.target.value;
                         if (newName && newName !== editingAnnotPresetName) {
-                          const ordered: Record<string, any> = {};
+                          const ordered: SpeakerPresetCollection = {};
                           for (const [k, v] of Object.entries(localAnnotationPresets)) {
                             if (k === editingAnnotPresetName) ordered[newName] = v;
                             else ordered[k] = v;
@@ -1358,7 +1393,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
                         }
                       }} />
                   </div>
-                  {renderEditorFields({ ...s, annotationStyle: true } as any, (k, v) => {
+                  {renderEditorFields({ ...s, annotationStyle: true }, (k, v) => {
                     const next = { ...localAnnotationPresets, [editingAnnotPresetName]: { ...editingAnnotPreset, style: { ...(editingAnnotPreset.style || {}), [k]: v } } };
                     setLocalAnnotationPresets(next);
                     setAnnotPresetsDirty(true);
@@ -1402,7 +1437,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
               <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66`, overflowAnchor: 'none' } as React.CSSProperties}>
                 <div className="sticky top-0 z-10 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', justifyContent: (s?.annotationAlign || 'center') === 'left' ? 'flex-start' : (s?.annotationAlign || 'center') === 'right' ? 'flex-end' : 'center' }}>
-                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as any, lineHeight: 1.35 }}>
+                    <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: `${bg}${Math.floor(op * 255).toString(16).padStart(2, '0')}`, color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderRadius: `${br}px`, boxShadow: shadow, filter: textShadowFilter, width: 'fit-content', maxWidth: `${previewMaxWidth}px`, textAlign: textAlign as React.CSSProperties['textAlign'], lineHeight: 1.35 }}>
                       {t('speakers.annotationPreview')}
                     </div>
                   </div>

@@ -22,6 +22,7 @@ import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
 import { unwrapBiliup, useBiliup } from './BiliupContext';
+import { captureTextInsertion, insertTextUndoably } from '../utils/undoableTextInput';
 
 interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
 
@@ -528,14 +529,20 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     const imageItem = Array.from(event.clipboardData?.items || []).find((item) => item.kind === 'file' && item.type.startsWith('image/'));
     const file = imageItem?.getAsFile();
     if (!file || !window.electron) return;
+
+    const insertion = captureTextInsertion(event.currentTarget);
+    const expectedTargetOwner = event.currentTarget.dataset.pasteOwner;
+    const electron = window.electron;
     event.preventDefault();
     void perform(async () => {
-      const directPath = window.electron.getDroppedFilePath(file);
-      if (directPath) { set('cover', directPath); return; }
-      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const cachedPath = await window.electron.saveClipboardImageToCache({ bytes, contentType: file.type, preferredName: file.name });
-      if (!cachedPath) throw new Error('file');
-      set('cover', cachedPath);
+      let coverPath = electron.getDroppedFilePath(file) || '';
+      if (!coverPath) {
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        coverPath = await electron.saveClipboardImageToCache({ bytes, contentType: file.type, preferredName: file.name }) || '';
+      }
+      if (!coverPath) throw new Error('file');
+      if (insertion.target.dataset.pasteOwner !== expectedTargetOwner) return;
+      insertTextUndoably(insertion, coverPath, { replaceAll: true, abortIfChanged: true, abortIfFocusChanged: true });
     });
   };
   const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
@@ -574,30 +581,33 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     const text = event.clipboardData?.getData('text/plain')?.trim() || '';
     const uriList = event.clipboardData?.getData('text/uri-list')?.trim() || '';
     if (!hasFile && !text && !uriList) return;
-    event.preventDefault();
+
+    const insertion = captureTextInsertion(event.currentTarget);
     const path = extractClipboardVideoPath(event);
+    event.preventDefault();
     if (!path) {
-      setUploadFilePath('');
+      insertTextUndoably(insertion, '', { replaceAll: true });
       setUploadFileError(t('biliup.videoInvalid'));
       return;
     }
-    setUploadFilePath(path);
+    insertTextUndoably(insertion, path, { replaceAll: true });
     setUploadFileError('');
   };
   const handleUploadPathDrop = (event: DragEvent<HTMLInputElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    const insertion = captureTextInsertion(event.currentTarget);
     const file = event.dataTransfer.files[0] || Array.from(event.dataTransfer.items).find((item) => item.kind === 'file')?.getAsFile();
     const directPath = getVideoPathFromFile(file);
     const uriPath = normalizeLocalPath(extractUriListPath(event.dataTransfer.getData('text/uri-list') || ''));
     const textPath = normalizeLocalPath(event.dataTransfer.getData('text/plain')?.trim() || '');
     const path = directPath || (isVideoPath(uriPath) ? uriPath : '') || (isVideoPath(textPath) ? textPath : '');
     if (!path) {
-      setUploadFilePath('');
+      insertTextUndoably(insertion, '', { replaceAll: true });
       setUploadFileError(t('biliup.videoInvalid'));
       return;
     }
-    setUploadFilePath(path);
+    insertTextUndoably(insertion, path, { replaceAll: true });
     setUploadFileError('');
   };
   const uploadSelectedFile = () => {
@@ -696,7 +706,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         {textFields.map((key) => {
           if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>
             <div className="flex min-w-0 gap-2">
-              <input className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
+              <input className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft[key]} data-paste-owner={draft.id || 'new-template'} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
               <button type="button" className={`${buttonClass} !px-2.5 !py-2 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={chooseCover}><ImagePlus size={12} />{t('biliup.chooseCover')}</button>
             </div>
           </label>;

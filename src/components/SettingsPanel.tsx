@@ -8,6 +8,10 @@ import { Tooltip } from './ui/Tooltip';
 import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue, isSupportedFontFile, replaceFontPresetFamilyReferences, type FontPresetMap } from '../fontPresets';
 
 import { BiliupDirectorySettings } from './BiliupModal';
+import { handleUndoablePathPaste } from '../utils/undoablePathPaste';
+import type { BackgroundSlideItem } from '../remotion/types';
+
+const EMPTY_BACKGROUND_SLIDES: BackgroundSlideItem[] = [];
 
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
@@ -153,9 +157,11 @@ export function SettingsPanel({
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const projectIdentity = `${projectPath || ''}\u0000${config?.projectId || ''}`;
   const projectIdentityRef = useRef(projectIdentity);
+  const currentConfigRef = useRef(config);
   useLayoutEffect(() => {
     projectIdentityRef.current = projectIdentity;
-  }, [projectIdentity]);
+    currentConfigRef.current = config;
+  }, [config, projectIdentity]);
   const toFsPreviewPath = (localPath: string) => {
     const normalized = localPath.replace(/\\/g, '/');
 
@@ -279,7 +285,9 @@ export function SettingsPanel({
   const [tabOrderIds, setTabOrderIds] = useState<string[]>([]);
   const speakerKeys = Object.keys(config.speakers).filter((key) => config.speakers[key]?.type !== 'annotation');
   const currentSpeakerTab = activeSpeakerTab && speakerKeys.includes(activeSpeakerTab) ? activeSpeakerTab : (speakerKeys[0] || null);
-  const backgroundSlides = Array.isArray(config.background?.slides) ? config.background.slides : [];
+  const backgroundSlides: BackgroundSlideItem[] = Array.isArray(config.background?.slides)
+    ? config.background.slides as BackgroundSlideItem[]
+    : EMPTY_BACKGROUND_SLIDES;
   const projectJumpSections = [
     { id: 'project-layout', label: t('project.layout') },
     { id: 'project-avatar', label: t('project.avatarSettings') },
@@ -307,6 +315,7 @@ export function SettingsPanel({
 
   useEffect(() => {
     if (projectResourceActionReport) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Mirror externally completed resource actions into the dismissible local result panel.
       setLocalResourceActionReport(projectResourceActionReport);
     }
   }, [projectResourceActionReport]);
@@ -348,7 +357,9 @@ export function SettingsPanel({
   };
 
   useEffect(() => {
-    if (!visibleSettingsSections.length) {
+    const sectionIds = visibleSettingsSectionIds ? visibleSettingsSectionIds.split('|') : [];
+    if (sectionIds.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the active navigation marker when no sections are visible.
       setActiveSettingsSection('');
       return;
     }
@@ -358,14 +369,14 @@ export function SettingsPanel({
       if (!container) return;
 
       const containerTop = container.getBoundingClientRect().top;
-      let nextActive = visibleSettingsSections[0]?.id || '';
+      let nextActive = sectionIds[0] || '';
 
-      for (const section of visibleSettingsSections) {
-        const node = settingsSectionRefs.current[section.id];
+      for (const sectionId of sectionIds) {
+        const node = settingsSectionRefs.current[sectionId];
         if (!node) continue;
         const offsetTop = node.getBoundingClientRect().top - containerTop;
         if (offsetTop <= 120) {
-          nextActive = section.id;
+          nextActive = sectionId;
         } else {
           break;
         }
@@ -382,16 +393,23 @@ export function SettingsPanel({
       container?.removeEventListener('scroll', updateActiveSection);
       window.removeEventListener('resize', updateActiveSection);
     };
-  }, [activeTab, currentSpeakerTab, visibleSettingsSectionIds]);
+  }, [currentSpeakerTab, visibleSettingsSectionIds]);
 
   // Keep tabOrderIds in sync when slides are added/removed (not during drags)
   useEffect(() => {
     if (draggingBackgroundSlideId) return;
-    const aboveIds: string[] = backgroundSlides.filter((s: any) => s.layer === 'overlay').sort((a: any, b: any) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0)).map((s: any) => s.id as string);
-    const belowIds: string[] = backgroundSlides.filter((s: any) => (s.layer || 'background') === 'background').sort((a: any, b: any) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0)).map((s: any) => s.id as string);
+    const aboveIds = backgroundSlides
+      .filter((slide) => slide.layer === 'overlay')
+      .sort((a, b) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0))
+      .map((slide) => slide.id);
+    const belowIds = backgroundSlides
+      .filter((slide) => (slide.layer || 'background') === 'background')
+      .sort((a, b) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0))
+      .map((slide) => slide.id);
     const allIds = [...aboveIds, ...belowIds];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile tab order after slide additions/removals, but not while dragging.
     setTabOrderIds((prev) => { if (prev.length === allIds.length && prev.every((id, i) => id === allIds[i])) return prev; return allIds; });
-  }, [backgroundSlides.map((s: any) => `${s.id}:${s.backgroundOrder ?? 0}:${s.overlayOrder ?? 0}:${s.layer || 'background'}`).join(',')]);
+  }, [backgroundSlides, draggingBackgroundSlideId]);
 
   // Tabs rendered in tabOrderIds order (falls back to backgroundSlides order when tabOrderIds empty)
   const tabOrderedSlides: any[] = tabOrderIds.length > 0
@@ -403,6 +421,7 @@ export function SettingsPanel({
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Select the slide requested by the parent editor action.
     setActiveBackgroundSlideTab((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
   }, [activeInsertImageId]);
 
@@ -430,6 +449,7 @@ export function SettingsPanel({
     }
 
     backgroundSectionHeaderRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Queue a one-frame tab scroll after the requested slide is selected.
     setPendingScrollSlideId((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
   }, [activeInsertImageId, activeTab, focusInsertImageSettingsKey]);
 
@@ -566,7 +586,10 @@ export function SettingsPanel({
   };
 
   const activateImageSlideEditing = (slideId: string) => {
-    const targetSlide = backgroundSlides.find((slide: any) => slide.id === slideId);
+    const currentSlides = Array.isArray(currentConfigRef.current.background?.slides)
+      ? currentConfigRef.current.background.slides as BackgroundSlideItem[]
+      : [];
+    const targetSlide = currentSlides.find((slide) => slide.id === slideId);
     if (!targetSlide || targetSlide.type === 'text') {
       return;
     }
@@ -574,6 +597,38 @@ export function SettingsPanel({
     window.requestAnimationFrame(() => {
       onEditInsertImage?.(slideId);
     });
+  };
+
+  const handleBackgroundSlideImagePaste = async (
+    path: string,
+    expectedProjectIdentity: string,
+    slideId: string,
+    target: HTMLInputElement,
+  ) => {
+    const naturalSize = await loadAssetNaturalSize(path);
+    if (
+      projectIdentityRef.current !== expectedProjectIdentity
+      || target.value !== path
+      || target.dataset.pasteOwner !== slideId
+    ) return;
+
+    const currentConfig = currentConfigRef.current;
+    const currentSlides: BackgroundSlideItem[] = Array.isArray(currentConfig.background?.slides)
+      ? currentConfig.background.slides
+      : [];
+    const slideExists = currentSlides.some((slide) => slide.id === slideId);
+    if (!slideExists) return;
+
+    onConfigChange({
+      ...currentConfig,
+      background: {
+        ...currentConfig.background,
+        slides: currentSlides.map((slide) => slide.id === slideId
+          ? { ...slide, image: path, intrinsicWidth: naturalSize?.width, intrinsicHeight: naturalSize?.height }
+          : slide),
+      },
+    });
+    activateImageSlideEditing(slideId);
   };
 
   const setBackgroundSlideExplicitOrder = (slideId: string, nextOrder: number) => {
@@ -754,6 +809,7 @@ export function SettingsPanel({
   const fontPresetEntries = Object.entries(fontPresets || {});
   const currentFontPreset = activeFontPresetId ? fontPresets?.[activeFontPresetId] : null;
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset the name draft when the selected font preset changes.
     setFontPresetNameDraft(currentFontPreset?.name || '');
   }, [currentFontPreset?.id, currentFontPreset?.name]);
   const makeFontPresetId = () => `font-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -922,40 +978,23 @@ export function SettingsPanel({
 
     return '';
   };
-  const saveClipboardImageToCache = async (
-    event: React.ClipboardEvent<HTMLInputElement>,
-    expectedProjectIdentity = projectIdentityRef.current,
-  ) => {
-    if (!window.electron || projectIdentityRef.current !== expectedProjectIdentity) {
-      return '';
-    }
+  const saveClipboardImageToCache = async (file: File, expectedProjectIdentity: string) => {
+    const electron = window.electron;
+    if (!electron || projectIdentityRef.current !== expectedProjectIdentity) return '';
 
-    const clipboardItems = Array.from(event.clipboardData?.items || []);
-    const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
-    if (!imageItem) {
-      return '';
-    }
-
-    const file = imageItem.getAsFile();
-    if (!file) {
-      return '';
-    }
-
-    const directPath = window.electron.getDroppedFilePath(file) || '';
+    const directPath = electron.getDroppedFilePath(file) || '';
     if (directPath) {
       if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
-        const imported = await window.electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: directPath, preferredName: file.name });
+        const imported = await electron.importProjectAsset({ projectFilePath: projectPath, sourcePath: directPath, preferredName: file.name });
         return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || directPath) : '';
       }
       return directPath;
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    if (projectIdentityRef.current !== expectedProjectIdentity) {
-      return '';
-    }
+    if (projectIdentityRef.current !== expectedProjectIdentity) return '';
     if (projectAssetsCacheEnabled && projectPath && projectPath !== 'web-demo') {
-      const imported = await window.electron.saveClipboardImageToProjectAssets({
+      const imported = await electron.saveClipboardImageToProjectAssets({
         projectFilePath: projectPath,
         bytes: Array.from(new Uint8Array(arrayBuffer)),
         contentType: file.type,
@@ -963,37 +1002,28 @@ export function SettingsPanel({
       });
       return projectIdentityRef.current === expectedProjectIdentity ? (imported?.storedPath || '') : '';
     }
-    if (projectIdentityRef.current !== expectedProjectIdentity) {
-      return '';
-    }
-    const cachedPath = await window.electron.saveClipboardImageToCache({
+    const cachedPath = await electron.saveClipboardImageToCache({
       bytes: Array.from(new Uint8Array(arrayBuffer)),
       contentType: file.type,
       preferredName: file.name,
     });
     return projectIdentityRef.current === expectedProjectIdentity ? (cachedPath || '') : '';
   };
-  const createImageAwarePathPasteHandler = (extensions: string[], onPath: (path: string) => void | Promise<void>) => {
-    return (event: React.ClipboardEvent<HTMLInputElement>) => {
-      const expectedProjectIdentity = projectIdentityRef.current;
-      const textOrFilePath = extractClipboardFilePath(event, extensions);
-      if (textOrFilePath) {
-        if (projectIdentityRef.current !== expectedProjectIdentity) return;
-        event.preventDefault();
-        void onPath(textOrFilePath);
-        return;
-      }
-
-      void (async () => {
-        const cachedImagePath = await saveClipboardImageToCache(event, expectedProjectIdentity);
-        if (!cachedImagePath || projectIdentityRef.current !== expectedProjectIdentity) {
-          return;
-        }
-
-        event.preventDefault();
-        await onPath(cachedImagePath);
-      })();
-    };
+  const createImageAwarePathPasteHandler = (extensions: string[], targetOwner: string, backgroundSlideId?: string) => (event: React.ClipboardEvent<HTMLInputElement>) => {
+    handleUndoablePathPaste(event, {
+      identityRef: projectIdentityRef,
+      extractPath: (clipboardEvent) => extractClipboardFilePath(clipboardEvent, extensions),
+      extractImageFile: (clipboardEvent) => {
+        const item = Array.from(clipboardEvent.clipboardData?.items || []).find((clipboardItem) => clipboardItem.kind === 'file' && clipboardItem.type.startsWith('image/'));
+        return item?.getAsFile() || null;
+      },
+      canSaveImage: () => Boolean(window.electron),
+      targetOwner,
+      saveImage: saveClipboardImageToCache,
+      afterInsert: backgroundSlideId
+        ? (path, identity, target) => handleBackgroundSlideImagePaste(path, identity, backgroundSlideId, target as HTMLInputElement)
+        : undefined,
+    });
   };
   const THEME_COLOR_OPTIONS = [
     ['#545454', t('themeColor.pianoBlack')],
@@ -2102,8 +2132,9 @@ export function SettingsPanel({
                   <input
                     type="text"
                     value={config.background?.image || ''}
+                    data-paste-owner="global-background"
                     onChange={(e) => updateBackground('image', e.target.value)}
-                    onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => updateBackground('image', path))}
+                    onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], 'global-background')}
                     title={t('project.quickPasteFilePathTip')}
                     className={`flex-1 w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
                     style={inputSurfaceStyle}
@@ -2364,19 +2395,13 @@ export function SettingsPanel({
                               <input
                                 type="text"
                                 value={currentBackgroundSlide.image || ''}
+                                data-paste-owner={currentBackgroundSlide.id}
                                 onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, image: e.target.value }))}
-                                onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], async (path) => {
-                                  const expectedProjectIdentity = projectIdentityRef.current;
-                                  const naturalSize = await loadAssetNaturalSize(path);
-                                  if (projectIdentityRef.current !== expectedProjectIdentity) return;
-                                  updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({
-                                    ...slide,
-                                    image: path,
-                                    intrinsicWidth: naturalSize?.width,
-                                    intrinsicHeight: naturalSize?.height,
-                                  }));
-                                  activateImageSlideEditing(currentBackgroundSlide.id);
-                                })}
+                                onPaste={createImageAwarePathPasteHandler(
+                                  ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'],
+                                  currentBackgroundSlide.id,
+                                  currentBackgroundSlide.id,
+                                )}
                                 title={t('project.quickPasteFilePathTip')}
                                 className={`flex-1 w-full border rounded-md px-3 py-2 text-xs focus:outline-none ${inputClass}`}
                                 style={inputSurfaceStyle}
@@ -2804,18 +2829,14 @@ export function SettingsPanel({
                               type="text" 
                               disabled={speakerLocked}
                               value={speaker.avatar}
+                              data-paste-owner={key}
                               onChange={(e) => {
                                 updateSpeaker(key, (currentSpeaker) => ({
                                   ...currentSpeaker,
                                   avatar: e.target.value
                                 }), { preservePreset: true });
                               }}
-                              onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], (path) => {
-                                updateSpeaker(key, (currentSpeaker) => ({
-                                  ...currentSpeaker,
-                                  avatar: path
-                                }), { preservePreset: true });
-                              })}
+                              onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], key)}
                               title={t('project.quickPasteFilePathTip')}
                               className={`flex-1 w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`}
                               style={{ ...inputSurfaceStyle, opacity: speakerLocked ? 0.5 : 1 }}

@@ -61,6 +61,15 @@ interface WaveformRegionsPlugin {
   }) => WaveformRegion;
 }
 
+const EMPTY_WAVEFORM_OVERLAY_METRICS = { scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 };
+
+type DragPreviewRangeState = {
+  start: number;
+  end: number;
+  baseStart: number;
+  baseEnd: number;
+};
+
 const formatTime = (seconds: number) => {
   if (isNaN(seconds) || !isFinite(seconds)) return '00:00.00';
   const m = Math.floor(seconds / 60);
@@ -125,17 +134,28 @@ export const PlayerControls = memo(function PlayerControls({
   const onEditingSubChangeRef = useRef(onEditingSubChange);
   
   const waveformRef = useRef<HTMLDivElement>(null);
+  const durationRef = useRef(duration);
+  const onWaveformZoomLevelChangeRef = useRef(onWaveformZoomLevelChange);
   const wavesurfer = useRef<WaveSurfer | null>(null);
   const wsRegions = useRef<WaveformRegionsPlugin | null>(null);
   const hasUserAdjustedZoomRef = useRef(false);
   const exportRangeDragRef = useRef<{ mode: 'start' | 'end' | 'move'; initialStart: number; initialEnd: number; anchorTime: number } | null>(null);
   
-  const [zoomLevel, setZoomLevel] = useState(waveformZoomLevel);
+  const [localZoomLevel, setLocalZoomLevel] = useState(waveformZoomLevel);
+  const zoomLevel = onWaveformZoomLevelChange ? waveformZoomLevel : localZoomLevel;
   const [minZoom, setMinZoom] = useState(10);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
   const [displayCurrentTime, setDisplayCurrentTime] = useState(0);
-  const [waveformOverlayMetrics, setWaveformOverlayMetrics] = useState({ scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 });
-  const [dragPreviewRange, setDragPreviewRange] = useState<{ start: number; end: number } | null>(null);
+  const [waveformOverlayMetricsState, setWaveformOverlayMetrics] = useState(EMPTY_WAVEFORM_OVERLAY_METRICS);
+  const [dragPreviewRangeState, setDragPreviewRangeState] = useState<DragPreviewRangeState | null>(null);
+  const dragPreviewRange = dragPreviewRangeState
+    && dragPreviewRangeState.baseStart === exportRangeStart
+    && dragPreviewRangeState.baseEnd === exportRangeEnd
+    ? dragPreviewRangeState
+    : null;
+  const waveformOverlayMetrics = audioPath && !isWaveformReady
+    ? EMPTY_WAVEFORM_OVERLAY_METRICS
+    : waveformOverlayMetricsState;
   const backgroundSlideDragRef = useRef<{ id: string; edge: 'start' | 'end' | 'move'; initialStart: number; initialEnd: number; anchorTime: number } | null>(null);
   const [waveformHoverPreview, setWaveformHoverPreview] = useState<{ x: number; time: number } | null>(null);
   const [insertImageHoverLabel, setInsertImageHoverLabel] = useState<{ x: number; y: number; label: string; type?: 'image' | 'text'; image?: string; text?: string } | null>(null);
@@ -232,20 +252,22 @@ export const PlayerControls = memo(function PlayerControls({
     hasUserAdjustedZoomRef.current = false;
   }, [audioPath]);
 
-  useEffect(() => {
-    setZoomLevel((prev) => (prev === waveformZoomLevel ? prev : waveformZoomLevel));
-  }, [waveformZoomLevel]);
-
   const applyZoomLevel = useCallback((nextZoomLevel: number) => {
-    setZoomLevel((previous) => previous === nextZoomLevel ? previous : nextZoomLevel);
-    onWaveformZoomLevelChange?.(nextZoomLevel);
-  }, [onWaveformZoomLevelChange]);
+    const onChange = onWaveformZoomLevelChangeRef.current;
+    if (onChange) {
+      onChange(nextZoomLevel);
+      return;
+    }
+    setLocalZoomLevel((previous) => previous === nextZoomLevel ? previous : nextZoomLevel);
+  }, []);
 
   useEffect(() => {
-    if (!exportRangeDragRef.current) {
-      setDragPreviewRange(null);
-    }
-  }, [exportRangeStart, exportRangeEnd]);
+    durationRef.current = duration;
+  }, [duration]);
+
+  useEffect(() => {
+    onWaveformZoomLevelChangeRef.current = onWaveformZoomLevelChange;
+  }, [onWaveformZoomLevelChange]);
 
   useEffect(() => {
     onEditingSubChangeRef.current = onEditingSubChange;
@@ -355,18 +377,18 @@ export const PlayerControls = memo(function PlayerControls({
   // Initialize WaveSurfer
   useEffect(() => {
     if (!audioPath) {
-      setIsWaveformReady(false);
       wsRegions.current = null;
       wavesurfer.current = null;
       return;
     }
-    if (!waveformRef.current) return;
+    const waveformContainer = waveformRef.current;
+    if (!waveformContainer) return;
 
     const readyResetTimer = window.setTimeout(() => setIsWaveformReady(false), 0);
-    waveformRef.current.innerHTML = '';
+    waveformContainer.innerHTML = '';
 
     wavesurfer.current = WaveSurfer.create({
-      container: waveformRef.current,
+      container: waveformContainer,
       waveColor: waveformBaseColor,
       progressColor: waveformProgressColor,
       cursorColor: 'transparent',
@@ -381,8 +403,7 @@ export const PlayerControls = memo(function PlayerControls({
 
     // Inject custom scrollbar styles into WaveSurfer's shadow wrapper
     const injectScrollbarStyle = () => {
-      if (!waveformRef.current) return;
-      const host = waveformRef.current.firstElementChild;
+      const host = waveformContainer.firstElementChild;
       if (host && host.shadowRoot) {
         if (!host.shadowRoot.querySelector('#ws-custom-scrollbar')) {
           const style = document.createElement('style');
@@ -502,10 +523,10 @@ export const PlayerControls = memo(function PlayerControls({
 
     // Calculate minimum zoom to fit the entire audio
     wavesurfer.current.on('decode', () => {
-      if (waveformRef.current && wavesurfer.current) {
-        const dur = Math.max(duration || 0, wavesurfer.current.getDuration() || 0);
+      if (wavesurfer.current) {
+        const dur = Math.max(durationRef.current || 0, wavesurfer.current.getDuration() || 0);
         if (dur > 0) {
-          const containerWidth = waveformRef.current.clientWidth;
+          const containerWidth = waveformContainer.clientWidth;
           const calculatedMin = containerWidth / dur;
           setMinZoom((previous) => previous === calculatedMin ? previous : calculatedMin);
 
@@ -557,11 +578,9 @@ export const PlayerControls = memo(function PlayerControls({
       wavesurfer.current?.destroy();
       wavesurfer.current = null;
       wsRegions.current = null;
-      if (waveformRef.current) {
-        waveformRef.current.innerHTML = '';
-      }
+      waveformContainer.innerHTML = '';
     };
-  }, [audioBlob, audioPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor]);
+  }, [audioBlob, audioPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor, applyZoomLevel]);
 
   useEffect(() => {
     const updateOverlayMetrics = () => {
@@ -586,11 +605,6 @@ export const PlayerControls = memo(function PlayerControls({
     }
 
     if (!isWaveformReady) {
-      setWaveformOverlayMetrics((previous) => (
-        previous.scrollLeft === 0 && previous.wrapperWidth === 0 && previous.viewportWidth === 0
-          ? previous
-          : { scrollLeft: 0, wrapperWidth: 0, viewportWidth: 0 }
-      ));
       return;
     }
 
@@ -661,7 +675,7 @@ export const PlayerControls = memo(function PlayerControls({
       }
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [isWaveformReady, minZoom, zoomLevel]);
+  }, [applyZoomLevel, isWaveformReady, minZoom, zoomLevel]);
 
   // Update WaveSurfer playback rate
   useEffect(() => {
@@ -862,21 +876,27 @@ export const PlayerControls = memo(function PlayerControls({
         const unclampedStart = dragTarget.initialStart + delta;
         const maxStart = Math.max(0, pointerWaveformDuration - durationSpan);
         const start = Math.max(0, Math.min(unclampedStart, maxStart));
-        setDragPreviewRange({ start, end: start + durationSpan });
+        setDragPreviewRangeState({ start, end: start + durationSpan, baseStart: exportRangeStart, baseEnd: exportRangeEnd });
       } else if (dragTarget.mode === 'start') {
-        setDragPreviewRange((prev) => {
-          const currentEnd = prev?.end ?? exportRangeEnd;
+        setDragPreviewRangeState((previous) => {
+          const current = previous?.baseStart === exportRangeStart && previous.baseEnd === exportRangeEnd ? previous : null;
+          const currentEnd = current?.end ?? exportRangeEnd;
           return {
             start: Math.min(nextTime, currentEnd),
             end: currentEnd,
+            baseStart: exportRangeStart,
+            baseEnd: exportRangeEnd,
           };
         });
       } else {
-        setDragPreviewRange((prev) => {
-          const currentStart = prev?.start ?? exportRangeStart;
+        setDragPreviewRangeState((previous) => {
+          const current = previous?.baseStart === exportRangeStart && previous.baseEnd === exportRangeEnd ? previous : null;
+          const currentStart = current?.start ?? exportRangeStart;
           return {
             start: currentStart,
             end: Math.max(nextTime, currentStart),
+            baseStart: exportRangeStart,
+            baseEnd: exportRangeEnd,
           };
         });
       }
@@ -894,7 +914,7 @@ export const PlayerControls = memo(function PlayerControls({
         onExportRangeChange(dragPreviewRange);
       }
       exportRangeDragRef.current = null;
-      setDragPreviewRange(null);
+      setDragPreviewRangeState(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     };

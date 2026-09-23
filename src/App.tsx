@@ -9289,7 +9289,7 @@ const [previewScale, setPreviewScale] = useState(1);
         showToast={showToast}
       />
 
-      <ExportModal
+      {showExportModal && <ExportModal
          isOpen={showExportModal}
          isDarkMode={isDarkMode}
          language={language}
@@ -9339,7 +9339,7 @@ const [previewScale, setPreviewScale] = useState(1);
          onStartExport={handleStartExport}
          onRevealOutput={handleRevealExport}
          onClearRenderCache={handleClearRenderCache}
-        />
+        />}
 
       <AboutModal
         isOpen={showAboutModal}
@@ -9356,7 +9356,7 @@ const [previewScale, setPreviewScale] = useState(1);
         updateResult={updateResult}
       />
 
-      <StyleManagerModal
+      {showStyleManager && <StyleManagerModal
         isOpen={showStyleManager}
         isDarkMode={isDarkMode}
         language={language}
@@ -9384,7 +9384,7 @@ const [previewScale, setPreviewScale] = useState(1);
           showToast(t('speakers.presetSaved', { name: '' }));
         }}
         onClose={() => { setShowStyleManager(false); setStyleManagerPresetTarget(null); }}
-      />
+      />}
 
       {projectResourceCheckModal}
       {unsavedProjectModal}
