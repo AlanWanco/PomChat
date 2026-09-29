@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, Clock, Settings, X } from 'lucide-react';
+import { FolderOpen, Plus, Clock, Settings, X, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
@@ -15,6 +15,7 @@ interface WelcomeScreenProps {
   onOpenRecent?: (path: string) => void;
   onRemoveRecent?: (path: string) => void;
   onOpenSettings?: () => void;
+  onOpenBiliup?: () => void;
   recentProject?: string | null;
   recentProjects?: string[];
   isDarkMode: boolean;
@@ -23,7 +24,7 @@ interface WelcomeScreenProps {
   secondaryThemeColor: string;
 }
 
-export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRemoveRecent, onOpenSettings, recentProject, recentProjects = [], isDarkMode, language, themeColor, secondaryThemeColor }: WelcomeScreenProps) {
+export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRemoveRecent, onOpenSettings, onOpenBiliup, recentProject, recentProjects = [], isDarkMode, language, themeColor, secondaryThemeColor }: WelcomeScreenProps) {
   const t = (key: string) => translate(language, key);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const [hoveredCard, setHoveredCard] = useState<'new' | 'open' | null>(null);
@@ -41,6 +42,18 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
         ['--pomchat-scrollbar-thumb-hover']: `${secondaryThemeColor}66`
       } as CSSVarStyle}
     >
+      {onOpenBiliup && window.electron && (
+        <button
+          type="button"
+          onClick={onOpenBiliup}
+          className="fixed bottom-6 left-6 z-30 inline-flex items-center gap-2 rounded-full border px-4 py-2.5 shadow-lg transition-transform hover:-translate-y-0.5"
+          style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: uiTheme.panelBg }}
+          title={t('welcome.biliup')}
+        >
+          <Upload size={16} />
+          {t('welcome.biliup')}
+        </button>
+      )}
       {onOpenSettings && (
         <button
           onClick={onOpenSettings}

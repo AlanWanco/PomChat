@@ -7945,6 +7945,7 @@ const [previewScale, setPreviewScale] = useState(1);
           onOpenRecent={handleOpenRecentProject}
           onRemoveRecent={removeRecentProject}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenBiliup={() => biliup.open()}
           recentProject={recentProject}
           recentProjects={config.ui?.recentProjects ?? DEFAULT_UI_CONFIG.recentProjects}
           isDarkMode={isDarkMode} 

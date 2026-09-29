@@ -464,12 +464,12 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     return () => { window.clearInterval(timer); view.removeEventListener('did-attach', attach); };
   }, [state.captchaUrl]);
   const requestClose = useCallback(() => {
-    if (state.busy) {
+    if (state.busy && state.kind !== 'upload') {
       if (!window.confirm(t('biliup.closeConfirm'))) return;
       void window.electron.biliup.cancel();
     }
     onClose();
-  }, [onClose, state.busy, t]);
+  }, [onClose, state.busy, state.kind, t]);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;

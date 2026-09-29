@@ -97,7 +97,7 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
   };
   const value: BiliupContextValue = {
     preferences, state, loaded, autoUpload, error, canAutoUpload, save, prepare, upload, setError, setAppearance,
-    open: () => { setFocusUpload(false); setIsOpen(true); }, setAutoUpload,
+    open: () => { setFocusUpload(state.kind === 'upload' && state.busy); setIsOpen(true); }, setAutoUpload,
   };
   return <BiliupContext.Provider value={value}>
     {children}
