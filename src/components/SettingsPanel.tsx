@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User } from 'lucide-react';
 import { translate, type Language } from '../i18n';
@@ -254,12 +254,13 @@ export function SettingsPanel({
   const [fontPresetNameDraft, setFontPresetNameDraft] = useState('');
   const [activeSpeakerTab, setActiveSpeakerTab] = useState<string | null>(null);
   const [speakerSubTab, setSpeakerSubTab] = useState<'speakers' | 'annotation'>('speakers');
-  const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(null);
+  const [activeBackgroundSlideTab, setActiveBackgroundSlideTab] = useState<string | null>(activeInsertImageId || null);
   const [hoveredLayerPreview, setHoveredLayerPreview] = useState<{ type: 'image' | 'text'; image?: string; text?: string; textColor?: string; fontFamily?: string; fontSize?: number; fontWeight?: string; x: number; y: number } | null>(null);
   const [draggingBackgroundSlideId, setDraggingBackgroundSlideId] = useState<string | null>(null);
-  const [activeSettingsSection, setActiveSettingsSection] = useState<string>('');
+  const [measuredSettingsSection, setMeasuredSettingsSection] = useState<string>('');
   const [hoveredSettingsSection, setHoveredSettingsSection] = useState<string>('');
-  const [localResourceActionReport, setLocalResourceActionReport] = useState<{ title: string; items: string[] } | null>(null);
+  const [lastResourceActionReport, setLastResourceActionReport] = useState(projectResourceActionReport);
+  const [localResourceActionReport, setLocalResourceActionReport] = useState(projectResourceActionReport);
   const backgroundSectionHeaderRef = useRef<HTMLDivElement | null>(null);
   const backgroundSlideTabsRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -281,8 +282,8 @@ export function SettingsPanel({
     const desiredScrollLeft = Math.max(0, targetCenter - tabsContainer.clientWidth / 2);
     tabsContainer.scrollTo({ left: desiredScrollLeft, behavior: 'smooth' });
   };
-  // Independent tab display order — decoupled from layer/backgroundOrder/overlayOrder
-  const [tabOrderIds, setTabOrderIds] = useState<string[]>([]);
+  // Freeze the display order only for the duration of a drag.
+  const [dragTabOrderIds, setDragTabOrderIds] = useState<string[]>([]);
   const speakerKeys = Object.keys(config.speakers).filter((key) => config.speakers[key]?.type !== 'annotation');
   const currentSpeakerTab = activeSpeakerTab && speakerKeys.includes(activeSpeakerTab) ? activeSpeakerTab : (speakerKeys[0] || null);
   const backgroundSlides: BackgroundSlideItem[] = Array.isArray(config.background?.slides)
@@ -294,7 +295,6 @@ export function SettingsPanel({
     { id: 'project-timestamp', label: t('project.timestampStyle') },
     { id: 'project-animation', label: t('project.animationStyle') },
     { id: 'project-background', label: t('project.background') },
-    { id: 'project-insert-assets', label: t('project.insertImages') },
   ];
   const speakerJumpSections = [
     { id: 'speaker-basic', label: t('speakers.title') },
@@ -311,14 +311,17 @@ export function SettingsPanel({
       ? speakerJumpSections
       : [];
   const visibleSettingsSectionIds = visibleSettingsSections.map((section) => section.id).join('|');
+  const activeSettingsSection = visibleSettingsSections.some((section) => section.id === measuredSettingsSection)
+    ? measuredSettingsSection
+    : '';
   const floatingNavTop = hideHeader ? 64 : compactHeader ? 108 : 120;
 
-  useEffect(() => {
-    if (projectResourceActionReport) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Mirror externally completed resource actions into the dismissible local result panel.
-      setLocalResourceActionReport(projectResourceActionReport);
-    }
-  }, [projectResourceActionReport]);
+  // A new completed report replaces the local pending message. A null report
+  // retains the last displayed result, as before; ordinary renders never reset it.
+  if (lastResourceActionReport !== projectResourceActionReport) {
+    setLastResourceActionReport(projectResourceActionReport);
+    if (projectResourceActionReport) setLocalResourceActionReport(projectResourceActionReport);
+  }
 
   const runResourceAction = (runner: (() => void | Promise<void>) | undefined, pendingLabel: string) => {
     setLocalResourceActionReport({ title: pendingLabel, items: [] });
@@ -352,17 +355,13 @@ export function SettingsPanel({
   const scrollToSettingsSection = (id: string) => {
     const target = settingsSectionRefs.current[id];
     if (!target) return;
-    setActiveSettingsSection(id);
+    setMeasuredSettingsSection(id);
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   useEffect(() => {
     const sectionIds = visibleSettingsSectionIds ? visibleSettingsSectionIds.split('|') : [];
-    if (sectionIds.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the active navigation marker when no sections are visible.
-      setActiveSettingsSection('');
-      return;
-    }
+    if (sectionIds.length === 0) return;
 
     const updateActiveSection = () => {
       const container = scrollContainerRef.current;
@@ -382,7 +381,7 @@ export function SettingsPanel({
         }
       }
 
-      setActiveSettingsSection((prev) => (prev === nextActive ? prev : nextActive));
+      setMeasuredSettingsSection((prev) => (prev === nextActive ? prev : nextActive));
     };
 
     updateActiveSection();
@@ -395,42 +394,34 @@ export function SettingsPanel({
     };
   }, [currentSpeakerTab, visibleSettingsSectionIds]);
 
-  // Keep tabOrderIds in sync when slides are added/removed (not during drags)
-  useEffect(() => {
-    if (draggingBackgroundSlideId) return;
-    const aboveIds = backgroundSlides
+  const layerOrderedTabIds = useMemo(() => [
+    ...backgroundSlides
       .filter((slide) => slide.layer === 'overlay')
-      .sort((a, b) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0))
-      .map((slide) => slide.id);
-    const belowIds = backgroundSlides
+      .sort((a, b) => (b.overlayOrder ?? 0) - (a.overlayOrder ?? 0)),
+    ...backgroundSlides
       .filter((slide) => (slide.layer || 'background') === 'background')
-      .sort((a, b) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0))
-      .map((slide) => slide.id);
-    const allIds = [...aboveIds, ...belowIds];
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile tab order after slide additions/removals, but not while dragging.
-    setTabOrderIds((prev) => { if (prev.length === allIds.length && prev.every((id, i) => id === allIds[i])) return prev; return allIds; });
-  }, [backgroundSlides, draggingBackgroundSlideId]);
+      .sort((a, b) => (b.backgroundOrder ?? 0) - (a.backgroundOrder ?? 0)),
+  ].map((slide) => slide.id), [backgroundSlides]);
+  const tabOrderIds = draggingBackgroundSlideId ? dragTabOrderIds : layerOrderedTabIds;
+  const tabOrderedSlides = useMemo(() => tabOrderIds.length > 0
+    ? tabOrderIds.map((id) => backgroundSlides.find((slide) => slide.id === id))
+      .filter((slide): slide is BackgroundSlideItem => Boolean(slide))
+    : backgroundSlides, [backgroundSlides, tabOrderIds]);
 
-  // Tabs rendered in tabOrderIds order (falls back to backgroundSlides order when tabOrderIds empty)
-  const tabOrderedSlides: any[] = tabOrderIds.length > 0
-    ? tabOrderIds.map((id) => backgroundSlides.find((s: any) => s.id === id)).filter(Boolean)
-    : backgroundSlides;
-
-  useEffect(() => {
-    if (!activeInsertImageId) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Select the slide requested by the parent editor action.
-    setActiveBackgroundSlideTab((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
-  }, [activeInsertImageId]);
+  // Only a changed, non-empty parent selection overrides a locally selected tab.
+  // Clearing the preview selection must keep the last settings tab open.
+  const [lastActiveInsertImageId, setLastActiveInsertImageId] = useState(activeInsertImageId);
+  if (lastActiveInsertImageId !== activeInsertImageId) {
+    setLastActiveInsertImageId(activeInsertImageId);
+    if (activeInsertImageId) setActiveBackgroundSlideTab(activeInsertImageId);
+  }
 
   const currentBackgroundSlide = activeBackgroundSlideTab
     ? backgroundSlides.find((slide: any) => slide.id === activeBackgroundSlideTab) || null
     : (tabOrderedSlides[0] || null);
 
   useEffect(() => {
-    if (!pendingScrollSlideId || !backgroundSlideTabsRef.current) {
+    if (activeTab !== 'assets' || panelCollapsed || !pendingScrollSlideId || !backgroundSlideTabsRef.current) {
       return;
     }
 
@@ -441,7 +432,7 @@ export function SettingsPanel({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [pendingScrollSlideId, tabOrderedSlides]);
+  }, [activeTab, panelCollapsed, pendingScrollSlideId, tabOrderedSlides]);
 
   useEffect(() => {
     if (!focusInsertImageSettingsKey || activeTab !== 'assets' || !activeInsertImageId || !backgroundSectionHeaderRef.current) {
@@ -449,8 +440,13 @@ export function SettingsPanel({
     }
 
     backgroundSectionHeaderRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Queue a one-frame tab scroll after the requested slide is selected.
-    setPendingScrollSlideId((prev) => (prev === activeInsertImageId ? prev : activeInsertImageId));
+    // The selection has already been reconciled for this commit. Scroll after
+    // layout without copying the parent's focus request into local state.
+    const frame = window.requestAnimationFrame(() => {
+      backgroundSectionHeaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollSlideTabIntoView(activeInsertImageId);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [activeInsertImageId, activeTab, focusInsertImageSettingsKey]);
 
   useEffect(() => {
@@ -808,10 +804,13 @@ export function SettingsPanel({
 
   const fontPresetEntries = Object.entries(fontPresets || {});
   const currentFontPreset = activeFontPresetId ? fontPresets?.[activeFontPresetId] : null;
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset the name draft when the selected font preset changes.
+  const [fontDraftSource, setFontDraftSource] = useState({ id: currentFontPreset?.id, name: currentFontPreset?.name });
+  // Track only the preset identity and saved name: replacing its file or weight,
+  // or receiving an equivalent presets object, must not discard an in-progress name.
+  if (fontDraftSource.id !== currentFontPreset?.id || fontDraftSource.name !== currentFontPreset?.name) {
+    setFontDraftSource({ id: currentFontPreset?.id, name: currentFontPreset?.name });
     setFontPresetNameDraft(currentFontPreset?.name || '');
-  }, [currentFontPreset?.id, currentFontPreset?.name]);
+  }
   const makeFontPresetId = () => `font-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const getFontPresetNameFromPath = (filePath: string) => {
     const basename = filePath.replace(/\\/g, '/').split('/').pop() || 'Custom Font';
@@ -2255,10 +2254,7 @@ export function SettingsPanel({
         {activeTab === 'assets' && (
           <div className="space-y-4">
                <div className="rounded-xl border p-3 space-y-3 shadow-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, boxShadow: `0 6px 18px ${uiTheme.shadow}` }}>
-                <div ref={(node) => {
-                  backgroundSectionHeaderRef.current = node;
-                  registerSettingsSection('project-insert-assets')(node);
-                }} className="flex items-center justify-between">
+                <div ref={backgroundSectionHeaderRef} className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm font-medium" style={{ color: uiTheme.text }}>
                     <LayoutTemplate size={14} /> {t('project.insertImages')}
                   </label>
@@ -2289,6 +2285,7 @@ export function SettingsPanel({
                             onDragStart={(event) => {
                               event.dataTransfer.effectAllowed = 'move';
                               event.dataTransfer.setData('application/x-pomchat-insert-image-tab', slide.id);
+                              setDragTabOrderIds(tabOrderIds);
                               setDraggingBackgroundSlideId(slide.id);
                             }}
                             onDragOver={(event) => event.preventDefault()}

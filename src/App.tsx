@@ -26,6 +26,7 @@ import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAsset
 import { buildAssContent } from './assExport';
 import './App.css';
 import { useBiliup } from './components/BiliupContext';
+import { isProjectAssetResource } from './utils/projectResources';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
@@ -4911,16 +4912,17 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     const workingConfig = getCurrentConfigWithUi();
     const resources = collectProjectResources(workingConfig);
+    const projectAssets = resources.filter(isProjectAssetResource);
     const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || '';
     const presetAvatarDir = renderCacheInfo?.presetAvatars?.path || '';
     const projectAssetsDir = getResolvedProjectAssetPath('assets', projectPath) || '';
-    const copyRemoteAssetsCount = resources.filter((resource) => {
+    const copyRemoteAssetsCount = projectAssets.filter((resource) => {
       if (!resource.value?.trim()) return false;
       if (resource.kind === 'url') return true;
       const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
       return isPathInsideDirectory(resolvedPath, remoteCacheDir);
     }).length;
-    const copyLocalAssetsCount = resources.filter((resource) => {
+    const copyLocalAssetsCount = projectAssets.filter((resource) => {
       if (resource.kind !== 'file' || !resource.value?.trim()) return false;
       const resolvedPath = getResolvedProjectAssetPath(resource.value, projectPath);
       if (!resolvedPath || !looksLikeLocalFsPath(resolvedPath)) return false;
@@ -5071,7 +5073,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setProjectResourceActionBusy('remote-copy');
     try {
       const workingConfig = getCurrentConfigWithUi();
-      const resources = collectProjectResources(workingConfig);
+      const resources = collectProjectResources(workingConfig).filter(isProjectAssetResource);
       const remoteCacheDir = renderCacheInfo?.remoteAssets?.path || (await window.electron.getRenderCacheInfo())?.remoteAssets?.path || '';
       if (!isProjectResourceOperationCurrent(lifecycle)) return;
       const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
@@ -5182,7 +5184,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (unlockedCount > 0) {
         nextConfig = { ...nextConfig, speakers: nextSpeakers };
       }
-      const resources = collectProjectResources(nextConfig);
+      const resources = collectProjectResources(nextConfig).filter(isProjectAssetResource);
       const importedBySource = new Map<string, { storedPath: string; absolutePath: string } | null>();
       let changed = 0;
       const changedItems: string[] = [];
@@ -5262,7 +5264,7 @@ const [previewScale, setPreviewScale] = useState(1);
         const cachedPath = await window.electron.cacheRemoteAsset(rawValue);
         if (!isProjectResourceOperationCurrent(lifecycle)) return;
         if (cachedPath) {
-          const finalPath = projectAssetsCacheEnabled && targetProjectPath
+          const finalPath = projectAssetsCacheEnabled && targetProjectPath && isProjectAssetResource(resource)
             ? (await importProjectAssetPath(cachedPath, targetProjectPath))?.absolutePath || cachedPath
             : cachedPath;
           if (!isProjectResourceOperationCurrent(lifecycle)) return;
@@ -5590,7 +5592,7 @@ const [previewScale, setPreviewScale] = useState(1);
             finalPath = cachedPath || '';
           }
 
-          if (projectAssetsCacheEnabled && targetProjectPath && targetProjectPath !== 'web-demo' && finalPath) {
+          if (projectAssetsCacheEnabled && targetProjectPath && targetProjectPath !== 'web-demo' && finalPath && isProjectAssetResource(resource)) {
             let imported = importedByUrl.get(url);
             if (typeof imported === 'undefined') {
               imported = await importProjectAssetPath(finalPath, targetProjectPath);

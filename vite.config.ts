@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import pkg from './package.json'
@@ -48,7 +47,6 @@ export default defineConfig(({ command }) => {
         }
       },
     ]),
-    renderer(),
   ],
     server: {
       fs: {
