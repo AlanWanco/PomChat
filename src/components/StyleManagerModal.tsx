@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { memo, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen, ChevronDown } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
@@ -170,7 +170,7 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
   },
 };
 
-export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectIdentity, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
+export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectIdentity, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const currentProjectIdentity = projectIdentity || projectPath || '';
@@ -822,7 +822,7 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg, backdropFilter: 'blur(10px)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg }} onClick={onClose}>
       <div className="flex flex-col w-full max-w-[45rem] max-h-[85vh] overflow-hidden rounded-[28px] border shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.stopPropagation(); } }}
@@ -1565,4 +1565,4 @@ export function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, se
       )}
     </div>
   );
-}
+});

@@ -25,8 +25,9 @@ import type { BackgroundSlideItem } from './remotion/types';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
 import { buildAssContent } from './assExport';
 import './App.css';
-import { useBiliup } from './components/BiliupContext';
+import { useBiliupActions } from './components/BiliupContext';
 import { isProjectAssetResource } from './utils/projectResources';
+import { setExportProgressSnapshot } from './exportProgressStore';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
@@ -267,13 +268,6 @@ type RenderCacheInfo = {
 // Web-only local storage key
 const STORAGE_KEY = 'pomchat_config';
 const DEFAULT_I18N_LANGUAGE: Language = 'en';
-
-type ExportProgressState = {
-  progress: number;
-  elapsedMs: number;
-  estimatedRemainingMs: number | null;
-  stage: string;
-};
 
 const DEFAULT_BUBBLE_STYLE = {
   bgColor: '#2563eb',
@@ -1307,7 +1301,7 @@ function areAnyImportGroupOptionsEnabled(group: Record<string, boolean>) {
 }
 
 function App() {
-  const biliup = useBiliup();
+  const biliup = useBiliupActions();
   const getSpeakerNameSnapshot = (speakers: Record<string, any>) =>
     Object.fromEntries(Object.entries(speakers || {}).map(([key, speaker]) => [key, speaker?.name || '']));
   const getSystemPrefersDark = () => {
@@ -1379,7 +1373,6 @@ function App() {
   const [exportOutputPath, setExportOutputPath, exportOutputPathRef] = useLiveState('');
   const [exportRange, setExportRange, exportRangeRef] = useLiveState({ start: 0, end: 0 });
   const [isExporting, setIsExporting, isExportingRef] = useLiveState(false);
-  const [exportProgress, setExportProgress] = useState<ExportProgressState | null>(null);
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
   const [lastExportOutputPath, setLastExportOutputPath] = useState('');
   const [lastExportSucceeded, setLastExportSucceeded] = useState(false);
@@ -1574,6 +1567,7 @@ function App() {
     && token.revision === getHistory().revision
     && token.projectLoadRequestId === projectLoadRequestRef.current
   ), [getHistory, isProjectLifecycleCurrent, projectLoadRequestRef]);
+
   const syncHistoryAvailability = useCallback(() => {
     const history = getHistory();
     const nextCanUndo = history.canUndo;
@@ -1695,7 +1689,7 @@ function App() {
     setIsExporting(false);
     setShowAutoSavedTitle(false);
     setShowExportModal(false);
-    setExportProgress(null);
+    setExportProgressSnapshot(null);
     setFilenameTemplate('default');
     setCustomFilename('');
     setPersistedCustomFilename('');
@@ -4086,6 +4080,20 @@ const [previewScale, setPreviewScale] = useState(1);
     markProjectDirty();
   }, [exportParallelSegments, markProjectDirty, pushHistorySnapshot]);
 
+  const handleExportHardwareChange = useCallback((value: typeof exportHardware) => {
+    pushHistorySnapshot();
+    setExportHardware(value);
+    markProjectDirty();
+  }, [markProjectDirty, pushHistorySnapshot]);
+
+  const handleQuickSaveExport = useCallback(() => {
+    setExportOutputPath(quickSavePath);
+  }, [quickSavePath, setExportOutputPath]);
+
+  const handleCloseExportModal = useCallback(() => {
+    if (!isExporting) setShowExportModal(false);
+  }, [isExporting]);
+
   const handleCustomFilenameChange = useCallback((nextFilename: string) => {
     previewHistoryChange('filename', () => {
       if (exportFilenameEditorModeRef.current === 'advanced') advancedModeCustomFilenameRef.current = nextFilename;
@@ -4234,35 +4242,25 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename]);
 
   useEffect(() => {
-    if (!window.electron) {
-      return;
-    }
-
-    const unsubscribe = window.electron.onExportProgress((payload) => {
+    if (!window.electron) return;
+    return window.electron.onExportProgress((payload) => {
       const lifecycle = exportLifecycleRef.current;
-      if (!exportProgressActiveRef.current || !lifecycle || !isProjectResourceOperationCurrent(lifecycle)) {
-        return;
-      }
-      const stage = payload.stage;
-      const normalizedStage = stage === 'Rendering frames'
-        ? t('export.stageRendering')
-        : stage === 'Frame-by-frame rendering'
-          ? t('export.stageFrameByFrame')
-        : stage === 'Encoding video'
-          ? t('export.stageEncoding')
-          : stage === 'Encoding video (FFmpeg)'
-            ? t('export.stageEncodingFfmpeg')
-            : stage === 'Encoding MOV alpha (FFmpeg)'
-              ? t('export.stageEncodingMovAlpha')
-            : stage === 'Encoding WebM alpha (FFmpeg)'
-              ? t('export.stageEncodingWebmAlpha')
-            : stage === 'Muxing audio/video'
-              ? t('export.stageMuxing')
-              : stage;
-      setExportProgress({ ...payload, stage: normalizedStage });
+      if (!exportProgressActiveRef.current || !lifecycle || !isProjectResourceOperationCurrent(lifecycle)) return;
+      const stageKeys: Record<string, string> = {
+        'Rendering frames': 'export.stageRendering',
+        'Frame-by-frame rendering': 'export.stageFrameByFrame',
+        'Encoding video': 'export.stageEncoding',
+        'Encoding video (FFmpeg)': 'export.stageEncodingFfmpeg',
+        'Encoding MOV alpha (FFmpeg)': 'export.stageEncodingMovAlpha',
+        'Encoding WebM alpha (FFmpeg)': 'export.stageEncodingWebmAlpha',
+        'Muxing audio/video': 'export.stageMuxing',
+      };
+      const stageKey = stageKeys[payload.stage];
+      setExportProgressSnapshot({
+        ...payload,
+        stage: stageKey ? t(stageKey) : payload.stage,
+      });
     });
-
-    return unsubscribe;
   }, [isProjectResourceOperationCurrent, t]);
 
   const handleOpenBubbleSnapshot = useCallback((ids: string[]) => {
@@ -4440,12 +4438,12 @@ const [previewScale, setPreviewScale] = useState(1);
       && exportLifecycleRef.current === exportLifecycle
       && isProjectResourceOperationCurrent(exportLifecycle);
 
+    setExportProgressSnapshot({ progress: 0, elapsedMs: 0, estimatedRemainingMs: null, stage: t('export.preparing') });
     setIsExporting(true);
     exportCancellationRequestedRef.current = false;
     exportProgressActiveRef.current = true;
     setLastExportOutputPath(trimmedPath);
     setLastExportSucceeded(false);
-    setExportProgress({ progress: 0, elapsedMs: 0, estimatedRemainingMs: null, stage: t('export.preparing') });
     setExportStatusMessage(t('export.preparing'));
 
     try {
@@ -6704,7 +6702,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [applyTrackedConfigUpdater, captureProjectLifecycle, clearHistory, config.speakers, detectVideoMediaInfo, getHistory, isProjectLifecycleCurrent, presets, projectPathRef, showToast, t]);
 
 
-  const handleSelectImage = async (): Promise<string | null> => {
+  const handleSelectImage = useCallback(async (): Promise<string | null> => {
     const lifecycle = captureProjectLifecycle();
     if (!window.electron) {
       alert(t('dialog.webImageInputOnly'));
@@ -6738,7 +6736,23 @@ const [previewScale, setPreviewScale] = useState(1);
       }
     }
     return null;
-  };
+  }, [applyTrackedConfigUpdater, captureProjectLifecycle, isProjectLifecycleCurrent, showToast, t]);
+
+  const handleSaveStyleManager = useCallback((nextSpeakers: Record<string, any>, nextPresets?: Record<string, any>, nextAnnotations?: Record<string, any>) => {
+    const updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any> } = {};
+    if (nextPresets !== undefined) updates.presets = nextPresets;
+    if (nextAnnotations !== undefined) updates.annotationPresets = nextAnnotations;
+    handleConfigAndPresetsChange(
+      { ...configRef.current, speakers: nextSpeakers },
+      updates,
+    );
+    showToast(t('speakers.presetSaved', { name: '' }));
+  }, [handleConfigAndPresetsChange, showToast, t]);
+
+  const handleCloseStyleManager = useCallback(() => {
+    setShowStyleManager(false);
+    setStyleManagerPresetTarget(null);
+  }, []);
 
   const loadProjectFromPath = async (filePath: string) => {
     const lifecycle = captureProjectLifecycle();
@@ -7371,7 +7385,7 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
-    if (biliup.state.busy && !window.confirm(t('biliup.closeConfirm'))) {
+    if (biliup.getState().busy && !window.confirm(t('biliup.closeConfirm'))) {
       await window.electron.cancelAppClose();
       return;
     }
@@ -7386,7 +7400,7 @@ const [previewScale, setPreviewScale] = useState(1);
       pendingElectronAppCloseRef.current = false;
       await window.electron.cancelAppClose();
     }
-  }, [runWithUnsavedProjectGuard, biliup.state.busy, t]);
+  }, [runWithUnsavedProjectGuard, biliup.getState, t]);
 
   useEffect(() => {
     if (!window.electron) {
@@ -9307,7 +9321,6 @@ const [previewScale, setPreviewScale] = useState(1);
          subtitleEndTime={latestSubtitleEnd}
          isExporting={isExporting}
          exportSucceeded={lastExportSucceeded}
-         progress={exportProgress}
          statusMessage={exportStatusMessage}
          renderCacheInfo={renderCacheInfo}
          onCopyRemoteAssetsToProject={handleCopyRemoteAssetsToProject}
@@ -9320,18 +9333,14 @@ const [previewScale, setPreviewScale] = useState(1);
          filenameTemplate={filenameTemplate}
          filenameEditorMode={exportFilenameEditorMode}
          customFilename={customFilename}
-          onClose={() => {
-           if (!isExporting) {
-             setShowExportModal(false);
-           }
-         }}
+          onClose={handleCloseExportModal}
          onCancelExport={handleCancelExport}
          onOutputPathChange={setExportOutputPath}
          onChoosePath={handleChooseExportPath}
-         onQuickSave={() => setExportOutputPath(quickSavePath)}
+         onQuickSave={handleQuickSaveExport}
          onRangeChange={updateExportRange}
          onQualityChange={handleExportQualityChange}
-         onHardwareChange={(value) => { pushHistorySnapshot(); setExportHardware(value); markProjectDirty(); }}
+         onHardwareChange={handleExportHardwareChange}
          onExportParallelSegmentsChange={handleExportParallelSegmentsChange}
          onExportFormatChange={handleExportFormatChange}
          onExportLogEnabledChange={handleExportLogEnabledChange}
@@ -9376,17 +9385,8 @@ const [previewScale, setPreviewScale] = useState(1);
         onSelectImage={handleSelectImage}
         onSpeakerPresetsChange={handlePresetsChangeTracked}
         onAnnotationPresetsChange={handleAnnotationPresetsChangeTracked}
-        onSave={(nextSpeakers, nextPresets, nextAnnotations) => {
-          const updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any> } = {};
-          if (nextPresets !== undefined) updates.presets = nextPresets;
-          if (nextAnnotations !== undefined) updates.annotationPresets = nextAnnotations;
-          handleConfigAndPresetsChange(
-            { ...configRef.current, speakers: nextSpeakers },
-            updates,
-          );
-          showToast(t('speakers.presetSaved', { name: '' }));
-        }}
-        onClose={() => { setShowStyleManager(false); setStyleManagerPresetTarget(null); }}
+        onSave={handleSaveStyleManager}
+        onClose={handleCloseStyleManager}
       />}
 
       {projectResourceCheckModal}

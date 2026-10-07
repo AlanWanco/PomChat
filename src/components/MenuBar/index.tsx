@@ -3,7 +3,7 @@ import { Save, FolderOpen, Plus, Download, ChevronDown, Music, Subtitles, XCircl
 import { translate, type Language } from '../../i18n';
 import { createThemeTokens } from '../../theme';
 
-import { useBiliup } from '../BiliupContext';
+import { useBiliupActions } from '../BiliupContext';
 
 interface MenuBarProps {
   isDarkMode: boolean;
@@ -73,7 +73,7 @@ export function MenuBar({
 }: MenuBarProps) {
   const isWebMode = !window.electron;
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const biliup = useBiliup();
+  const biliup = useBiliupActions();
   const t = (key: string) => translate(language, key);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
 

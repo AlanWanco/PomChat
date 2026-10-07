@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, Check, Clock3, FolderOpen, ImagePlus, Info, Trash2, Upload, X } from 'lucide-react';
 import {
@@ -21,7 +21,7 @@ import {
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
-import { unwrapBiliup, useBiliup } from './BiliupContext';
+import { unwrapBiliup, useBiliupActions, useBiliupFlowState, useBiliupProgress } from './BiliupContext';
 import { captureTextInsertion, insertTextUndoably } from '../utils/undoableTextInput';
 
 interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
@@ -223,7 +223,8 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
 }
 
 export function BiliupDirectorySettings({ language, isDarkMode, themeColor, secondaryThemeColor }: Appearance) {
-  const biliup = useBiliup();
+  const biliup = useBiliupActions();
+  const flowState = useBiliupFlowState();
   const t = (key: string) => translate(language, key);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const accentStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
@@ -276,18 +277,18 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
   return <div className="space-y-3">
     <label className="block text-sm font-medium">{t('biliup.account')}</label>
     <div className="flex min-w-0 items-center gap-2">
-      {accounts.length > 0 && <select aria-label={t('biliup.account')} value={selectedAccount?.id || ''} onChange={(event) => switchAccount(event.target.value)} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' }}>
+      {accounts.length > 0 && <select aria-label={t('biliup.account')} value={selectedAccount?.id || ''} onChange={(event) => switchAccount(event.target.value)} disabled={!window.electron || !biliup.loaded || flowState.busy || saving} className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none', colorScheme: isDarkMode ? 'dark' : 'light' }}>
         {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
       </select>}
-      <button type="button" className="shrink-0 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={accentStyle} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={addAccount}>{t('biliup.account.add')}</button>
-      <button type="button" className="shrink-0 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!selectedAccount || accounts.length <= 1 || biliup.state.busy || saving} onClick={removeAccount}>{t('biliup.account.delete')}</button>
+      <button type="button" className="shrink-0 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={accentStyle} disabled={!window.electron || !biliup.loaded || flowState.busy || saving} onClick={addAccount}>{t('biliup.account.add')}</button>
+      <button type="button" className="shrink-0 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!selectedAccount || accounts.length <= 1 || flowState.busy || saving} onClick={removeAccount}>{t('biliup.account.delete')}</button>
     </div>
     <label className="block text-xs font-medium">{t('biliup.directory')}</label>
     <div className="flex min-w-0 gap-2">
       <input aria-label={t('biliup.directory')} value={directory} onChange={(event) => setDirectoryDraft({ base: biliup.preferences.directory, value: event.target.value })} onBlur={saveDirectory}
-        disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving}
+        disabled={!window.electron || !biliup.loaded || flowState.busy || saving}
         className="my-[3px] min-w-0 flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" style={{ background: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' }} />
-      <button type="button" className="inline-flex self-center shrink-0 items-center gap-1.5 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || biliup.state.busy || saving} onClick={chooseDirectory}><FolderOpen size={12} />{t('biliup.chooseDirectory')}</button>
+      <button type="button" className="inline-flex self-center shrink-0 items-center gap-1.5 border rounded px-2.5 py-2 text-xs transition-opacity hover:opacity-80 disabled:opacity-40" style={{ ...accentStyle, backgroundColor: theme.panelBgSubtle, color: theme.text }} disabled={!window.electron || !biliup.loaded || flowState.busy || saving} onClick={chooseDirectory}><FolderOpen size={12} />{t('biliup.chooseDirectory')}</button>
     </div>
     <p className="text-xs opacity-70">{t(window.electron ? 'biliup.directoryHint' : 'biliup.desktopOnly')}</p>
     {window.electron && <p className="text-xs opacity-70">{t('biliup.directoryLoginHint')}</p>}
@@ -296,7 +297,8 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
 }
 
 export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, secondaryThemeColor }: Appearance) {
-  const biliup = useBiliup();
+  const biliup = useBiliupActions();
+  const flowState = useBiliupFlowState();
   const t = (key: string) => translate(language, key);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const accentStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
@@ -305,7 +307,7 @@ export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, sec
   const [saving, setSaving] = useState(false);
   const projectFolderDirectory = directoryDraft?.base === biliup.preferences.projectFolderDirectory ? directoryDraft.value : biliup.preferences.projectFolderDirectory;
   const projectFolderTemplate = templateDraft?.base === biliup.preferences.projectFolderTemplate ? templateDraft.value : biliup.preferences.projectFolderTemplate;
-  const disabled = !window.electron || !biliup.loaded || biliup.state.busy || saving;
+  const disabled = !window.electron || !biliup.loaded || flowState.busy || saving;
   const surface = { backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text, outline: 'none', boxShadow: 'none' };
   const inputClass = 'w-full border rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50';
   const savePreferences = (patch: Partial<typeof biliup.preferences>) => {
@@ -366,13 +368,14 @@ export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, sec
   </section>;
 }
 
-export function BiliupExportControls({ language, isDarkMode, themeColor, secondaryThemeColor, isExporting, exportFormat }: { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string; isExporting: boolean; exportFormat: string }) {
-  const biliup = useBiliup();
+export const BiliupExportControls = memo(function BiliupExportControls({ language, isDarkMode, themeColor, secondaryThemeColor, isExporting, exportFormat }: { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string; isExporting: boolean; exportFormat: string }) {
+  const biliup = useBiliupActions();
+  const flowState = useBiliupFlowState();
   const t = (key: string) => translate(language, key);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
-  const templateSelectionDisabled = !window.electron || !biliup.loaded || isExporting || biliup.state.busy;
-  const autoUploadDisabled = !biliup.canAutoUpload || isExporting || biliup.state.busy || exportFormat !== 'mp4';
+  const templateSelectionDisabled = !window.electron || !biliup.loaded || isExporting || flowState.busy;
+  const autoUploadDisabled = !biliup.canAutoUpload || isExporting || flowState.busy || exportFormat !== 'mp4';
   const selectTemplate = (id: string) => {
     void biliup.save({ ...biliup.preferences, selectedTemplateId: id }).catch((error: Error) => biliup.setError(error.message));
   };
@@ -394,11 +397,33 @@ export function BiliupExportControls({ language, isDarkMode, themeColor, seconda
     {biliup.autoUpload && <p className="text-xs">{t('biliup.account')}: {biliup.preferences.accounts.find((item) => item.id === biliup.preferences.selectedAccountId)?.name || '—'} · {biliup.preferences.templates.find((item) => item.id === biliup.preferences.selectedTemplateId)?.name || '—'}</p>}
     {biliup.error && <p role="alert" className="text-xs text-red-500">{t(`biliup.error.${biliup.error}`)}</p>}
   </div>;
+});
+
+function BiliupUploadProgress({ language, isDarkMode, themeColor, secondaryThemeColor, kind }: Appearance & { kind: 'login' | 'upload' | null }) {
+  const progressState = useBiliupProgress();
+  const t = (key: string) => translate(language, key);
+  const theme = createThemeTokens(themeColor, isDarkMode);
+  const logRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [progressState.logs]);
+
+  return <>
+    {kind === 'upload' && <>
+      <div role="progressbar" aria-label={t('biliup.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressState.progress ?? undefined} className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: theme.panelBgSubtle }}>
+        <div className="h-full rounded-full transition-[width]" style={{ width: `${progressState.progress ?? 0}%`, backgroundColor: secondaryThemeColor, boxShadow: `0 0 12px ${secondaryThemeColor}66` }} />
+      </div>
+      <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{progressState.progress === null ? t('biliup.waitProgress') : <>{progressState.progress.toFixed(1)}%{progressState.progressText && <span className="ml-2 opacity-80">{progressState.progressText}</span>}</>}</p>
+    </>}
+    <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 select-text overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{progressState.logs.join('\n') || t('biliup.consoleHint')}</pre>
+  </>;
 }
 
-export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeColor, focusUpload = false, onClose }: Appearance & { focusUpload?: boolean; onClose: () => void }) {
-  const biliup = useBiliup();
-  const { preferences, state } = biliup;
+export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeColor, focusUpload = false, onClose }: Appearance & { focusUpload?: boolean; onClose: () => void }) {
+  const biliup = useBiliupActions();
+  const state = useBiliupFlowState();
+  const { preferences } = biliup;
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const [draft, setDraft] = useState<BiliupTemplate>(() => ({ ...(preferences.templates.find((item) => item.id === preferences.selectedTemplateId) || newBiliupTemplate()) }));
@@ -416,7 +441,6 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const [uploadConfirmation, setUploadConfirmation] = useState<{ template: BiliupTemplate; filePath: string } | null>(null);
   const [activeUploadTitle, setActiveUploadTitle] = useState('');
   const [saved, setSaved] = useState(false);
-  const logRef = useRef<HTMLPreElement>(null);
   const uploadSectionRef = useRef<HTMLDivElement>(null);
   const captchaViewRef = useRef<HTMLWebViewElement>(null);
   const busy = working || state.busy;
@@ -428,7 +452,6 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
   const buttonStyle = { backgroundColor: `${secondaryThemeColor}18`, borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor };
   const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
 
-  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [state.logs]);
   useEffect(() => {
     if (!focusUpload) return;
     const frame = window.requestAnimationFrame(() => uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -644,7 +667,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
     { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.onlySelf') : t('biliup.public') },
   ] : [];
 
-  return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => event.stopPropagation()}>
+  return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6" onMouseDown={(event) => event.stopPropagation()}>
     <section role="dialog" aria-modal="true" aria-label={t('biliup.settings')} className="flex w-full max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-[28px] border shadow-2xl"
       style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: theme.text }}>
       <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}><div><div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}24` }}>biliup</div><h2 className="text-xl font-semibold" style={{ color: theme.text }}>{t('biliup.settings')}</h2><button type="button" className="mt-1 block max-w-full truncate text-left text-xs underline decoration-current/40 underline-offset-2 transition-opacity hover:opacity-80" style={{ color: secondaryThemeColor }} onClick={() => { if (window.electron) void window.electron.openExternal(BILIUP_PROJECT_URL); }}>{BILIUP_PROJECT_URL}</button></div><button type="button" className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: theme.textMuted }} aria-label={t('settings.close')} onClick={requestClose}><X size={16} /></button></header>
@@ -812,13 +835,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
       <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {draft.name || '—'}</p>
       <div ref={uploadSectionRef} className="space-y-2">
         <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
-        {state.kind === 'upload' && <>
-          <div role="progressbar" aria-label={t('biliup.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress ?? undefined} className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: theme.panelBgSubtle }}>
-            <div className="h-full rounded-full transition-[width]" style={{ width: `${state.progress ?? 0}%`, backgroundColor: secondaryThemeColor, boxShadow: `0 0 12px ${secondaryThemeColor}66` }} />
-          </div>
-          <p className="text-xs font-mono" style={{ color: theme.textMuted }}>{state.progress === null ? t('biliup.waitProgress') : <>{state.progress.toFixed(1)}%{state.progressText && <span className="ml-2 opacity-80">{state.progressText}</span>}</>}</p>
-        </>}
-        <pre ref={logRef} role="log" aria-label={t('biliup.console')} className="h-40 select-text overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs font-mono border" style={{ backgroundColor: theme.appBg, borderColor: theme.border, color: theme.textMuted }}>{state.logs.join('\n') || t('biliup.consoleHint')}</pre>
+        <BiliupUploadProgress language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} kind={state.kind} />
         <BiliupPostUploadSettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
         {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}
         {state.bvid && <p className="text-sm select-text">{[state.bvid, activeUploadTitle || savedTemplate?.title].filter(Boolean).join(' · ')}</p>}
@@ -827,7 +844,7 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
         </div>
       </div>
     </section>
-    {uploadConfirmation && <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm" onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) setUploadConfirmation(null); }}>
+    {uploadConfirmation && <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 px-4 py-6" onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) setUploadConfirmation(null); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="biliup-upload-confirm-title" className="flex w-full max-w-2xl max-h-[86vh] flex-col overflow-hidden rounded-[26px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}44`, color: theme.text }} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
           <div className="flex min-w-0 items-start gap-3">
@@ -861,4 +878,4 @@ export function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeCo
       </section>
     </div>}
   </div>, document.body);
-}
+});

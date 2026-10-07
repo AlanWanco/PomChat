@@ -1,16 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Download, FolderOpen, Sparkles, Timer, Trash2, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
 import { Tooltip } from './ui/Tooltip';
 import { BiliupExportControls } from './BiliupModal';
-
-interface ExportProgressState {
-  progress: number;
-  elapsedMs: number;
-  estimatedRemainingMs: number | null;
-  stage: string;
-}
+import { getExportProgressSnapshot, subscribeExportProgress } from '../exportProgressStore';
 
 const copyToClipboard = async (text: string) => {
   if (!text) return false;
@@ -48,7 +42,6 @@ interface ExportModalProps {
   subtitleEndTime?: number;
   isExporting: boolean;
   exportSucceeded: boolean;
-  progress: ExportProgressState | null;
   statusMessage: string | null;
   renderCacheInfo?: {
     remoteAssets: { path: string; files: number; bytes: number };
@@ -205,7 +198,140 @@ const buildFilenamePreview = (
   return `${projectName}.${extension}`;
 };
 
-export function ExportModal({
+interface ExportProgressPanelProps {
+  language: Language;
+  isDarkMode: boolean;
+  themeColor: string;
+  secondaryThemeColor: string;
+  isExporting: boolean;
+  exportSucceeded: boolean;
+  exportFormat: 'mp4' | 'mov-alpha' | 'webm-alpha';
+  outputPath: string;
+  statusMessage: string | null;
+  onCancelExport: () => void | Promise<void>;
+  onClose: () => void;
+  onStartExport: () => void | Promise<void>;
+  onRevealOutput: () => void | Promise<void>;
+}
+
+const ExportProgressPanel = memo(function ExportProgressPanel({
+  language,
+  isDarkMode,
+  themeColor,
+  secondaryThemeColor,
+  isExporting,
+  exportSucceeded,
+  exportFormat,
+  outputPath,
+  statusMessage,
+  onCancelExport,
+  onClose,
+  onStartExport,
+  onRevealOutput,
+}: ExportProgressPanelProps) {
+  const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
+  const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const secondaryUiTheme = createThemeTokens(secondaryThemeColor, isDarkMode);
+  const progress = useSyncExternalStore(subscribeExportProgress, getExportProgressSnapshot, getExportProgressSnapshot);
+  const progressPercent = Math.max(0, Math.min(100, Math.round((progress?.progress || 0) * 100)));
+  const isErrorStatus = Boolean(statusMessage && /error|failed|超时|失败|异常/i.test(statusMessage));
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  return <div className="flex-1 flex flex-col">
+    <div className="mb-4"><BiliupExportControls language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} isExporting={isExporting} exportFormat={exportFormat} /></div>
+    <div className="mb-4 flex items-center gap-2">
+      <Timer size={16} style={{ color: secondaryThemeColor }} />
+      <div className="text-sm font-medium">{t('export.progress')}</div>
+    </div>
+
+    <div className="rounded-2xl border p-3" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
+      <div className="mb-2 flex items-center justify-between text-xs" style={{ color: uiTheme.textMuted }}>
+        <span>{progress?.stage || t('export.waiting')}</span>
+        <span style={{ color: secondaryUiTheme.accent }}>{progressPercent}%</span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full" style={{ backgroundColor: rgba(uiTheme.accent, isDarkMode ? 0.2 : 0.1) }}>
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{ width: `${progressPercent}%`, background: `linear-gradient(90deg, ${uiTheme.accent} 0%, ${secondaryUiTheme.accent} 100%)`, boxShadow: `0 0 18px ${rgba(secondaryUiTheme.accent, 0.28)}` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl border px-3 py-2" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
+          <div style={{ color: uiTheme.textMuted }}>{t('export.elapsed')}</div>
+          <div className="mt-1 font-mono text-sm">{formatDuration(progress?.elapsedMs || 0)}</div>
+        </div>
+        <div className="rounded-xl border px-3 py-2" style={{ borderColor: uiTheme.border, backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04) }}>
+          <div style={{ color: uiTheme.textMuted }}>{t('export.remaining')}</div>
+          <div className="mt-1 font-mono text-sm">{formatDuration(progress?.estimatedRemainingMs ?? null)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-4 min-w-0 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.09 : 0.05), color: statusMessage ? uiTheme.text : uiTheme.textMuted }}>
+      <div className="max-h-36 overflow-auto whitespace-pre-wrap break-all pr-1">
+        {statusMessage || t('export.statusIdle')}
+      </div>
+      {isErrorStatus && (
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await copyToClipboard(statusMessage || '');
+              setCopySuccess(ok);
+              if (ok) window.setTimeout(() => setCopySuccess(false), 1200);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
+            style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
+          >
+            {copySuccess ? `${t('common.copy')} ✓` : t('common.copy')}
+          </button>
+        </div>
+      )}
+    </div>
+
+    <div className="mt-3 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(themeColor, 0.16), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04), color: uiTheme.textMuted }}>
+      {t('export.previewDiffNotice')}
+    </div>
+
+    {exportSucceeded && !isExporting && outputPath ? (
+      <button
+        type="button"
+        onClick={() => void onRevealOutput()}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-colors"
+        style={{ backgroundColor: rgba(secondaryThemeColor, 0.14), color: secondaryThemeColor, border: `1px solid ${rgba(secondaryThemeColor, 0.22)}` }}
+      >
+        <FolderOpen size={15} />
+        {t('export.openFolder')}
+      </button>
+    ) : null}
+
+    <div className="mt-5 flex gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          if (isExporting) void onCancelExport();
+          else onClose();
+        }}
+        className="flex-1 rounded-2xl px-4 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: uiTheme.text, border: `1px solid ${uiTheme.border}` }}
+      >
+        {isExporting ? t('export.cancel') : t('common.cancel')}
+      </button>
+      <button
+        type="button"
+        onClick={() => void onStartExport()}
+        disabled={isExporting}
+        className="flex-1 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-transform disabled:cursor-not-allowed disabled:opacity-70"
+        style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${secondaryThemeColor} 100%)`, boxShadow: `0 16px 30px ${rgba(secondaryThemeColor, 0.25)}` }}
+      >
+        {isExporting ? t('export.exporting') : t('export.startButton')}
+      </button>
+    </div>
+  </div>;
+});
+
+export const ExportModal = memo(function ExportModal({
+
   isOpen,
   isDarkMode,
   language,
@@ -220,7 +346,6 @@ export function ExportModal({
   subtitleEndTime = 0,
   isExporting,
   exportSucceeded,
-  progress,
   statusMessage,
   renderCacheInfo,
   exportQuality = 'balance',
@@ -254,30 +379,27 @@ export function ExportModal({
 }: ExportModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
-  const secondaryUiTheme = createThemeTokens(secondaryThemeColor, isDarkMode);
   const [startInput, setStartInput] = useState(formatTime(rangeStart));
   const [endInput, setEndInput] = useState(formatTime(rangeEnd));
   const [localCustomFilename, setLocalCustomFilename] = useState(customFilename);
-  const [copySuccess, setCopySuccess] = useState(false);
+  const syncedInputsRef = useRef({ rangeStart, rangeEnd, customFilename });
   const [previewNow] = useState(() => new Date());
 
   useEffect(() => {
-    if (!isOpen) return;
-    const timer = window.setTimeout(() => setStartInput(formatTime(rangeStart)), 0);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, rangeStart]);
+    const previous = syncedInputsRef.current;
+    const updateStart = previous.rangeStart !== rangeStart;
+    const updateEnd = previous.rangeEnd !== rangeEnd;
+    const updateFilename = previous.customFilename !== customFilename;
+    syncedInputsRef.current = { rangeStart, rangeEnd, customFilename };
+    if (!updateStart && !updateEnd && !updateFilename) return;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const timer = window.setTimeout(() => setEndInput(formatTime(rangeEnd)), 0);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, rangeEnd]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const timer = window.setTimeout(() => setLocalCustomFilename(customFilename), 0);
-    return () => window.clearTimeout(timer);
-  }, [isOpen, customFilename]);
+    const frame = window.requestAnimationFrame(() => {
+      if (updateStart) setStartInput(formatTime(rangeStart));
+      if (updateEnd) setEndInput(formatTime(rangeEnd));
+      if (updateFilename) setLocalCustomFilename(customFilename);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rangeStart, rangeEnd, customFilename]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -291,9 +413,7 @@ export function ExportModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExporting, isOpen, onClose]);
 
-  const progressPercent = Math.max(0, Math.min(100, Math.round((progress?.progress || 0) * 100)));
   const exportSpan = useMemo(() => Math.max(0, rangeEnd - rangeStart), [rangeEnd, rangeStart]);
-  const isErrorStatus = Boolean(statusMessage && /error|failed|超时|失败|异常/i.test(statusMessage));
   const filenamePreview = useMemo(
     () => buildFilenamePreview(projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename, previewNow),
     [projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename, previewNow],
@@ -313,7 +433,7 @@ export function ExportModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 backdrop-blur-sm px-4 py-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 px-4 py-4 overflow-y-auto">
       <div
         className="w-full max-w-[60rem] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
         style={{
@@ -780,106 +900,24 @@ export function ExportModal({
                 </div>
               </div>
 
-             {/* Progress Section */}
-             <div className="flex-1 flex flex-col">
-               <div className="mb-4"><BiliupExportControls language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} isExporting={isExporting} exportFormat={exportFormat} /></div>
-               <div className="mb-4 flex items-center gap-2">
-                 <Timer size={16} style={{ color: secondaryThemeColor }} />
-                 <div className="text-sm font-medium">{t('export.progress')}</div>
-               </div>
-
-               <div className="rounded-2xl border p-3" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
-                 <div className="mb-2 flex items-center justify-between text-xs" style={{ color: uiTheme.textMuted }}>
-                   <span>{progress?.stage || t('export.waiting')}</span>
-                   <span style={{ color: secondaryUiTheme.accent }}>{progressPercent}%</span>
-                 </div>
-                 <div className="h-3 overflow-hidden rounded-full" style={{ backgroundColor: rgba(uiTheme.accent, isDarkMode ? 0.2 : 0.1) }}>
-                   <div
-                     className="h-full rounded-full transition-all duration-300"
-                     style={{ width: `${progressPercent}%`, background: `linear-gradient(90deg, ${uiTheme.accent} 0%, ${secondaryUiTheme.accent} 100%)`, boxShadow: `0 0 18px ${rgba(secondaryUiTheme.accent, 0.28)}` }}
-                   />
-                 </div>
-                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                   <div className="rounded-xl border px-3 py-2" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04) }}>
-                     <div style={{ color: uiTheme.textMuted }}>{t('export.elapsed')}</div>
-                     <div className="mt-1 font-mono text-sm">{formatDuration(progress?.elapsedMs || 0)}</div>
-                   </div>
-                   <div className="rounded-xl border px-3 py-2" style={{ borderColor: uiTheme.border, backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.08 : 0.04) }}>
-                     <div style={{ color: uiTheme.textMuted }}>{t('export.remaining')}</div>
-                     <div className="mt-1 font-mono text-sm">{formatDuration(progress?.estimatedRemainingMs ?? null)}</div>
-                   </div>
-                 </div>
-               </div>
-
-                <div className="mt-4 min-w-0 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(secondaryThemeColor, 0.18), backgroundColor: rgba(secondaryThemeColor, isDarkMode ? 0.09 : 0.05), color: statusMessage ? uiTheme.text : uiTheme.textMuted }}>
-                  <div className="max-h-36 overflow-auto whitespace-pre-wrap break-all pr-1">
-                    {statusMessage || t('export.statusIdle')}
-                  </div>
-                  {isErrorStatus && (
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const ok = await copyToClipboard(statusMessage || '');
-                          setCopySuccess(ok);
-                          if (ok) {
-                            window.setTimeout(() => setCopySuccess(false), 1200);
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
-                        style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-                      >
-                        {copySuccess ? `${t('common.copy')} ✓` : t('common.copy')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                 <div className="mt-3 rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: rgba(themeColor, 0.16), backgroundColor: rgba(themeColor, isDarkMode ? 0.08 : 0.04), color: uiTheme.textMuted }}>
-                   {t('export.previewDiffNotice')}
-                 </div>
-
-                {exportSucceeded && !isExporting && outputPath ? (
-                 <button
-                   type="button"
-                   onClick={() => void onRevealOutput()}
-                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-colors"
-                   style={{ backgroundColor: rgba(secondaryThemeColor, 0.14), color: secondaryThemeColor, border: `1px solid ${rgba(secondaryThemeColor, 0.22)}` }}
-                 >
-                   <FolderOpen size={15} />
-                   {t('export.openFolder')}
-                 </button>
-               ) : null}
-
-               <div className="mt-5 flex gap-2">
-                 <button
-                   type="button"
-                   onClick={() => {
-                     if (isExporting) {
-                       void onCancelExport();
-                     } else {
-                       onClose();
-                     }
-                   }}
-                   className="flex-1 rounded-2xl px-4 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                   style={{ backgroundColor: rgba(themeColor, isDarkMode ? 0.16 : 0.08), color: uiTheme.text, border: `1px solid ${uiTheme.border}` }}
-                 >
-                   {isExporting ? t('export.cancel') : t('common.cancel')}
-                 </button>
-                 <button
-                   type="button"
-                   onClick={() => void onStartExport()}
-                   disabled={isExporting}
-                   className="flex-1 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-transform disabled:cursor-not-allowed disabled:opacity-70"
-                   style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${secondaryThemeColor} 100%)`, boxShadow: `0 16px 30px ${rgba(secondaryThemeColor, 0.25)}` }}
-                 >
-                   {isExporting ? t('export.exporting') : t('export.startButton')}
-                 </button>
-               </div>
-             </div>
+             <ExportProgressPanel
+               language={language}
+               isDarkMode={isDarkMode}
+               themeColor={themeColor}
+               secondaryThemeColor={secondaryThemeColor}
+               isExporting={isExporting}
+               exportSucceeded={exportSucceeded}
+               exportFormat={exportFormat}
+               outputPath={outputPath}
+               statusMessage={statusMessage}
+               onCancelExport={onCancelExport}
+               onClose={onClose}
+               onStartExport={onStartExport}
+               onRevealOutput={onRevealOutput}
+             />
            </section>
         </div>
       </div>
     </div>
   );
-}
+});
