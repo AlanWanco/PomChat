@@ -15,6 +15,7 @@ export function NameInput({ value, onCommit, onDraftChange, commitRef, ...props 
   });
   return <input {...props} value={draft} onChange={(e) => { setDraft(e.target.value); onDraftChange(e.target.value !== value); }}
     onBlur={commit} onKeyDown={(e) => {
+      if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setDraft(value); onDraftChange(false); }
     }} />;

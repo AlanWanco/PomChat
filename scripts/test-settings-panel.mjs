@@ -11,6 +11,9 @@ import { build } from 'esbuild';
 import { openBrowser } from '@remotion/renderer';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appSource = readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+assert.ok(appSource.includes('onClose={cancelProjectResourceCheck}'), 'Resource-check Escape must use the revision-invalidating cancel path');
+assert.match(appSource, /const cancelProjectResourceCheck = useCallback\(\(\) => \{\s*projectResourceCheckRevisionRef\.current \+= 1;\s*setProjectResourceCheckDialog\(null\);\s*\}, \[\]\);/, 'Resource-check cancel must invalidate pending operations');
 const temporary = mkdtempSync(path.join(tmpdir(), 'pomchat-settings-test-'));
 const screenshots = process.argv[2];
 let browser;

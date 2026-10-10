@@ -29,7 +29,7 @@ export async function runUiInteractionTests() {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(target, value);
     flushSync(() => target.dispatchEvent(new Event('input', { bubbles: true })));
   };
-  const key = (target: Element, value: string, shiftKey = false) => flushSync(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
+  const key = (target: Element, value: string, shiftKey = false, options: KeyboardEventInit = {}) => flushSync(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true, ...options })));
   const click = (target: HTMLElement) => flushSync(() => target.click());
   const button = (text: string) => {
     const node = [...document.querySelectorAll('button')].find(el => el.textContent?.trim() === text);
@@ -82,19 +82,32 @@ export async function runUiInteractionTests() {
     }
     await render(<Rename />); focus(input()); change(input(), 'A');
     assert(names.length === 2 && confirmations === 0, 'Typing a collision does not overwrite');
+    key(input(), 'Enter', false, { isComposing: true });
+    assert(names.length === 2 && confirmations === 0 && input().value === 'A', 'IME Enter accepts a candidate without committing the name');
+    key(input(), 'Escape', false, { isComposing: true });
+    assert(input().value === 'A' && nameDirty, 'IME Escape cancels composition without discarding the draft');
     blur(input()); assert(names.length === 2 && nameDirty && input().value === 'A', 'Cancelled overwrite preserves draft');
     allowed = true; key(input(), 'Enter'); assert(names.length === 1 && !nameDirty, 'Confirmed rename commits once');
     results.push('预设名称：逐字输入不覆盖，取消保留草稿');
 
-    let closes = 0;
+    let closes = 0; let dialogSaves = 0;
     const opener = document.createElement('button'); opener.textContent = 'opener'; document.body.append(opener); opener.focus();
-    await render(<Dialog aria-label="Test dialog" onClose={() => closes++}><NumberInput language="en" value={1} onValueChange={noop} /><button>last</button></Dialog>);
-    focus(input()); key(input(), 'Escape'); assert(closes === 0, 'Field Escape is consumed');
-    focus(button('last')); key(button('last'), 'Tab'); assert(document.activeElement === input(), 'Tab wraps inside modal');
-    opener.focus(); assert(document.activeElement === input(), 'Background cannot steal modal focus');
+    await render(<Dialog aria-label="Test dialog" onClose={() => closes++} onSave={() => dialogSaves++}><input aria-label="plain field" /><NumberInput language="en" value={1} onValueChange={noop} /><button>last</button></Dialog>);
+    const plainInput = document.querySelector<HTMLInputElement>('input:not([data-number-draft])')!;
+    const numberInput = document.querySelector<HTMLInputElement>('[data-number-draft="true"]')!;
+    focus(plainInput); key(plainInput, 's', false, { ctrlKey: true });
+    assert(dialogSaves === 1 && document.querySelector('[role="dialog"]')?.contains(document.activeElement), 'Ctrl+S invokes a dialog-specific save handler without losing modal focus');
+    key(plainInput, 's', false, { ctrlKey: true, isComposing: true });
+    assert(dialogSaves === 1, 'IME composition does not trigger dialog save');
+    const imeEscapeEvent = new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    flushSync(() => plainInput.dispatchEvent(imeEscapeEvent));
+    assert(closes === 0 && document.activeElement === plainInput, `IME Escape does not close the dialog (closes=${closes}, active=${document.activeElement?.tagName}, composing=${imeEscapeEvent.isComposing})`);
+    focus(numberInput); key(numberInput, 'Escape'); assert(closes === 0, 'Field Escape is consumed');
+    focus(button('last')); key(button('last'), 'Tab'); assert(document.activeElement === plainInput, 'Tab wraps inside modal');
+    opener.focus(); assert(document.activeElement === plainInput, 'Background cannot steal modal focus');
     focus(button('last')); key(button('last'), 'Escape'); assert(closes === 1, 'Modal Escape requests close once');
     await render(null); assert(document.activeElement === opener, 'Closing restores opener focus'); opener.remove();
-    results.push('弹窗：Esc 不穿透、焦点限制和归还');
+    results.push('弹窗：IME Esc、焦点限制、Esc 关闭和焦点归还');
 
     let speaker = 'A';
     await render(<Dialog aria-label="Picker"><SpeakerPicker options={['A', 'B', 'C'].map(id => [id, { name: id }])} value="A" onChange={id => { speaker = id; }} accentColor="#888" theme={{ inputBg: '#fff', border: '#aaa', text: '#111', panelBgElevated: '#fff', hoverBg: '#eee', textMuted: '#666' }} /></Dialog>);
@@ -115,8 +128,9 @@ export async function runUiInteractionTests() {
     assert(!draftClosed, 'Backdrop does not discard style drafts');
     click(button(t('common.close'))); await settle();
     let guard = document.querySelector('[aria-label="'+t('draft.title')+'"]')!;
-    click([...guard.querySelectorAll('button')].find(el => el.textContent === t('action.save'))!); await settle();
-    assert(!draftClosed && document.body.textContent?.includes('Synthetic save failure'), 'Failed save keeps guard and editor open');
+    const guardSave = [...guard.querySelectorAll<HTMLButtonElement>('button')].find(el => el.textContent === t('action.save'))!;
+    focus(guardSave); key(guardSave, 's', false, { ctrlKey: true }); await settle();
+    assert(!draftClosed && document.body.textContent?.includes('Synthetic save failure'), 'Ctrl+S saves through the active draft guard and preserves failures');
     click(button(t('common.cancel')));
     assert([...document.querySelectorAll('input')].some(el => el.value === 'Edited Alice'), 'Cancel retains style draft');
     click(button(t('common.close'))); await settle();

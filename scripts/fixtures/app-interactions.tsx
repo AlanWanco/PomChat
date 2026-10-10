@@ -67,6 +67,19 @@ export async function runAppInteractionTests() {
     await new Promise(resolve => setTimeout(resolve, 1700)); shortcut('s'); await settle();
     await new Promise(resolve => setTimeout(resolve, 1500));
     assert([...document.querySelectorAll('[role="status"]')].some(node => node.textContent?.includes(t('app.projectSaved'))), 'A previous toast timer cannot clear the latest repeated message');
-    return ['完整应用：一次输入一次撤销、保存提交草稿、角色删除与字幕改绑原子撤销', '提示消息：连续相同提示重新计时'];
+    await new Promise(resolve => setTimeout(resolve, 3100));
+
+    click(button(t('tab.project'))); await settle();
+    change(fps(), '50'); flushSync(() => fps().blur()); await settle();
+    click(button('PomChat Studio')); await settle();
+    assert(document.querySelector('[aria-label="PomChat Studio"]'), 'About dialog opens');
+    flushSync(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })));
+    await settle();
+    assert(![...document.querySelectorAll('[role="status"]')].some(node => node.textContent?.includes(t('app.projectSaved'))), 'Save shortcut does not interrupt an active IME composition');
+    shortcut('s'); await settle();
+    assert([...document.querySelectorAll('[role="status"]')].some(node => node.textContent?.includes(t('app.projectSaved'))), 'Ctrl+S saves the project while a dialog without its own save action is open');
+    flushSync(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    await settle();
+    return ['完整应用：一次输入一次撤销、保存提交草稿、角色删除与字幕改绑原子撤销', '提示消息：连续相同提示重新计时', '弹窗内 Ctrl+S：无弹窗专属保存动作时仍保存项目'];
   } finally { flushSync(() => root.unmount()); localStorage.clear(); }
 }

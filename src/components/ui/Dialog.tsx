@@ -19,14 +19,21 @@ export function Dialog({ children, onClose, onSave, ...props }: HTMLAttributes<H
     });
     const handleKey = (event: KeyboardEvent) => {
       if (dialogs.at(-1) !== node || event.defaultPrevented) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      const isComposing = event.isComposing || event.keyCode === 229;
+      if (!isComposing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && save.current) {
         event.preventDefault(); event.stopImmediatePropagation();
-        if (save.current) {
-          flushSync(() => { if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur(); });
-          save.current();
+        const activeInput = document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
+        flushSync(() => activeInput?.blur());
+        if (dialogs.at(-1) === node) {
+          const targets = focusable(node);
+          (activeInput && targets.includes(activeInput) ? activeInput : targets[0] || node).focus({ preventScroll: true });
         }
+        save.current();
       }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); close.current?.(); }
+      if (event.key === 'Escape') {
+        if (isComposing) return;
+        event.preventDefault(); event.stopImmediatePropagation(); close.current?.();
+      }
       if (event.key === 'Tab') {
         const listbox = document.querySelector<HTMLElement>('[data-dialog-popup="true"]');
         const items = [...focusable(node), ...(listbox ? focusable(listbox) : [])];

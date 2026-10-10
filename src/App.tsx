@@ -7579,8 +7579,9 @@ const [previewScale, setPreviewScale] = useState(1);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (hasOpenDialog()) return;
-      if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey)) {
+      const isSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
+      if (hasOpenDialog() && !isSaveShortcut) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || !(event.metaKey || event.ctrlKey)) {
         return;
       }
 
@@ -7857,7 +7858,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const projectResourceCheckModal = projectResourceCheckDialog ? (
-    <Dialog aria-label={t('projectResourceCheck.title')} onClose={() => setProjectResourceCheckDialog(null)} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <Dialog aria-label={t('projectResourceCheck.title')} onClose={cancelProjectResourceCheck} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-4xl rounded-xl border shadow-2xl p-4 space-y-4 max-h-[82vh] overflow-y-auto" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
         <div className="space-y-1">
           <div className="text-sm font-semibold">{t('projectResourceCheck.title')}</div>
