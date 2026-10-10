@@ -1,3 +1,4 @@
+import { parseTimeInput as parseFlexibleTime, correctTimeEndpoint } from '../utils/timeInput';
 import { Play, Pause, SquareSquare, RotateCcw, Volume1, Repeat, Settings2, Clock3, SkipBack, SkipForward, ArrowRight, ArrowLeft, ArrowDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
@@ -125,6 +126,7 @@ export const PlayerControls = memo(function PlayerControls({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [regionTooltip, setRegionTooltip] = useState<{ start: number; end: number } | null>(null);
   const [timeInputMode, setTimeInputMode] = useState(false);
+  const [timeMessage, setTimeMessage] = useState('');
   const [timeInputValue, setTimeInputValue] = useState('');
   const [exportStartInputMode, setExportStartInputMode] = useState(false);
   const [exportStartInputValue, setExportStartInputValue] = useState('');
@@ -315,43 +317,21 @@ export const PlayerControls = memo(function PlayerControls({
     };
   }, [audioRef, audioPath, isPlaying]);
 
-  const parseFlexibleTime = (value: string) => {
-    const input = value.trim();
-    if (!input) return null;
-
-    if (/^\d+(\.\d+)?$/.test(input)) {
-      const seconds = Number(input);
-      return Number.isFinite(seconds) ? seconds : null;
-    }
-
-    const parts = input.split(':').map((part) => part.trim()).filter(Boolean);
-    if (parts.length < 2 || parts.length > 3) return null;
-
-    const numericParts = parts.map((part) => Number(part));
-    if (numericParts.some((part) => !Number.isFinite(part) || part < 0)) return null;
-
-    if (parts.length === 2) {
-      const [minutes, seconds] = numericParts;
-      return minutes * 60 + seconds;
-    }
-
-    const [hours, minutes, seconds] = numericParts;
-    return hours * 3600 + minutes * 60 + seconds;
-  };
-
   const commitTimeJump = () => {
     const next = parseFlexibleTime(timeInputValue);
-    if (next !== null && Number.isFinite(next) && next >= 0 && next <= duration) {
-      onSeek(next);
-    }
+    const corrected = next === null ? displayCurrentTime : Math.max(0, Math.min(duration, next));
+    setTimeMessage(next === null ? t('input.timeInvalid') : corrected !== next ? t('input.corrected') : '');
+    onSeek(corrected);
     setTimeInputMode(false);
   };
 
   const commitExportRangeInput = (field: 'start' | 'end') => {
     const rawValue = field === 'start' ? exportStartInputValue : exportEndInputValue;
     const next = parseFlexibleTime(rawValue);
-    if (next !== null && Number.isFinite(next) && next >= 0) {
-      onExportRangeChange(field === 'start' ? { start: next } : { end: next });
+    setTimeMessage(next === null ? t('input.timeInvalid') : next !== correctTimeEndpoint(next, field, exportRangeStart, exportRangeEnd) ? t('input.timeRange') : '');
+    if (next !== null) {
+      const corrected = correctTimeEndpoint(next, field, exportRangeStart, exportRangeEnd);
+      onExportRangeChange(field === 'start' ? { start: corrected } : { end: corrected });
     }
 
     if (field === 'start') {
@@ -999,6 +979,7 @@ export const PlayerControls = memo(function PlayerControls({
   return (
     <div className={`border-t flex flex-col shrink-0 z-20 transition-colors duration-300 [&_.text-xs]:text-sm ${compactMobile ? 'h-auto px-2.5 py-1.5' : 'h-auto px-6 py-2'}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border, boxShadow: `0 -4px 14px ${secondaryThemeColor}16` }}>
       
+      {timeMessage && <p role="status" className="text-xs text-amber-600">{timeMessage}</p>}
       {/* Waveform Track */}
       <div
         className="relative z-10 w-full overflow-visible"
@@ -1442,7 +1423,7 @@ export const PlayerControls = memo(function PlayerControls({
               onBlur={commitTimeJump}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitTimeJump();
-                if (e.key === 'Escape') setTimeInputMode(false);
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTimeInputMode(false); }
               }}
               className={`${compactMobile ? 'w-[96px] text-sm' : 'w-[112px] text-base'} font-mono font-medium tracking-wider px-2 py-1 text-center rounded-full focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
               style={{ backgroundColor: `${secondaryThemeColor}14`, border: `1px solid ${secondaryThemeColor}33` }}
@@ -1569,7 +1550,7 @@ export const PlayerControls = memo(function PlayerControls({
                 onBlur={() => commitExportRangeInput('start')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') commitExportRangeInput('start');
-                  if (e.key === 'Escape') setExportStartInputMode(false);
+                  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setExportStartInputMode(false); }
                 }}
                 className={`w-[82px] bg-transparent text-[0.6875rem] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                 autoFocus
@@ -1674,7 +1655,7 @@ export const PlayerControls = memo(function PlayerControls({
                 onBlur={() => commitExportRangeInput('end')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') commitExportRangeInput('end');
-                  if (e.key === 'Escape') setExportEndInputMode(false);
+                  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setExportEndInputMode(false); }
                 }}
                 className={`w-[82px] bg-transparent text-[0.6875rem] font-mono tabular-nums text-center outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                 autoFocus

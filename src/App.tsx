@@ -1,3 +1,9 @@
+import { isNumberEditing } from './utils/inputSession';
+import { handleAvatarError } from './utils/avatarFallback';
+import { Toast, type ToastType } from './components/ui/Toast';
+import { Dialog } from './components/ui/Dialog';
+import { hasOpenDialog } from './utils/dialogStack';
+import { flushSync } from 'react-dom';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
@@ -731,7 +737,7 @@ function PreviewAvatar({
     );
   }
 
-  return <img src={src} alt={alt} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={style} />;
+  return <img src={src} alt={alt} onError={handleAvatarError} referrerPolicy="no-referrer" className="rounded-full shrink-0 object-cover" style={style} />;
 }
 
 function PreviewInlineMedia({
@@ -1592,9 +1598,9 @@ function App() {
       if (items) restoreSubtitles(items, source);
     }
     const changed = history.pending
-      ? history.preview('discrete', createHistorySnapshot())
+      ? history.preview(isNumberEditing() ? 'number-input' : 'discrete', createHistorySnapshot())
       : false;
-    if (!insertImageDragRef.current) history.finish();
+    if (!insertImageDragRef.current && !isNumberEditing()) history.finish();
     syncHistoryAvailability();
     if (!changed) return;
     if (autoSavedTitleTimeoutRef.current !== null) window.clearTimeout(autoSavedTitleTimeoutRef.current);
@@ -1729,10 +1735,11 @@ function App() {
     setCanRedo(false);
   }, [cancelPendingTimers, clearDesktopAudioSource, createHistorySnapshot, getHistory, invalidateSubtitleLoads, isExportingRef, setCachedRemoteAssets]);
   const pushHistorySnapshot = useCallback(() => {
-    flushPendingDebouncedConfigCommit();
     const history = getHistory();
+    if (isNumberEditing() && history.pending) return;
+    flushPendingDebouncedConfigCommit();
     if (history.sync(createHistorySnapshot())) syncHistoryAvailability();
-    history.begin('discrete');
+    history.begin(isNumberEditing() ? 'number-input' : 'discrete');
   }, [createHistorySnapshot, flushPendingDebouncedConfigCommit, getHistory, syncHistoryAvailability]);
   const restoreHistorySnapshot = useCallback((snapshot: HistorySnapshot) => {
     cancelPendingTimers();
@@ -1833,7 +1840,7 @@ function App() {
     }
     syncHistoryAvailability();
     if (debouncedConfigCommitTimerRef.current !== null) window.clearTimeout(debouncedConfigCommitTimerRef.current);
-    if (!pointerInteractionRef.current) {
+    if (!pointerInteractionRef.current && !isNumberEditing()) {
       const revision = transactionRevisionRef.current;
       debouncedConfigCommitTimerRef.current = window.setTimeout(() => {
         if (revision === transactionRevisionRef.current) flushPendingDebouncedConfigCommit();
@@ -1878,7 +1885,7 @@ function App() {
     // Source loads and existing compound actions settle into the same transaction.
     // Do not run this for currentTime-only renders: snapshot cloning is relatively expensive.
     const history = getHistory();
-    if (history.pending && !debouncedConfigCommitTimerRef.current && !pointerInteractionRef.current && !insertImageDragRef.current) markProjectDirty();
+    if (history.pending && !debouncedConfigCommitTimerRef.current && !pointerInteractionRef.current && !isNumberEditing() && !insertImageDragRef.current) markProjectDirty();
     else if (!history.pending && history.sync(createHistorySnapshot())) syncHistoryAvailability();
     if (retainedMediaHistoryVersionRef.current !== history.version) {
       mediaUrlsRef.current.retain(history.snapshots);
@@ -1928,14 +1935,17 @@ function App() {
   ]);
   useEffect(() => {
     const down = () => { pointerInteractionRef.current = true; };
-    const end = () => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); };
-    const blur = () => { if (!pointerInteractionRef.current) flushPendingDebouncedConfigCommit(); };
+    const end = () => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); };
+    const commitInput = () => { getHistory().preview('number-input', createHistorySnapshot()); flushPendingDebouncedConfigCommit(); };
+    const blur = () => { if (!pointerInteractionRef.current && !isNumberEditing()) flushPendingDebouncedConfigCommit(); };
+    window.addEventListener('pomchat:input-commit', commitInput);
     window.addEventListener('pointerdown', down, true);
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
     window.addEventListener('blur', end);
     window.addEventListener('focusout', blur);
     return () => {
+      window.removeEventListener('pomchat:input-commit', commitInput);
       window.removeEventListener('pointerdown', down, true);
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
@@ -1944,7 +1954,7 @@ function App() {
       cancelPendingTimers();
       mediaUrlsRef.current.dispose();
     };
-  }, [cancelPendingTimers, flushPendingDebouncedConfigCommit]);
+  }, [cancelPendingTimers, flushPendingDebouncedConfigCommit, getHistory, createHistorySnapshot]);
   const activePlaybackSubtitle = useMemo(
     () => subtitles.find((sub) => currentTime >= sub.start && currentTime <= sub.end) ?? null,
     [subtitles, currentTime]
@@ -2657,9 +2667,13 @@ const [previewScale, setPreviewScale] = useState(1);
   const appBackground = isDarkMode
     ? `linear-gradient(180deg, ${uiTheme.appBg} 0%, ${uiTheme.appBg} 74%, ${secondaryThemeColor}14 100%)`
     : `linear-gradient(180deg, ${uiTheme.appBg} 0%, ${uiTheme.appBg} 78%, ${secondaryThemeColor}12 100%)`;
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toastType, setToastType] = useState<ToastType>('info');
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const showToast = useCallback((msg: string, type: ToastType = 'info') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastMessage(msg); setToastType(type);
+    toastTimer.current = setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
   const openExternalUrl = useCallback(async (url: string) => {
@@ -2676,7 +2690,7 @@ const [previewScale, setPreviewScale] = useState(1);
     }
     const ok = await window.electron.openExportLogDir();
     if (!ok) {
-      showToast(t('app.openExportLogDirFailed'));
+      showToast(t('app.openExportLogDirFailed'), 'error');
     }
   }, [showToast, t]);
 
@@ -2717,7 +2731,7 @@ const [previewScale, setPreviewScale] = useState(1);
       showToast(result.hasUpdate ? `${t('about.updateAvailable')}: v${latestVersion}` : t('about.upToDate'));
     } catch (error) {
       setUpdateResult({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' });
-      showToast(t('about.updateCheckFailed'));
+      showToast(t('about.updateCheckFailed'), 'error');
     } finally {
       setIsCheckingUpdates(false);
     }
@@ -2821,7 +2835,7 @@ const [previewScale, setPreviewScale] = useState(1);
       rememberRecentProject(parsed?.projectTitle || 'web-demo');
       savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedRestoredConfig.speakers);
       if (requiresAudioReload) {
-        showToast(t('app.projectLoadedNeedAudio'));
+        showToast(t('app.projectLoadedNeedAudio'), 'success');
       }
       return true;
     } catch (error) {
@@ -3336,7 +3350,7 @@ const [previewScale, setPreviewScale] = useState(1);
       });
     }
     if (!options?.silent) {
-      showToast(t('app.configSaved'));
+      showToast(t('app.configSaved'), 'success');
     }
   };
 
@@ -3351,6 +3365,7 @@ const [previewScale, setPreviewScale] = useState(1);
   const [externalProjectPaths, setExternalProjectPaths] = useState<string[]>([]);
   const [openingExternalProject, setOpeningExternalProject] = useState(false);
   const [resolvingUnsavedProject, setResolvingUnsavedProject] = useState(false);
+  const [projectSaveError, setProjectSaveError] = useState('');
   const externalProjectBusyRef = useRef(false);
   const hasLoadedElectronConfigRef = useRef(false);
   useEffect(() => {
@@ -3982,7 +3997,7 @@ const [previewScale, setPreviewScale] = useState(1);
       setExportRange((prev) => {
         const rawStart = updates.start ?? prev.start;
         const rawEnd = updates.end ?? prev.end;
-        const nextStart = Number(Math.max(0, Math.min(rawStart, rawEnd)).toFixed(2));
+        const nextStart = Number(Math.max(0, updates.start === undefined ? prev.start : Math.min(rawStart, rawEnd)).toFixed(2));
         const nextEnd = Number(Math.max(nextStart, rawEnd).toFixed(2));
         return { start: nextStart, end: nextEnd };
       });
@@ -4497,7 +4512,7 @@ const [previewScale, setPreviewScale] = useState(1);
           // Upload failures are independent of a successfully rendered local video.
           void biliup.upload(uploadPlan, res.outputPath || trimmedPath).catch(() => {
             if (isProjectLifecycleCurrent(lifecycle)) {
-              showToast(t('biliup.uploadStartFailed'));
+              showToast(t('biliup.uploadStartFailed'), 'error');
             }
           });
         }
@@ -4567,7 +4582,7 @@ const [previewScale, setPreviewScale] = useState(1);
         showToast(t('app.assExported'));
       } catch (error) {
         console.error('Failed to export ASS subtitle:', error);
-        showToast(t('dialog.errorExportAssFailed'));
+        showToast(t('dialog.errorExportAssFailed'), 'error');
       }
       return;
     }
@@ -5414,7 +5429,7 @@ const [previewScale, setPreviewScale] = useState(1);
     setIsMobileBottomPanelExpanded(false);
     savedSpeakerNamesRef.current = getSpeakerNameSnapshot(normalizedConfig.speakers);
     setShowSettings(true);
-    showToast(t('app.projectLoaded'));
+    showToast(t('app.projectLoaded'), 'success');
   }, [clearHistory, clearProjectDirty, rememberRecentProject, showToast, t]);
 
   const detectVideoMediaInfo = useCallback(async (src: string) => {
@@ -6249,6 +6264,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   async function saveProjectInternal(options?: { silent?: boolean; source?: 'manual' | 'autosave' | 'guard' }) {
+    if (options?.source !== 'autosave') flushSync(() => { if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur(); });
     flushPendingDebouncedConfigCommit();
     const saveToken = getHistory().saveToken();
     const finalConfig = getProjectConfig();
@@ -6270,7 +6286,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }, 2000);
       }
       if (!options?.silent) {
-        showToast(t('app.projectSaved'));
+        showToast(t('app.projectSaved'), 'success');
       }
       return true;
     }
@@ -6319,7 +6335,7 @@ const [previewScale, setPreviewScale] = useState(1);
         }, 2000);
       }
       if (!options?.silent) {
-        showToast(t('app.projectSaved'));
+        showToast(t('app.projectSaved'), 'success');
       }
       return true;
     } catch (e: any) {
@@ -6738,16 +6754,24 @@ const [previewScale, setPreviewScale] = useState(1);
     return null;
   }, [applyTrackedConfigUpdater, captureProjectLifecycle, isProjectLifecycleCurrent, showToast, t]);
 
-  const handleSaveStyleManager = useCallback((nextSpeakers: Record<string, any>, nextPresets?: Record<string, any>, nextAnnotations?: Record<string, any>) => {
-    const updates: { presets?: Record<string, any>; annotationPresets?: Record<string, any> } = {};
-    if (nextPresets !== undefined) updates.presets = nextPresets;
-    if (nextAnnotations !== undefined) updates.annotationPresets = nextAnnotations;
-    handleConfigAndPresetsChange(
-      { ...configRef.current, speakers: nextSpeakers },
-      updates,
-    );
-    showToast(t('speakers.presetSaved', { name: '' }));
-  }, [handleConfigAndPresetsChange, showToast, t]);
+  const handleSaveStyleManager = useCallback((nextSpeakers: Record<string, any>, nextPresets?: Record<string, any>, nextAnnotations?: Record<string, any>, reassignments: Record<string, string> = {}) => {
+    if (!Object.entries(nextSpeakers).some(([id, speaker]) => id !== 'ANNOTATION' && speaker.type !== 'annotation')) throw new Error(t('speakers.keepOne'));
+    const nextSubtitles = subtitlesRef.current.map(sub => {
+      const target = reassignments[sub.speakerId] || sub.speakerId;
+      if (!nextSpeakers[target]) throw new Error(t('speakers.reassign'));
+      return target === sub.speakerId ? sub : { ...sub, speakerId: target, actor: nextSpeakers[target].name || '', style: nextSpeakers[target].name || 'Default' };
+    });
+    pushHistorySnapshot();
+    setConfig({ ...configRef.current, speakers: nextSpeakers, ui: { ...configRef.current.ui,
+      ...(nextPresets !== undefined ? { presets: nextPresets } : {}),
+      ...(nextAnnotations !== undefined ? { annotationPresets: nextAnnotations } : {}),
+    } });
+    if (nextPresets !== undefined) setPresets(nextPresets);
+    if (nextAnnotations !== undefined) setAnnotationPresets(nextAnnotations);
+    setSubtitles(nextSubtitles);
+    markProjectDirty();
+    showToast(t('speakers.presetSaved', { name: '' }), 'success');
+  }, [pushHistorySnapshot, showToast, t, subtitlesRef, setSubtitles, markProjectDirty]);
 
   const handleCloseStyleManager = useCallback(() => {
     setShowStyleManager(false);
@@ -6850,7 +6874,7 @@ const [previewScale, setPreviewScale] = useState(1);
     void runWithUnsavedProjectGuard(() => loadProjectFromPath(filePath))
       .catch((error) => {
         console.error('Failed to open associated project:', error);
-        showToast(t('dialog.errorLoadFailed'));
+        showToast(t('dialog.errorLoadFailed'), 'error');
       })
       .finally(() => {
         externalProjectBusyRef.current = false;
@@ -7340,24 +7364,26 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [backupAssIfSpeakerNamesChanged, clearProjectDirty, config.speakers, enqueueProjectFileOperation, flushPendingDebouncedConfigCommit, getProjectConfig, projectPath, showToast, subtitles, t]);
 
   const handleConfirmUnsavedProject = useCallback(async () => {
+    if (resolvingUnsavedProject) return;
     const pendingAction = pendingUnsavedProjectActionRef.current;
-    setUnsavedProjectDialog(null);
+    setProjectSaveError('');
     setResolvingUnsavedProject(true);
-    pendingUnsavedProjectActionRef.current = null;
     try {
       const saved = await handleSaveProject({ silent: true, source: 'guard' });
       if (!saved || isProjectDirtyRef.current) {
+        setProjectSaveError(t('dialog.errorSaveFailed'));
         if (window.electron && pendingElectronAppCloseRef.current) {
           pendingElectronAppCloseRef.current = false;
           await window.electron.cancelAppClose();
         }
         return;
       }
+      setUnsavedProjectDialog(null);
+      pendingUnsavedProjectActionRef.current = null;
       if (pendingAction) await pendingAction();
-    } finally {
-      setResolvingUnsavedProject(false);
-    }
-  }, [handleSaveProject]);
+    } catch (error) { setProjectSaveError(String(error)); }
+    finally { setResolvingUnsavedProject(false); }
+  }, [handleSaveProject, resolvingUnsavedProject, t]);
 
   const handleDiscardUnsavedProject = useCallback(async () => {
     const pendingAction = pendingUnsavedProjectActionRef.current;
@@ -7372,6 +7398,7 @@ const [previewScale, setPreviewScale] = useState(1);
   }, []);
 
   const handleCancelUnsavedProject = useCallback(() => {
+    setProjectSaveError('');
     setUnsavedProjectDialog(null);
     pendingUnsavedProjectActionRef.current = null;
     if (window.electron && pendingElectronAppCloseRef.current) {
@@ -7530,6 +7557,7 @@ const [previewScale, setPreviewScale] = useState(1);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (hasOpenDialog()) return;
       if (event.key === 'Escape') {
         setIsInsertImageEditMode(false);
       }
@@ -7549,6 +7577,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (hasOpenDialog()) return;
       if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey)) {
         return;
       }
@@ -7574,6 +7603,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
       if (key === 's') {
         event.preventDefault();
+        flushSync(() => { if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur(); });
         void handleSaveProject();
       }
     };
@@ -7825,7 +7855,7 @@ const [previewScale, setPreviewScale] = useState(1);
   };
 
   const projectResourceCheckModal = projectResourceCheckDialog ? (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <Dialog aria-label={t('projectResourceCheck.title')} onClose={() => setProjectResourceCheckDialog(null)} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-4xl rounded-xl border shadow-2xl p-4 space-y-4 max-h-[82vh] overflow-y-auto" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
         <div className="space-y-1">
           <div className="text-sm font-semibold">{t('projectResourceCheck.title')}</div>
@@ -7895,29 +7925,30 @@ const [previewScale, setPreviewScale] = useState(1);
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   ) : null;
 
   const unsavedProjectModal = unsavedProjectDialog ? (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <Dialog aria-label={unsavedProjectDialog.title} onClose={resolvingUnsavedProject ? undefined : handleCancelUnsavedProject} className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-md overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}14 100%)`, borderColor: uiTheme.border, color: uiTheme.text }}>
         <div className="border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: `${themeColor}10` }}>
           <div className="text-lg font-semibold">{unsavedProjectDialog.title}</div>
           <div className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{unsavedProjectDialog.description}</div>
+          {projectSaveError && <p role="alert" className="mt-2 text-sm text-red-500">{projectSaveError}</p>}
         </div>
         <div className="flex justify-end gap-2 px-6 py-4">
-          <button type="button" onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+          <button type="button" disabled={resolvingUnsavedProject} onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
             {t('common.cancel')}
           </button>
-          <button type="button" onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
+          <button type="button" disabled={resolvingUnsavedProject} onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
             {t('app.unsavedProjectDiscard')}
           </button>
-          <button type="button" onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
-            {t('common.confirm')}
+          <button type="button" disabled={resolvingUnsavedProject} onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
+            {t('settings.save')}
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   ) : null;
 
   if (!projectPath) {
@@ -7983,7 +8014,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
-                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -8045,27 +8076,29 @@ const [previewScale, setPreviewScale] = useState(1);
             </div>
           </div>
         )}
+        {toastMessage && <Toast isDarkMode={isDarkMode} message={toastMessage} type={toastType} />}
         {projectResourceCheckModal}
         {unsavedProjectDialog ? (
-          <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <Dialog aria-label={unsavedProjectDialog.title} onClose={resolvingUnsavedProject ? undefined : handleCancelUnsavedProject} className="fixed inset-0 z-[180] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="w-full max-w-md overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${secondaryThemeColor}14 100%)`, borderColor: uiTheme.border, color: uiTheme.text }}>
               <div className="border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: `${themeColor}10` }}>
                 <div className="text-lg font-semibold">{unsavedProjectDialog.title}</div>
                 <div className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{unsavedProjectDialog.description}</div>
+          {projectSaveError && <p role="alert" className="mt-2 text-sm text-red-500">{projectSaveError}</p>}
               </div>
               <div className="flex justify-end gap-2 px-6 py-4">
-                <button type="button" onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
+                <button type="button" disabled={resolvingUnsavedProject} onClick={handleCancelUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>
                   {t('common.cancel')}
                 </button>
-                <button type="button" onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
+                <button type="button" disabled={resolvingUnsavedProject} onClick={handleDiscardUnsavedProject} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: `${secondaryThemeColor}55`, backgroundColor: `${secondaryThemeColor}12`, color: secondaryThemeColor }}>
                   {t('app.unsavedProjectDiscard')}
                 </button>
-                <button type="button" onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
-                  {t('common.confirm')}
+                <button type="button" disabled={resolvingUnsavedProject} onClick={() => { void handleConfirmUnsavedProject(); }} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>
+                  {t('settings.save')}
                 </button>
               </div>
             </div>
-          </div>
+          </Dialog>
         ) : null}
       </div>
     );
@@ -8416,7 +8449,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
-                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                   isDarkMode={isDarkMode}
                    language={language}
                    themeColor={themeColor}
@@ -8470,12 +8503,6 @@ const [previewScale, setPreviewScale] = useState(1);
             </div>
           )}
 
-          {toastMessage && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded z-50 animate-fade-in text-sm flex items-center gap-2 border" style={{ backgroundColor: uiTheme.panelBgElevated, color: uiTheme.text, borderColor: uiTheme.border, boxShadow: '0 8px 18px rgba(0,0,0,0.14)' }}>
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              {toastMessage}
-            </div>
-          )}
           <div ref={previewAreaRef} className={`flex-1 min-w-0 min-h-0 relative z-10 ${isMobileWebLayout ? 'p-1' : 'p-8'} overflow-hidden ${canvasBg}`}>
             <div className="relative flex h-full w-full items-center justify-center">
               <button
@@ -9016,7 +9043,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
-                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
                 language={language}
                 themeColor={themeColor}
@@ -9180,7 +9207,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
-                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; flushPendingDebouncedConfigCommit(); }}
+                onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
             isDarkMode={isDarkMode}
             language={language}
             themeColor={themeColor}
@@ -9375,6 +9402,7 @@ const [previewScale, setPreviewScale] = useState(1);
         themeColor={themeColorState || (isDarkMode ? DARK_THEME_DEFAULT : LIGHT_THEME_DEFAULT)}
         secondaryThemeColor={secondaryThemeColorState || SECONDARY_THEME_DEFAULT}
         speakers={config.speakers || {}}
+        subtitleSpeakerIds={subtitles.map(sub => sub.speakerId)}
         fontPresets={fontPresets}
         speakerPresets={presets}
         annotationPresets={annotationPresets}
@@ -9389,11 +9417,12 @@ const [previewScale, setPreviewScale] = useState(1);
         onClose={handleCloseStyleManager}
       />}
 
+      {toastMessage && <Toast isDarkMode={isDarkMode} message={toastMessage} type={toastType} />}
       {projectResourceCheckModal}
       {unsavedProjectModal}
 
       {importProjectSettingsDialog && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <Dialog aria-label={t('importSettings.title')} onClose={() => setImportProjectSettingsDialog(null)} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-xl border shadow-2xl p-4 space-y-4 max-h-[80vh] overflow-y-auto" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
              <div className="space-y-1">
                <div className="text-sm font-semibold">{t('importSettings.title')}</div>
@@ -9599,11 +9628,11 @@ const [previewScale, setPreviewScale] = useState(1);
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {speakerReplaceDialog && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <Dialog aria-label={t('action.replaceSpeaker')} onClose={() => setSpeakerReplaceDialog(null)} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-xl border shadow-2xl p-4 space-y-4" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
             <div className="text-sm font-semibold">{t('speakers.bulkReassignTitle')}</div>
             <p className="text-xs" style={{ color: uiTheme.textMuted }}>
@@ -9643,7 +9672,7 @@ const [previewScale, setPreviewScale] = useState(1);
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {importAssData && (

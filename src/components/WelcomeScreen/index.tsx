@@ -33,7 +33,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
 
   return (
     <div
-      className="w-full h-screen flex flex-col items-center justify-center overflow-y-auto px-6 py-16"
+      className="w-full h-dvh flex flex-col items-center overflow-y-auto px-4 py-16 sm:px-6"
       style={{
         backgroundColor: isDarkMode ? uiTheme.appBg : uiTheme.panelBg,
         backgroundImage: `linear-gradient(180deg, transparent 0%, transparent 74%, ${secondaryThemeColor}${isDarkMode ? '14' : '0A'} 100%)`,
@@ -64,7 +64,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
           {translate(language, 'menu.settings')}
         </button>
       )}
-      <div className="mb-12 mt-6 flex flex-col items-center">
+      <div className="mb-8 mt-6 sm:mt-auto flex shrink-0 flex-col items-center">
         <button
           type="button"
           className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-colors cursor-pointer"
@@ -90,13 +90,13 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
         </p>
       </div>
 
-      <div className="flex flex-col gap-6 max-w-2xl w-full px-8 shrink-0">
-        <div className="flex gap-6 w-full">
+      <div className="flex flex-col gap-6 max-w-2xl w-full sm:px-8 shrink-0 mb-auto">
+        <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 w-full">
           <button 
             onClick={onNewProject}
             onMouseEnter={() => setHoveredCard('new')}
             onMouseLeave={() => setHoveredCard(null)}
-            className="flex-1 flex flex-col items-center p-8 rounded-2xl border-2 transition-all duration-300 group shadow-lg"
+            className="flex-1 flex flex-col items-center p-5 sm:p-8 rounded-2xl border-2 transition-all duration-300 group shadow-lg"
             style={hoveredCard === 'new'
               ? { borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '12' : '10'}`, boxShadow: `0 6px 16px ${secondaryThemeColor}22` }
               : { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, boxShadow: `0 4px 12px ${secondaryThemeColor}18` }}
@@ -114,7 +114,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
             onClick={onOpenProject}
             onMouseEnter={() => setHoveredCard('open')}
             onMouseLeave={() => setHoveredCard(null)}
-            className="flex-1 flex flex-col items-center p-8 rounded-2xl border-2 transition-all duration-300 group shadow-lg"
+            className="flex-1 flex flex-col items-center p-5 sm:p-8 rounded-2xl border-2 transition-all duration-300 group shadow-lg"
             style={hoveredCard === 'open'
               ? { borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '12' : '10'}`, boxShadow: `0 6px 16px ${secondaryThemeColor}22` }
               : { borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg, boxShadow: `0 4px 12px ${secondaryThemeColor}18` }}

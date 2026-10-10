@@ -1,3 +1,10 @@
+import { Toast, type ToastType } from './ui/Toast';
+import { handleAvatarError } from '../utils/avatarFallback';
+import { Dialog } from './ui/Dialog';
+import { DraftGuard } from './ui/DraftGuard';
+import { NameInput } from './ui/NameInput';
+import { flushSync } from 'react-dom';
+import { NumberInput } from './ui/NumberInput';
 import { memo, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Plus, Trash2, Copy, Save, X, Sparkles, GripVertical, FolderOpen, ChevronDown } from 'lucide-react';
 import { translate, type Language } from '../i18n';
@@ -67,34 +74,6 @@ const FONT_OPTIONS = [
   { label: 'Monospace UI', value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }
 ];
 
-function WheelGuardNumberInput(props: React.InputHTMLAttributes<HTMLInputElement> & { onWheelStep?: (direction: 'up' | 'down') => void }) {
-  const { onWheelStep, ...inputProps } = props;
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
-
-  useEffect(() => {
-    const node = inputRef.current;
-    if (!node || !onWheelStep) {
-      return;
-    }
-
-    const handleWheel = (event: WheelEvent) => {
-      if (!isFocused || document.activeElement !== node) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      onWheelStep(event.deltaY < 0 ? 'up' : 'down');
-    };
-
-    node.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      node.removeEventListener('wheel', handleWheel);
-    };
-  }, [isFocused, onWheelStep]);
-
-  return <input ref={inputRef} {...inputProps} onFocus={(event) => { setIsFocused(true); inputProps.onFocus?.(event); }} onBlur={(event) => { setIsFocused(false); inputProps.onBlur?.(event); }} />;
-}
 
 const formatBubbleShadow = (shadowSize: number) => {
   if (shadowSize <= 0) {
@@ -127,10 +106,10 @@ function CollapsibleSection({ title, collapsed, onToggle, sectionStyle, chevronC
 }) {
   return (
     <div className="rounded-xl border overflow-hidden" style={sectionStyle}>
-      <div className="flex items-center justify-between gap-2 px-3 py-2 cursor-pointer select-none border-b" style={{ borderColor: sectionStyle.borderColor as string }} onClick={onToggle}>
+      <button type="button" aria-expanded={!collapsed} className="w-full flex items-center justify-between gap-2 px-3 py-2 cursor-pointer select-none border-b" style={{ borderColor: sectionStyle.borderColor as string }} onClick={onToggle}>
         <span className="text-xs font-semibold opacity-80">{title}</span>
         <ChevronDown size={14} className={`transition-transform duration-150 shrink-0 ${collapsed ? '' : 'rotate-180'}`} style={{ color: chevronColor }} />
-      </div>
+      </button>
       {!collapsed && <div className="p-3 space-y-2">{children}</div>}
     </div>
   );
@@ -151,7 +130,8 @@ interface StyleManagerModalProps {
   projectAssetsCacheEnabled?: boolean;
   initialPresetName?: string | null;
   onSelectImage?: () => Promise<string | null>;
-  onSave: (speakers: Record<string, SpeakerConfig>, presets?: SpeakerPresetCollection, annotations?: SpeakerPresetCollection) => void;
+  subtitleSpeakerIds?: string[];
+  onSave: (speakers: Record<string, SpeakerConfig>, presets?: SpeakerPresetCollection, annotations?: SpeakerPresetCollection, reassignments?: Record<string, string>) => void | Promise<void>;
   onSpeakerPresetsChange?: (presets: SpeakerPresetCollection) => void;
   onAnnotationPresetsChange?: (presets: SpeakerPresetCollection) => void;
   onClose: () => void;
@@ -170,7 +150,7 @@ const DEFAULT_SPEAKER: SpeakerConfig = {
   },
 };
 
-export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectIdentity, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose }: StyleManagerModalProps) {
+export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, language, isDarkMode, themeColor, secondaryThemeColor, speakers, fontPresets, speakerPresets, annotationPresets, projectPath, projectIdentity, projectAssetsCacheEnabled, initialPresetName, onSelectImage, onSave, onClose, subtitleSpeakerIds = [] }: StyleManagerModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
   const currentProjectIdentity = projectIdentity || projectPath || '';
@@ -203,11 +183,47 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
   const [dragOverSpeakerId, setDragOverSpeakerId] = useState<string | null>(null);
   const [dragOverPresetName, setDragOverPresetName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsedSections());
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [closePrompt, setClosePrompt] = useState(false);
+  const [nameDirty, setNameDirty] = useState(false);
+  const nameCommitRef = useRef<(() => boolean) | null>(null);
+  const annotationPresetsRef = useRef(localAnnotationPresets);
+  useLayoutEffect(() => { annotationPresetsRef.current = localAnnotationPresets; }, [localAnnotationPresets]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [reassignments, setReassignments] = useState<Record<string, string>>({});
+  const [deletePrompt, setDeletePrompt] = useState<string[] | null>(null);
+  const [replacement, setReplacement] = useState('');
+  const [savedState, setSavedState] = useState(() => JSON.stringify([localSpeakers, localPresets, localAnnotationPresets]));
+  const dirty = nameDirty || savedState !== JSON.stringify([localSpeakers, localPresets, localAnnotationPresets]);
+  const requestClose = () => { if (saving) return; if (dirty) setClosePrompt(true); else onClose(); };
+  const saveAll = async (close = false) => {
+    if (saving) return;
+    let nameValid = true;
+    flushSync(() => { nameValid = nameCommitRef.current?.() ?? !nameDirty; });
+    if (!nameValid) { setSaveError(t('input.namePending')); return; }
+    setSaving(true); setSaveError('');
+    try {
+      const snapshot = [localSpeakersRef.current, localPresetsRef.current, annotationPresetsRef.current] as const;
+      await onSave(...snapshot, reassignments);
+      setSavedState(JSON.stringify(snapshot));
+      setSpeakersDirty(false); setPresetsDirty(false); setAnnotPresetsDirty(false); setReassignments({});
+      setClosePrompt(false);
+      if (close) onClose();
+    } catch (error) { setSaveError(String(error)); }
+    finally { setSaving(false); }
+  };
+  const confirmOverwrite = (name: string, annotation = false) => {
+    const collection = annotation ? localAnnotationPresets : localPresets;
+    if (!Object.hasOwn(collection, name)) return true;
+    const affected = Object.entries(localSpeakers).filter(([, speaker]) => speaker.preset === name && (annotation ? speaker.type === 'annotation' : speaker.type !== 'annotation')).map(([id, speaker]) => speaker.name || id);
+    return window.confirm(t('preset.overwrite', { name, speakers: affected.join(', ') || '—' }));
+  };
+  const [toastMsg, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const setToastMsg = (message: string, type: ToastType = 'info') => setToast({ message, type });
 
   useEffect(() => {
     if (!toastMsg) return;
-    const timer = window.setTimeout(() => setToastMsg(null), 3000);
+    const timer = window.setTimeout(() => setToast(null), 3000);
     return () => window.clearTimeout(timer);
   }, [toastMsg]);
 
@@ -236,10 +252,24 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
     setSelectedIds(new Set([key]));
     setSpeakersDirty(true);
   };
+  const deleteSpeakers = (ids: string[], target?: string) => {
+    const next = { ...localSpeakers }; ids.forEach(id => delete next[id]);
+    if (target) setReassignments(previous => Object.fromEntries([
+      ...Object.entries(previous).map(([id, to]) => [id, ids.includes(to) ? target : to]),
+      ...ids.map(id => [id, target]),
+    ]));
+    setLocalSpeakers(next); setSelectedIds(new Set());
+    if (editingSpeakerId && ids.includes(editingSpeakerId)) setEditingSpeakerId(null);
+    setSpeakersDirty(true); setDeletePrompt(null);
+  };
   const handleDelete = () => {
-    if (selectedIds.size === 0) return; const next = { ...localSpeakers }; selectedIds.forEach((id) => delete next[id]);
-    setLocalSpeakers(next); setSelectedIds(new Set()); if (editingSpeakerId && selectedIds.has(editingSpeakerId)) setEditingSpeakerId(null);
-    setSpeakersDirty(true);
+    const ids = [...selectedIds].filter(id => localSpeakers[id]?.type !== 'annotation' && id !== 'ANNOTATION');
+    if (!ids.length) return;
+    const remaining = Object.keys(localSpeakers).filter(id => !ids.includes(id) && id !== 'ANNOTATION' && localSpeakers[id].type !== 'annotation');
+    if (!remaining.length) { setToastMsg(t('speakers.keepOne'), 'warning'); return; }
+    if (subtitleSpeakerIds.some(id => ids.includes(reassignments[id] || id))) {
+      setReplacement(remaining[0]); setDeletePrompt(ids);
+    } else deleteSpeakers(ids);
   };
   const handleDuplicate = () => {
     if (selectedIds.size === 0) return; const next = { ...localSpeakers };
@@ -257,7 +287,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       let changed = false;
       const spkNext = { ...p };
       Object.entries(p).forEach(([id, spk]) => {
-        if (spk.preset && selectedPresetIds.has(spk.preset)) {
+        if (id !== 'ANNOTATION' && spk.type !== 'annotation' && spk.preset && selectedPresetIds.has(spk.preset)) {
           spkNext[id] = { ...spk, preset: '', lockPreset: false };
           changed = true;
         }
@@ -271,6 +301,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
     const speaker = editingSpeaker;
     if (!speaker) return;
     const name = presetSaveDraft.trim() || `${speaker.name || editingSpeakerId || 'speaker'} preset`;
+    if (!confirmOverwrite(name)) return;
     const next = { ...localPresets, [name]: { style: JSON.parse(JSON.stringify(speaker.style || {})), avatar: speaker.avatar || '', side: speaker.side || 'left' } };
     setLocalPresets(next);
     setPresetsDirty(true);
@@ -281,7 +312,9 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
   };
   const handleRenamePreset = (oldName: string, rawNewName: string) => {
     const newName = rawNewName.trim();
-    if (!newName || newName === oldName || !localPresets[oldName]) return;
+    if (!newName || !localPresets[oldName]) return false;
+    if (newName === oldName) return true;
+    if (!confirmOverwrite(newName)) return false;
 
     const nextPresets = { ...localPresets };
     const preset = nextPresets[oldName];
@@ -291,6 +324,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
     const nextSpeakers = { ...localSpeakers };
     let speakersChanged = false;
     Object.entries(localSpeakers).forEach(([id, speaker]) => {
+      if (id === 'ANNOTATION' || speaker.type === 'annotation') return;
       if (speaker.preset === oldName) {
         nextSpeakers[id] = { ...speaker, preset: newName };
         speakersChanged = true;
@@ -311,6 +345,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       setLocalSpeakers(nextSpeakers);
       setSpeakersDirty(true);
     }
+    return true;
   };
   const jumpToPreset = () => {
     const name = editingSpeaker?.preset;
@@ -374,9 +409,8 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       if (speakersChanged) nextSpeakers = spkNext;
       setLocalPresets(next);
       setLocalSpeakers(nextSpeakers);
-      onSave(nextSpeakers, next);
-      setPresetsDirty(false);
-      setSpeakersDirty(false);
+      setPresetsDirty(true);
+      setSpeakersDirty(true);
       setToastMsg(t('preset.persistAllDone', { count: changedCount }) + (failedCount > 0 ? ` / ${t('preset.persistFailed') || '持久化失败'} ${failedCount}` : ''));
     } else {
       setToastMsg(t('preset.persistNoChanges') || '预设头像均已持久化，无需处理');
@@ -447,7 +481,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       let changed = false;
       const nextSpeakers = { ...previous };
       Object.entries(previous).forEach(([id, speaker]) => {
-        if (speaker.preset !== name || speaker.lockPreset !== true) return;
+        if (id === 'ANNOTATION' || speaker.type === 'annotation' || speaker.preset !== name || speaker.lockPreset !== true) return;
         nextSpeakers[id] = applyPresetPayload(speaker, payload);
         changed = true;
       });
@@ -554,7 +588,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
     const electron = window.electron; if (!electron) return null;
     try {
       const res = await electron.showOpenDialog({
-        title: '选择图片',
+        title: t('project.selectLocalImage'),
         filters: [{ name: t('dialog.filterMedia') || 'Media', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'] }],
         properties: ['openFile']
       });
@@ -690,37 +724,10 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
     </div>
   );
   const renderNum = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: number | undefined, min?: number, max?: number, step?: number, disabled?: boolean) => {
-    const s = step || 1;
-    const safeVal = Number.isFinite(value ?? 0) ? (value ?? 0) : 0;
-    const getPrecision = (targetStep: number) => {
-      const normalized = targetStep.toString();
-      if (normalized.includes('e-')) {
-        const [, exponent] = normalized.split('e-');
-        return Number.parseInt(exponent || '0', 10) || 0;
-      }
-      const decimalPart = normalized.split('.')[1];
-      return decimalPart ? decimalPart.length : 0;
-    };
-    const precision = getPrecision(s);
-    const roundByStep = (nextValue: number) => Number(nextValue.toFixed(precision));
-    const applyDelta = (d: number) => {
-      let next = roundByStep(safeVal + d);
-      if (typeof min === 'number') next = Math.max(min, next);
-      if (typeof max === 'number') next = Math.min(max, next);
-      updateFn(key, next);
-    };
-    return (
-      <div className="relative" style={{ opacity: disabled ? 0.5 : 1 }}>
-        <WheelGuardNumberInput type="number" disabled={disabled} min={min} max={max} step={s} value={safeVal}
-          onWheelStep={(direction) => applyDelta(direction === 'up' ? s : -s)}
-          onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) updateFn(key, roundByStep(n)); }}
-          className={`w-full border rounded px-2 py-1 text-xs focus:outline-none pr-8 ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
-        <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-px">
-          <button type="button" disabled={disabled} onClick={() => applyDelta(s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▲</button>
-          <button type="button" disabled={disabled} onClick={() => applyDelta(-s)} className="h-3.5 w-4 rounded text-[0.5rem] leading-none border" style={{ borderColor: `${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}16` }}>▼</button>
-        </div>
-      </div>
-    );
+    return <NumberInput language={language} value={value ?? 0} min={min ?? 0} max={max} step={step} disabled={disabled}
+      onValueChange={(next) => updateFn(key, next)} aria-label={String(key)}
+      className={`w-full border rounded px-2 py-1 pr-8 text-xs ${ic}`}
+      style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />;
   };
   const renderRange = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: number | undefined, min: number, max: number, step: number, disabled?: boolean) => (
     <div className="flex items-center gap-2" style={{ opacity: disabled ? 0.5 : 1 }}><input type="range" disabled={disabled} min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
@@ -780,8 +787,8 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       </>)}
       {renderSection(t('speakers.colors'), 'colors', <>
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor(updateFn, 'bgColor', style?.bgColor, disabled)}</div>
-          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor(updateFn, 'textColor', style?.textColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.backgroundColor')}</span>{renderColor(updateFn, 'bgColor', style?.bgColor, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.textColor')}</span>{renderColor(updateFn, 'textColor', style?.textColor, disabled)}</div>
         </div>
         <button disabled={disabled} onClick={swapBgText ? () => swapBgText() : () => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text, opacity: disabled ? 0.5 : 1 }}>{t('speakers.swapBgText') || 'Swap'}</button>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05, disabled)}</div>
@@ -822,7 +829,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg }} onClick={onClose}>
+    <Dialog aria-label={t('speakers.title')} onClose={requestClose} onSave={() => void saveAll()} className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6" style={{ backgroundColor: modalBg }}>
       <div className="flex flex-col w-full max-w-[45rem] max-h-[85vh] overflow-hidden rounded-[28px] border shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onDragOver={(e) => { if (!isExternalFileDrag(e)) { e.preventDefault(); e.stopPropagation(); } }}
@@ -837,9 +844,9 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
               <Sparkles size={12} /> {t('menu.styleManager')}
             </div>
             <h3 className="text-xl font-semibold" style={{ color: uiTheme.text }}>{t('speakers.title')}</h3>
-            <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>管理所有说话人的样式配置和预设</p>
+            <p className="mt-1 text-sm" style={{ color: uiTheme.textMuted }}>{t('style.description')}</p>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: uiTheme.textMuted }}>
+          <button aria-label={t('common.close')} onClick={requestClose} className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: uiTheme.textMuted }}>
             <X size={16} />
           </button>
         </div>
@@ -852,7 +859,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
           </button>
           <button onClick={() => setLeftTab('presets')} className={`flex-1 py-2 text-sm font-medium transition-colors ${leftTab === 'presets' ? 'border-b-2' : ''}`}
             style={leftTab === 'presets' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft, borderColor: 'transparent' }}>
-            预设管理器
+            {t('style.presets')}
           </button>
           <button onClick={() => setLeftTab('annotations')} className={`flex-1 py-2 text-sm font-medium transition-colors ${leftTab === 'annotations' ? 'border-b-2' : ''}`}
             style={leftTab === 'annotations' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft, borderColor: 'transparent' }}>
@@ -866,8 +873,8 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
             {leftTab === 'speakers' ? (
               <>
                 <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
-                  <span className="text-xs font-medium opacity-70">{Object.keys(localSpeakers).filter((k) => localSpeakers[k]?.type !== 'annotation').length} 个说话人</span>
-                  <button onClick={handleAdd} className="p-1.5 rounded-md hover:opacity-80" style={{ backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor }}><Plus size={14} /></button>
+                  <span className="text-xs font-medium opacity-70">{t('style.speakerCount', { count: Object.keys(localSpeakers).filter((k) => localSpeakers[k]?.type !== 'annotation').length })}</span>
+                  <button aria-label={t('speakers.add')} onClick={handleAdd} className="p-1.5 rounded-md hover:opacity-80" style={{ backgroundColor: `${secondaryThemeColor}18`, color: secondaryThemeColor }}><Plus size={14} /></button>
                 </div>
                 <div className="flex gap-1 px-3 py-2 border-b" style={{ borderColor: uiTheme.border }}>
                   <button onClick={handleDelete} disabled={selectedIds.size === 0} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[0.625rem]" style={{ opacity: selectedIds.size > 0 ? 1 : 0.4, backgroundColor: selectedIds.size > 0 ? 'rgba(239,68,68,0.12)' : 'transparent', color: selectedIds.size > 0 ? '#ef4444' : uiTheme.textMuted }}><Trash2 size={12} /> {t('common.delete')}</button>
@@ -921,7 +928,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
             ) : leftTab === 'presets' ? (
               <>
                 <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: uiTheme.border }}>
-                  <span className="text-xs font-medium opacity-70">{Object.keys(localPresets).length} 个预设</span>
+                  <span className="text-xs font-medium opacity-70">{t('style.presetCount', { count: Object.keys(localPresets).length })}</span>
                   <button onClick={() => {
                     const name = `preset-${Date.now()}`;
                     const next = { ...localPresets, [name]: { ...JSON.parse(JSON.stringify(DEFAULT_SPEAKER)), name } };
@@ -984,7 +991,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                       </div>
                     ))
                   ) : (
-                    <div className="flex items-center justify-center h-full text-sm opacity-50 p-4 text-center">暂无预设</div>
+                    <div className="flex items-center justify-center h-full text-sm opacity-50 p-4 text-center">{t('style.noPresets')}</div>
                   )}
                 </div>
               </>
@@ -996,14 +1003,14 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
               return (
               <>
                 <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}44`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}66` } as React.CSSProperties}>
-                  <div className="px-3 py-2 text-[0.625rem] opacity-50 uppercase">当前注释样式</div>
+                  <div className="px-3 py-2 text-[0.625rem] opacity-50 uppercase">{t('style.currentAnnotation')}</div>
                   <div className="flex items-center gap-2 px-3 py-2 cursor-pointer text-xs" onClick={() => setEditingAnnotPresetName(null)}
                     style={{ backgroundColor: `${themeColor}14`, color: uiTheme.text }}>
                     <SpeakerDot speaker={annotationSpeaker} accentColor={secondaryThemeColor} />
                     <span className="truncate flex-1">{annotName}</span>
                   </div>
                   <div className="border-t" style={{ borderColor: uiTheme.border }} />
-                  <div className="px-3 pt-2 text-[0.625rem] opacity-50 uppercase">注释预设</div>
+                  <div className="px-3 pt-2 text-[0.625rem] opacity-50 uppercase">{t('style.annotationPresets')}</div>
                   {annotPresetEntries.length > 0 && (
                     <div className="flex gap-1 px-3 py-2" style={{ borderColor: uiTheme.border }}>
                       <button onClick={() => {
@@ -1072,22 +1079,17 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                       </div>
                     ))
                   ) : (
-                    <div className="flex items-center justify-center h-full text-sm opacity-50 p-4 text-center">暂无注释预设</div>
+                    <div className="flex items-center justify-center h-full text-sm opacity-50 p-4 text-center">{t('style.noAnnotationPresets')}</div>
                   )}
                 </div>
               </>
               );
             })() : null}
             <div className="px-4 py-3 border-t" style={{ borderColor: uiTheme.border }}>
-              <button onClick={() => {
-                onSave(localSpeakers, localPresets, localAnnotationPresets);
-                setSpeakersDirty(false);
-                setPresetsDirty(false);
-                setAnnotPresetsDirty(false);
-              }} disabled={!speakersDirty && !presetsDirty && !annotPresetsDirty}
+              <button onClick={() => void saveAll()} disabled={!dirty || saving}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all"
                 style={{ backgroundColor: (speakersDirty || presetsDirty || annotPresetsDirty) ? secondaryThemeColor : uiTheme.border, opacity: (speakersDirty || presetsDirty || annotPresetsDirty) ? 1 : 0.5, cursor: (speakersDirty || presetsDirty || annotPresetsDirty) ? 'pointer' : 'default' }}>
-                <Save size={14} /> {t('settings.save') || 'Save'}
+                <Save size={14} /> {t('action.save') || 'Save'}
               </button>
             </div>
           </div>
@@ -1139,13 +1141,13 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                 const nameStrokeColor = s?.nameStrokeColor || '#000000';
                 
                 const showAvatarForSpeaker = editingSpeaker.showAvatar !== false;
-                const avatarEl = showAvatarForSpeaker ? <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || '')}`; }} /> : null;
+                const avatarEl = showAvatarForSpeaker ? <img src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={handleAvatarError} /> : null;
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%', filter: textShadowFilter }}>
                     {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
-                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
+                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>{t('style.preview')}</span>
                     </div>
                   </div>
                 );
@@ -1167,7 +1169,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                         src={resolveLocalPreviewPath(editingSpeaker.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`}
                         alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
                         referrerPolicy="no-referrer"
-                        onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingSpeaker.name || editingSpeakerId || '')}`; }}
+                        onError={handleAvatarError}
                       />
                       <input type="text" disabled={locked} value={editingSpeaker.avatar || ''} data-paste-owner={`speaker:${editingSpeakerId}`} onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, avatar: e.target.value }), true)}
                         onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], `speaker:${editingSpeakerId}`)}
@@ -1189,7 +1191,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                     />
                     <span>{t('project.showAvatar')}</span>
                   </label>
-                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设</span>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.presets')}</span>
                     <div className="flex items-center gap-2">
                       <select value={editingSpeaker.preset || ''} onChange={(e) => {
                         const val = e.target.value;
@@ -1236,7 +1238,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                         placeholder={t('speakers.presetName') || '输入预设名称'} autoFocus
                         className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
                       <div className="flex gap-2">
-                        <button type="button" onClick={handleSaveSpeakerAsPreset} className="flex-1 text-xs px-2 py-1 rounded font-medium text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('common.confirm') || '确认'}</button>
+                        <button type="button" onClick={handleSaveSpeakerAsPreset} className="flex-1 text-xs px-2 py-1 rounded font-medium text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('speakers.savePreset')}</button>
                         <button type="button" onClick={() => setPresetSavePromptOpen(false)} className="flex-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.cancel') || '取消'}</button>
                       </div>
                     </div>
@@ -1299,13 +1301,13 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                 const nameStrokeWidth = Math.round((s?.nameStrokeWidth ?? 0) * PREVIEW_SCALE);
                 const nameStrokeColor = s?.nameStrokeColor || '#000000';
                 
-                const avatarEl = <img src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }} />;
+                const avatarEl = <img src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`} alt="" className="rounded-full object-cover shrink-0" style={{ width: avSizePx, height: avSizePx, border: `${Math.round((s?.avatarBorderWidth ?? 4) * PREVIEW_SCALE)}px solid ${s?.avatarBorderColor || '#fff'}`, boxShadow: shadow }} referrerPolicy="no-referrer" onError={handleAvatarError} />;
                 
                 const bubbleEl = (
                   <div style={{ width: 'fit-content', maxWidth: '100%', filter: textShadowFilter }}>
                     {nameText ? <div className="font-bold" style={{ color: nameColor, fontFamily: nameFontFamily, fontWeight: nameFontWeight, fontSize: `${namePx}px`, lineHeight: 1, whiteSpace: 'nowrap', marginBottom: `${nameMarginPx}px`, textAlign: isLeft ? 'left' : 'right', WebkitTextStrokeWidth: nameStrokeWidth > 0 ? `${nameStrokeWidth}px` : undefined, WebkitTextStrokeColor: nameStrokeWidth > 0 ? nameStrokeColor : undefined, paintOrder: 'stroke fill' }}>{nameText}</div> : null}
                     <div style={{ overflow: 'hidden', isolation: 'isolate', padding: `${py}px ${px}px`, backgroundClip: 'padding-box', backgroundColor: rgba(bg, op), color: tc, fontFamily, fontSize: `${fz}px`, fontWeight: fw, borderTopLeftRadius: isLeft ? `${sharp}px` : `${br}px`, borderTopRightRadius: isLeft ? `${br}px` : `${sharp}px`, borderBottomLeftRadius: `${br}px`, borderBottomRightRadius: `${br}px`, border: bw > 0 ? `${bw}px solid ${rgba(bco, bop)}` : 'none', boxShadow: shadow, width: 'fit-content', maxWidth: '100%' }}>
-                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>预览文本消息</span>
+                      <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.35 }}>{t('style.preview')}</span>
                     </div>
                   </div>
                 );
@@ -1319,9 +1321,9 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                   </div>
                 </div>
                 <div className="p-4 space-y-3">
-                {renderSection('预设配置', 'basic', <>
-                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
-                    <input type="text" value={editingPresetName || ''} onChange={(e) => handleRenamePreset(editingPresetName!, e.target.value)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
+                {renderSection(t('style.presetConfig'), 'basic', <>
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.presetName')}</span>
+                    <NameInput commitRef={nameCommitRef} key={editingPresetName} type="text" value={editingPresetName || ''} onDraftChange={setNameDirty} onCommit={(name) => handleRenamePreset(editingPresetName!, name)} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />
                   </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.avatar') || 'Avatar'}</span>
                     <div className="flex items-center gap-2">
@@ -1329,7 +1331,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                         src={resolveLocalPreviewPath(editingPreset.avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`}
                         alt="" className="w-8 h-8 rounded-full border object-cover shrink-0" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}
                         referrerPolicy="no-referrer"
-                        onError={(e) => { e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(editingPresetName || '')}`; }}
+                        onError={handleAvatarError}
                       />
                       <input type="text" value={editingPreset.avatar || ''} data-paste-owner={`preset:${editingPresetName}`} onChange={(e) => updatePresetField(editingPresetName!, 'avatar', e.target.value)}
                         onPaste={createImageAwarePathPasteHandler(['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mkv'], `preset:${editingPresetName}`)}
@@ -1377,20 +1379,25 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                   </div>
                 </div>
                 <div className="p-4 space-y-3">
-                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">预设名称</span>
-                    <input type="text" value={editingAnnotPresetName || ''} className={`w-full border rounded px-2 py-1 text-xs focus:outline-none ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
-                      onChange={(e) => {
-                        const newName = e.target.value;
-                        if (newName && newName !== editingAnnotPresetName) {
-                          const ordered: SpeakerPresetCollection = {};
-                          for (const [k, v] of Object.entries(localAnnotationPresets)) {
-                            if (k === editingAnnotPresetName) ordered[newName] = v;
-                            else ordered[k] = v;
-                          }
-                          setLocalAnnotationPresets(ordered);
-                          setEditingAnnotPresetName(newName);
-                          setAnnotPresetsDirty(true);
-                        }
+                  <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.presetName')}</span>
+                    <NameInput commitRef={nameCommitRef} key={editingAnnotPresetName} value={editingAnnotPresetName || ''} onDraftChange={setNameDirty}
+                      className={`w-full border rounded px-2 py-1 text-xs ${ic}`} style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }}
+                      onCommit={(raw) => {
+                        const name = raw.trim();
+                        if (!name) return false;
+                        if (name === editingAnnotPresetName) return true;
+                        if (!confirmOverwrite(name, true)) return false;
+                        const next = { ...localAnnotationPresets };
+                        const preset = next[editingAnnotPresetName];
+                        delete next[editingAnnotPresetName]; next[name] = preset;
+                        setLocalAnnotationPresets(next); setEditingAnnotPresetName(name);
+                        setSelectedAnnotPresetIds(new Set([name])); setAnnotPresetsDirty(true);
+                        setLocalSpeakers(previous => Object.fromEntries(Object.entries(previous).map(([id, speaker]) => [id,
+                          speaker.type === 'annotation' || id === 'ANNOTATION'
+                            ? speaker.preset === editingAnnotPresetName ? { ...speaker, preset: name }
+                              : speaker.preset === name && speaker.lockPreset ? applyPresetPayload(speaker, preset) : speaker
+                            : speaker])));
+                        return true;
                       }} />
                   </div>
                   {renderEditorFields({ ...s, annotationStyle: true }, (k, v) => {
@@ -1445,7 +1452,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                 <div className="p-4 space-y-3">
                 {Object.keys(localAnnotationPresets).length > 0 && (
                   <div className="space-y-1">
-                    <span className="text-[0.625rem] opacity-70">应用注释预设</span>
+                    <span className="text-[0.625rem] opacity-70">{t('style.applyAnnotationPreset')}</span>
                     <select value={annot?.preset || ''} onChange={(e) => {
                       const val = e.target.value;
                       if (!val) { updateSpeaker('ANNOTATION', (s) => ({ ...s, preset: '' })); return; }
@@ -1461,7 +1468,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                     </select>
                   </div>
                 )}
-                {renderSection('位置与对齐', 'position', <>
+                {renderSection(t('style.position'), 'position', <>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <span className="text-[0.625rem] opacity-70">{t('annotation.position')}</span>
@@ -1520,10 +1527,10 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                     </label>
                   </div>
                 </>)}
-                {renderSection('气泡样式', 'bubble', <>
+                {renderSection(t('style.bubbleStyle'), 'bubble', <>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">气泡颜色</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'bgColor', s?.bgColor)}</div>
-                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">文字颜色</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'textColor', s?.textColor)}</div>
+                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.backgroundColor')}</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'bgColor', s?.bgColor)}</div>
+                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.textColor')}</span>{renderColor((k, v) => updateStyle('ANNOTATION', k, v), 'textColor', s?.textColor)}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingX')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'paddingX', s?.paddingX ?? 24)}</div>
@@ -1553,16 +1560,25 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                   {t('preset.persistAvatar') || '持久化全部预设头像'}
                 </button>
               )}
-              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.cancel')}</button>
+              <button aria-label={t('common.close')} onClick={requestClose} className="px-4 py-2 rounded-xl text-sm" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text }}>{t('common.close')}</button>
             </div>
           </div>
         </div>
       </div>
-      {toastMsg && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 rounded-lg border text-sm shadow-2xl animate-fade-in" style={{ backgroundColor: isDarkMode ? 'rgba(17,24,39,0.94)' : 'rgba(255,255,255,0.96)', borderColor: `${secondaryThemeColor}44`, color: uiTheme.text, backdropFilter: 'blur(12px)' }}>
-          {toastMsg}
+      {saveError && <p role="alert" className="fixed bottom-4 text-red-500">{saveError}</p>}
+      {nameDirty && <p role="status" className="fixed bottom-4">{t('input.namePending')}</p>}
+      {closePrompt && <DraftGuard isDarkMode={isDarkMode} language={language} busy={saving} error={saveError} onSave={() => void saveAll(true)} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
+      {deletePrompt && <Dialog aria-label={t('speakers.reassign')} onClose={() => setDeletePrompt(null)} className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 p-4">
+        <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.text }}>
+          <p>{t('speakers.reassign')}</p>
+          <select aria-label={t('speakers.reassign')} value={replacement} onChange={e => setReplacement(e.target.value)} style={{ backgroundColor: uiTheme.inputBg }}>
+            {Object.entries(localSpeakers).filter(([id, speaker]) => !deletePrompt.includes(id) && id !== 'ANNOTATION' && speaker.type !== 'annotation').map(([id, speaker]) => <option key={id} value={id}>{speaker.name || id}</option>)}
+          </select>
+          <button onClick={() => deleteSpeakers(deletePrompt, replacement)}>{t('common.delete')}</button>
+          <button onClick={() => setDeletePrompt(null)}>{t('common.cancel')}</button>
         </div>
-      )}
-    </div>
+      </Dialog>}
+      {toastMsg && <Toast isDarkMode={isDarkMode} message={toastMsg.message} type={toastMsg.type} />}
+    </Dialog>
   );
 });

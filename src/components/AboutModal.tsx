@@ -1,3 +1,4 @@
+import { Dialog } from './ui/Dialog';
 import { ExternalLink, GitBranch, RefreshCw, Sparkles, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
@@ -49,7 +50,7 @@ export function AboutModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={onClose}>
+    <Dialog aria-label="PomChat Studio" onClose={onClose} className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={onClose}>
       <div
         className="w-[min(92vw,640px)] rounded-2xl border shadow-2xl overflow-hidden"
         style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}
@@ -154,6 +155,6 @@ export function AboutModal({
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

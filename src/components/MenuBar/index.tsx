@@ -98,8 +98,37 @@ export function MenuBar({
     action();
   };
 
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const trigger = event.currentTarget.querySelector<HTMLButtonElement>(`[data-menu-trigger="${activeMenu}"]`);
+    if (event.key === 'Escape' && activeMenu) {
+      event.preventDefault(); event.stopPropagation(); setActiveMenu(null); trigger?.focus(); return;
+    }
+    if (event.key === 'Tab') { setActiveMenu(null); return; }
+    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      const triggers = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-menu-trigger]'));
+      const current = triggers.indexOf(target as HTMLButtonElement);
+      if (current < 0) return;
+      event.preventDefault();
+      const next = triggers[(current + (event.key === 'ArrowRight' ? 1 : -1) + triggers.length) % triggers.length];
+      next.focus(); if (activeMenu) setActiveMenu(next.dataset.menuTrigger!); return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    if (target.dataset.menuTrigger && activeMenu !== target.dataset.menuTrigger) {
+      const group = target.parentElement;
+      setActiveMenu(target.dataset.menuTrigger);
+      requestAnimationFrame(() => group?.querySelector<HTMLButtonElement>('[data-menu-popup] button:not(:disabled)')?.focus());
+      return;
+    }
+    const items = Array.from(trigger?.parentElement?.querySelectorAll<HTMLButtonElement>('[data-menu-popup] button:not(:disabled)') || []);
+    const index = items.indexOf(target as HTMLButtonElement);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[nextIndex]?.focus();
+  };
+
   return (
-    <div className={`h-10 border-b flex items-center justify-between px-2 shrink-0 z-50 relative ${textClass}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border }}>
+    <div onKeyDown={handleMenuKeyDown} className={`h-10 border-b flex items-center justify-between px-2 shrink-0 z-50 relative ${textClass}`} style={{ backgroundColor: uiTheme.toolbarBg, borderColor: uiTheme.border }}>
       <div className="flex items-center gap-1">
         {/* App Title */}
         <button
@@ -116,7 +145,7 @@ export function MenuBar({
         {/* File Menu */}
         <div className="relative">
           <button 
-            onClick={(e) => toggleMenu(e, 'file')}
+            data-menu-trigger="file" aria-haspopup="true" aria-expanded={activeMenu === 'file'} onClick={(e) => toggleMenu(e, 'file')}
             className={`px-3 py-1 text-sm rounded transition-colors ${activeMenu === 'file' ? '' : hoverClass}`}
             onMouseEnter={(e) => { if (activeMenu !== 'file') (e.currentTarget.style.backgroundColor = uiTheme.hoverBg); }}
             onMouseLeave={(e) => { if (activeMenu !== 'file') e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -126,7 +155,7 @@ export function MenuBar({
           </button>
           
           {activeMenu === 'file' && (
-            <div className="absolute top-full left-0 mt-1 w-48 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div data-menu-popup="true" className="absolute top-full left-0 mt-1 w-48 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button onClick={() => executeAction(onNewProject)} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass}`}>
                 <Plus size={14} /> {t('menu.newProject')}
               </button>
@@ -193,7 +222,7 @@ export function MenuBar({
 
         <div className="relative">
           <button
-            onClick={(e) => toggleMenu(e, 'edit')}
+            data-menu-trigger="edit" aria-haspopup="true" aria-expanded={activeMenu === 'edit'} onClick={(e) => toggleMenu(e, 'edit')}
             className={`px-3 py-1 text-sm rounded transition-colors ${activeMenu === 'edit' ? '' : hoverClass}`}
             onMouseEnter={(e) => { if (activeMenu !== 'edit') (e.currentTarget.style.backgroundColor = uiTheme.hoverBg); }}
             onMouseLeave={(e) => { if (activeMenu !== 'edit') e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -203,7 +232,7 @@ export function MenuBar({
           </button>
 
           {activeMenu === 'edit' && (
-            <div className="absolute top-full left-0 mt-1 w-48 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div data-menu-popup="true" className="absolute top-full left-0 mt-1 w-48 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button
                 onClick={() => executeAction(onUndo)}
                 disabled={!canUndo}
@@ -224,7 +253,7 @@ export function MenuBar({
 
         <div className="relative">
           <button
-            onClick={(e) => toggleMenu(e, 'subtitle')}
+            data-menu-trigger="subtitle" aria-haspopup="true" aria-expanded={activeMenu === 'subtitle'} onClick={(e) => toggleMenu(e, 'subtitle')}
             className={`px-3 py-1 text-sm rounded transition-colors ${activeMenu === 'subtitle' ? '' : hoverClass}`}
             onMouseEnter={(e) => { if (activeMenu !== 'subtitle') (e.currentTarget.style.backgroundColor = uiTheme.hoverBg); }}
             onMouseLeave={(e) => { if (activeMenu !== 'subtitle') e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -234,7 +263,7 @@ export function MenuBar({
           </button>
 
           {activeMenu === 'subtitle' && (
-            <div className="absolute top-full left-0 mt-1 w-56 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div data-menu-popup="true" className="absolute top-full left-0 mt-1 w-56 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button
                 onClick={() => executeAction(onAddSubtitle)}
                 disabled={!projectPath}
@@ -284,7 +313,7 @@ export function MenuBar({
         {/* Export Menu */}
         <div className="relative">
           <button 
-            onClick={(e) => toggleMenu(e, 'export')}
+            data-menu-trigger="export" aria-haspopup="true" aria-expanded={activeMenu === 'export'} onClick={(e) => toggleMenu(e, 'export')}
             className={`px-3 py-1 text-sm rounded transition-colors flex items-center gap-1 ${activeMenu === 'export' ? '' : hoverClass}`}
             onMouseEnter={(e) => { if (activeMenu !== 'export') (e.currentTarget.style.backgroundColor = uiTheme.hoverBg); }}
             onMouseLeave={(e) => { if (activeMenu !== 'export') e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -294,7 +323,7 @@ export function MenuBar({
           </button>
           
           {activeMenu === 'export' && (
-            <div className="absolute top-full left-0 mt-1 w-52 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
+            <div data-menu-popup="true" className="absolute top-full left-0 mt-1 w-52 rounded shadow-xl border py-1 z-50" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border }}>
               <button onClick={() => executeAction(biliup.open)} disabled={isWebMode} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${hoverClass} disabled:opacity-50`}>
                 <Upload size={14} /> {t('biliup.settings')}
               </button>
