@@ -1,3 +1,6 @@
+import { DraftGuard } from './ui/DraftGuard';
+import { NumberInput } from './ui/NumberInput';
+import { Dialog } from './ui/Dialog';
 import { memo, useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, Check, Clock3, FolderOpen, ImagePlus, Info, Trash2, Upload, X } from 'lucide-react';
@@ -186,7 +189,7 @@ function BiliupDateTimePicker({ value, minTimestamp, maxTimestamp, language, isD
       <CalendarDays size={17} style={{ color: secondaryThemeColor }} />
       <span className={value ? '' : 'opacity-60'}>{displayLabel}</span>
     </button>
-    {open && <div role="dialog" aria-label={placeholder} className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border p-4 shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}55`, color: theme.text }}>
+    {open && <div role="dialog" aria-label={placeholder} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false); pickerRef.current?.querySelector('button')?.focus(); } }} className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border p-4 shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}55`, color: theme.text }}>
       <div className="mb-3 flex items-center justify-between">
         <button type="button" className="rounded-lg p-2 transition-colors hover:opacity-80 focus:outline-none focus:ring-0 disabled:opacity-30" style={{ color: secondaryThemeColor }} aria-label={previousMonthLabel} disabled={viewMonth.getTime() <= minMonth.getTime()} onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}>‹</button>
         <span className="text-sm font-semibold">{monthLabel}</span>
@@ -427,6 +430,8 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const [draft, setDraft] = useState<BiliupTemplate>(() => ({ ...(preferences.templates.find((item) => item.id === preferences.selectedTemplateId) || newBiliupTemplate()) }));
+  const [draftBaseline, setDraftBaseline] = useState(() => JSON.stringify(draft));
+  const [pendingDraftAction, setPendingDraftAction] = useState<(() => void) | null>(null);
   const [check, setCheck] = useState<BiliupCheck | null>(null);
   const [lineTests, setLineTests] = useState<BiliupLineTestResult[] | null>(null);
   const [working, setWorking] = useState(false);
@@ -486,24 +491,13 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
     }, 100);
     return () => { window.clearInterval(timer); view.removeEventListener('did-attach', attach); };
   }, [state.captchaUrl]);
-  const requestClose = useCallback(() => {
+  const closeNow = useCallback(() => {
     if (state.busy && state.kind !== 'upload') {
       if (!window.confirm(t('biliup.closeConfirm'))) return;
       void window.electron.biliup.cancel();
     }
     onClose();
   }, [onClose, state.busy, state.kind, t]);
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      if (uploadConfirmation) setUploadConfirmation(null);
-      else requestClose();
-    };
-    document.addEventListener('keydown', handler, true);
-    return () => document.removeEventListener('keydown', handler, true);
-  }, [requestClose, uploadConfirmation]);
-
   const perform = useCallback(async (action: () => Promise<void>) => {
     setWorking(true); biliup.setError('');
     try { await action(); } catch (error) { biliup.setError(error instanceof Error ? error.message : 'input'); }
@@ -568,10 +562,32 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
       insertTextUndoably(insertion, coverPath, { replaceAll: true, abortIfChanged: true, abortIfFocusChanged: true });
     });
   };
+  const draftDirty = JSON.stringify(draft) !== draftBaseline || pendingSchedule !== null || tagInput.trim() !== '';
+  const guardDraft = (action: () => void) => {
+    if (working) return;
+    if (draftDirty) setPendingDraftAction(() => action); else action();
+  };
+  const requestClose = () => guardDraft(closeNow);
+  const replaceDraft = (next: BiliupTemplate) => {
+    setDraftBaseline(JSON.stringify(next));
+    setDraft(next); setPendingSchedule(null); setTagInput(''); setSaved(false);
+  };
+  const saveDraft = async () => {
+    const next = { ...draft, id: draft.id || crypto.randomUUID(), dtime: pendingSchedule ?? draft.dtime,
+      tag: mergeBiliupTags(splitBiliupTags(draft.tag), splitBiliupTags(tagInput)).join(',') };
+    const error = validateBiliupTemplate(next) || validateBiliupSchedule(next.dtime);
+    if (error) throw new Error(error);
+    const tagHistory = mergeBiliupTags(splitBiliupTags(next.tag), preferences.tagHistory).slice(0, BILIUP_MAX_TAG_HISTORY);
+    await biliup.save({ ...preferences, selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
+    replaceDraft(next); setSaved(true);
+  };
   const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
   const textFields = ['name', 'title', 'tag', 'cover', 'dynamic', 'missionId'] as const;
   const savedTemplate = preferences.templates.find((item) => item.id === preferences.selectedTemplateId);
   const draftValidationError = validateBiliupTemplate(draft) || validateBiliupSchedule(draft.dtime);
+  const requiredFields = ['name', 'title', 'tag', ...(draft.copyright === 2 ? ['source'] : [])].filter(key => !String(draft[key as keyof BiliupTemplate]).trim());
+  const validationDetails = requiredFields.length ? `${t('input.required')}: ${requiredFields.map(key => t(`biliup.field.${key}`)).join(', ')}` : draftValidationError ? t(`biliup.error.${draftValidationError}`) : '';
+  const uploadBlockReason = !window.electron ? t('biliup.desktopOnly') : draftValidationError ? validationDetails : !preferences.directory.trim() ? t('biliup.directory') : '';
   const canUploadDraft = Boolean(window.electron && biliup.loaded && preferences.directory.trim() && !draftValidationError);
   const showManualCaptchaInput = ['captchaChallenge', 'captchaValidate'].includes(state.phase) && ['attachFailed', 'viewClosed'].includes(state.captchaStatus);
   const selectedTags = splitBiliupTags(draft.tag);
@@ -667,8 +683,8 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
     { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.onlySelf') : t('biliup.public') },
   ] : [];
 
-  return createPortal(<div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6" onMouseDown={(event) => event.stopPropagation()}>
-    <section role="dialog" aria-modal="true" aria-label={t('biliup.settings')} className="flex w-full max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-[28px] border shadow-2xl"
+  return createPortal(<Dialog aria-label={t('biliup.settings')} onClose={requestClose} onSave={() => { if (!working) void perform(saveDraft); }} className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6" onMouseDown={(event) => event.stopPropagation()}>
+    <section className="flex w-full max-w-3xl max-h-[92vh] flex-col overflow-hidden rounded-[28px] border shadow-2xl"
       style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 68%, ${secondaryThemeColor}${isDarkMode ? '12' : '08'} 100%)`, borderColor: `${secondaryThemeColor}33`, color: theme.text }}>
       <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}><div><div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}24` }}>biliup</div><h2 className="text-xl font-semibold" style={{ color: theme.text }}>{t('biliup.settings')}</h2><button type="button" className="mt-1 block max-w-full truncate text-left text-xs underline decoration-current/40 underline-offset-2 transition-opacity hover:opacity-80" style={{ color: secondaryThemeColor }} onClick={() => { if (window.electron) void window.electron.openExternal(BILIUP_PROJECT_URL); }}>{BILIUP_PROJECT_URL}</button></div><button type="button" className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: theme.textMuted }} aria-label={t('settings.close')} onClick={requestClose}><X size={16} /></button></header>
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}66`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}99` } as React.CSSProperties}>
@@ -712,7 +728,8 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
       <label className="block text-sm font-medium">{t('biliup.uploadTemplate')}</label>
       <div className="flex gap-2">
         <select aria-label={t('biliup.templateSettings')} className={singleLineInputClass} style={surface} value={draft.id} disabled={templateBusy} onChange={(event) => {
-          setSaved(false); setPendingSchedule(null); setDraft({ ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) });
+          const next = { ...(preferences.templates.find((item) => item.id === event.target.value) || newBiliupTemplate()) };
+          guardDraft(() => replaceDraft(next));
         }}>
           <option value="">{t('biliup.newTemplate')}</option>
           {preferences.templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -721,19 +738,20 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
           <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="my-[3px] inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={templateBusy || !draft.id} onClick={() => void perform(async () => {
             if (!window.confirm(t('biliup.deleteConfirm'))) return;
             await biliup.save({ ...preferences, templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
-            setDraft(newBiliupTemplate());
+            replaceDraft(newBiliupTemplate());
           })}><Trash2 size={16} /></button>
         </Tooltip>
       </div>
+      {draftValidationError && <p role="alert" className="text-xs text-red-500">{validationDetails}</p>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {textFields.map((key) => {
-          if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>
+          if (key === 'cover') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><span>{t(`biliup.field.${key}`)}</span>{requiredFields.includes(key) && <span className="block text-red-500">{t('input.required')}</span>}
             <div className="flex min-w-0 gap-2">
               <input className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} disabled={templateBusy} value={draft[key]} data-paste-owner={draft.id || 'new-template'} onChange={(event) => set(key, event.target.value)} onPaste={handleCoverPaste} />
               <button type="button" className={`${buttonClass} !px-2.5 !py-2 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={templateBusy || !window.electron} onClick={chooseCover}><ImagePlus size={12} />{t('biliup.chooseCover')}</button>
             </div>
           </label>;
-          if (key === 'tag') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><div className="flex items-center justify-between gap-2"><span>{t(`biliup.field.${key}`)}</span><span className="opacity-70">{t('biliup.tagCount', { count: selectedTags.length, max: BILIUP_MAX_TAGS })}</span></div>
+          if (key === 'tag') return <label key={key} className="space-y-1 text-xs sm:col-span-2"><div className="flex items-center justify-between gap-2"><span>{t(`biliup.field.${key}`)}</span>{requiredFields.includes(key) && <span className="block text-red-500">{t('input.required')}</span>}<span className="opacity-70">{t('biliup.tagCount', { count: selectedTags.length, max: BILIUP_MAX_TAGS })}</span></div>
             <div className="flex min-h-[2.75rem] flex-wrap items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors focus-within:border-current" style={{ backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text }}>
               {selectedTags.map((tag) => <span key={tag.toLocaleLowerCase()} className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-xs" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}44`, color: secondaryThemeColor }}><span className="max-w-[15rem] truncate">{tag}</span><button type="button" className="rounded-full p-0.5 transition-opacity hover:opacity-70 focus:outline-none focus:ring-0" aria-label={`${t('biliup.tagRemove')}: ${tag}`} disabled={templateBusy} onClick={() => removeTag(tag)}><X size={12} /></button></span>)}
               <input value={tagInput} disabled={templateBusy || selectedTags.length >= BILIUP_MAX_TAGS} placeholder={selectedTags.length >= BILIUP_MAX_TAGS ? '' : t('biliup.tagPlaceholder')} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTagsFromInput(); } }} className="min-w-[10rem] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none placeholder:opacity-50" />
@@ -741,7 +759,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
             <p className="opacity-70">{t('biliup.tagHint')}</p>
             <div className="space-y-1.5"><span className="block opacity-70">{t('biliup.tagHistory')}</span><div className="flex flex-wrap gap-1.5">{preferences.tagHistory.length > 0 ? preferences.tagHistory.map((tag) => { const selected = selectedTags.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase()); return <button key={tag.toLocaleLowerCase()} type="button" className="rounded-full border px-2.5 py-1 text-xs transition-colors focus:outline-none focus:ring-0 disabled:opacity-40" disabled={templateBusy} onClick={() => toggleHistoryTag(tag)} style={selected ? { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' } : { backgroundColor: theme.panelBgSubtle, borderColor: theme.border, color: theme.textMuted }}>{tag}</button>; }) : <span className="opacity-50">—</span>}</div></div>
           </label>;
-          return <label key={key} className="space-y-1 text-xs"><span>{t(`biliup.field.${key}`)}</span>
+          return <label key={key} className="space-y-1 text-xs"><span>{t(`biliup.field.${key}`)}</span>{requiredFields.includes(key) && <span className="block text-red-500">{t('input.required')}</span>}
             <input className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft[key]} onChange={(event) => set(key, event.target.value)} />
           </label>;
         })}
@@ -761,7 +779,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
           </select>
         </label>
         <label className="space-y-1 text-xs"><span className="flex min-h-4 items-center gap-1">{t('biliup.field.limit')}<Tooltip content={t('biliup.limitHint')} placement="top" width={300} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text}><span tabIndex={0} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full p-0 focus:outline-none" style={{ color: secondaryThemeColor }}><Info size={13} /></span></Tooltip></span>
-          <input type="number" min={1} max={32} className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.limit} onChange={(event) => set('limit', Number(event.target.value))} />
+          <NumberInput language={language} integer min={1} max={32} className={singleLineInputClass} style={surface} disabled={templateBusy} value={draft.limit} onValueChange={(value) => set('limit', value)} />
         </label>
         <div className="text-xs space-y-1"><span className="block">{t('biliup.field.isOnlySelf')}</span>
           <div role="radiogroup" aria-label={t('biliup.field.isOnlySelf')} className="relative flex overflow-hidden rounded-lg border p-1" style={{ backgroundColor: theme.inputBg, borderColor: theme.border }}>
@@ -812,11 +830,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
       <div className="space-y-3">
         <div className="space-y-2">
           <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={primaryButtonStyle} disabled={busy || !biliup.loaded} onClick={() => void perform(async () => {
-            const error = validateBiliupTemplate(draft) || validateBiliupSchedule(draft.dtime); if (error) throw new Error(error);
-            const next = { ...draft, id: draft.id || crypto.randomUUID() };
-            const tagHistory = mergeBiliupTags(splitBiliupTags(next.tag), preferences.tagHistory).slice(0, BILIUP_MAX_TAG_HISTORY);
-            await biliup.save({ ...preferences, selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
-            setDraft(next); setSaved(true);
+            await saveDraft();
           })}>{t('biliup.saveTemplate')}</button>
           {saved && <p className="text-center text-xs" style={{ color: secondaryThemeColor }}>{t('biliup.saved')}</p>}
         </div>
@@ -827,6 +841,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
             <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFileError(''); }} onPaste={handleUploadPathPaste} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={handleUploadPathDrop} className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} />
             <button type="button" className={`${buttonClass} !px-2.5 !py-2 inline-flex shrink-0 items-center gap-1.5`} style={buttonStyle} disabled={busy || !window.electron} onClick={chooseUploadFile}><FolderOpen size={12} />{t('biliup.chooseVideo')}</button>
           </div>
+          {uploadBlockReason && <p role="alert" className="text-xs text-red-500">{uploadBlockReason}</p>}
           <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={busy || !canUploadDraft || !isVideoPath(uploadFilePath) || Boolean(uploadFileError)} onClick={uploadSelectedFile}>{t('biliup.uploadSelectedFile')}</button>
         </div>
         {uploadFileError && <p className="text-xs text-red-500">{uploadFileError}</p>}
@@ -844,8 +859,12 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
         </div>
       </div>
     </section>
-    {uploadConfirmation && <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 px-4 py-6" onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) setUploadConfirmation(null); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="biliup-upload-confirm-title" className="flex w-full max-w-2xl max-h-[86vh] flex-col overflow-hidden rounded-[26px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}44`, color: theme.text }} onMouseDown={(event) => event.stopPropagation()}>
+    {pendingDraftAction && <DraftGuard isDarkMode={isDarkMode} language={language} busy={working} error={biliup.error ? t(`biliup.error.${biliup.error}`) : ''}
+      onCancel={() => setPendingDraftAction(null)}
+      onDiscard={() => { const action = pendingDraftAction; setPendingDraftAction(null); action(); }}
+      onSave={() => void perform(async () => { await saveDraft(); const action = pendingDraftAction; setPendingDraftAction(null); action(); })} />}
+    {uploadConfirmation && <Dialog aria-label={t('biliup.uploadConfirmTitle')} onClose={() => setUploadConfirmation(null)} className="fixed inset-0 z-[310] flex items-center justify-center bg-black/60 px-4 py-6" onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) setUploadConfirmation(null); }}>
+      <section className="flex w-full max-w-2xl max-h-[86vh] flex-col overflow-hidden rounded-[26px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${theme.panelBgElevated} 0%, ${theme.panelBg} 100%)`, borderColor: `${secondaryThemeColor}44`, color: theme.text }} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}>
           <div className="flex min-w-0 items-start gap-3">
             <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: `${secondaryThemeColor}18`, border: `1px solid ${secondaryThemeColor}35`, color: secondaryThemeColor }}><Upload size={18} /></span>
@@ -876,6 +895,6 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
           <button type="button" className="inline-flex items-center justify-center gap-2 rounded-full border px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40" style={primaryButtonStyle} disabled={busy} onClick={confirmUpload}><Check size={15} />{t('biliup.confirmUpload')}</button>
         </footer>
       </section>
-    </div>}
-  </div>, document.body);
+    </Dialog>}
+  </Dialog>, document.body);
 });

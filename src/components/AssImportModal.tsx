@@ -1,3 +1,4 @@
+import { Dialog } from './ui/Dialog';
 import React, { useState, useEffect } from 'react';
 import { parse, type ParsedASS } from 'ass-compiler';
 import { X } from 'lucide-react';
@@ -382,8 +383,8 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         const mergedStyle = hasSelectedStyle ? { ...baseStyle, ...importedStyle } : baseStyle;
         const assPresetKey = hasSelectedStyle ? ensurePresetKey(styleName || name || 'Default', mergedStyle, isAnnotation) : undefined;
         const displayName = isAnnotation
-          ? '注释'
-          : formatImportedSpeakerName(language, name || `角色${String.fromCharCode(charCode)}`, styleName, shouldIncludeStyleInName);
+          ? t('defaults.annotationSpeaker')
+          : formatImportedSpeakerName(language, name || t('defaults.speakerName', { id: String.fromCharCode(charCode) }), styleName, shouldIncludeStyleInName);
         const normalizedSpeakerName = displayName.trim().toLowerCase();
         const speakerUniqueKey = isAnnotation ? `annotation:${styleName || 'default'}` : normalizedSpeakerName;
         if (createdSpeakerKeys.has(speakerUniqueKey)) {
@@ -431,7 +432,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
       const speakerId = isAnnotation ? 'ANNOTATION' : String.fromCharCode(charCode++);
 
       newSpeakers[speakerId] = {
-        name: isAnnotation ? '注释' : (styleName || `角色${speakerId}`),
+        name: isAnnotation ? t('defaults.annotationSpeaker') : (styleName || t('defaults.speakerName', { id: speakerId })),
         avatar: isAnnotation ? '' : `https://api.dicebear.com/7.x/adventurer/svg?seed=${styleName || speakerId}`,
         side: isAnnotation ? 'center' : (charCode % 2 === 0 ? 'left' : 'right'),
         type: isAnnotation ? 'annotation' : 'speaker',
@@ -449,7 +450,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
     // If nothing selected, just provide a default A
     if (Object.keys(newSpeakers).length === 0) {
       newSpeakers['A'] = {
-        name: "默认角色",
+        name: t('defaults.speakerGeneric'),
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=A`,
         side: "left",
         assActorName: '',
@@ -525,11 +526,11 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Dialog aria-label={t('import.title')} onClose={onCancel} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden border" style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}>
         <div className="flex justify-between items-center p-4 border-b" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgElevated }}>
           <h3 className="font-bold">{t('import.title')}</h3>
-          <button onClick={onCancel} className="p-1 rounded-md hover:bg-black/10">
+          <button aria-label={t('common.cancel')} onClick={onCancel} className="p-1 rounded-md hover:bg-black/10">
             <X size={18} />
           </button>
         </div>
@@ -693,14 +694,14 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         </div>
         
         <div className="p-4 border-t flex justify-end gap-2" style={{ borderColor: uiTheme.border }}>
-          <button onClick={onCancel} className="px-4 py-2 text-sm rounded hover:bg-black/5 transition-colors">
+          <button aria-label={t('common.cancel')} onClick={onCancel} className="px-4 py-2 text-sm rounded hover:bg-black/5 transition-colors">
             {t('common.cancel')}
           </button>
           <button onClick={handleConfirm} className="px-4 py-2 text-sm rounded text-white transition-colors" style={{ backgroundColor: secondaryThemeColor }}>
-            {t('common.confirm')}
+            {t('action.importSubtitles')}
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

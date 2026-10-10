@@ -1,3 +1,8 @@
+import type { ToastType } from './ui/Toast';
+import { Dialog } from './ui/Dialog';
+import { hasOpenDialog } from '../utils/dialogStack';
+import { TimeInput } from './ui/TimeInput';
+import { parseTimeInput } from '../utils/timeInput';
 import { FileText, Clock, MousePointer2, Check, Trash2, Search, ChevronUp, ChevronDown, X, List, CheckSquare, Square, Eye, EyeOff, Eraser } from 'lucide-react';
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -32,7 +37,7 @@ interface SubtitlePanelProps {
   onCompactModeChange: (next: boolean) => void;
   projectPath?: string | null;
   projectAssetsCacheEnabled?: boolean;
-  showToast?: (message: string) => void;
+  showToast?: (message: string, type?: ToastType) => void;
 }
 
 const colorWithOpacity = (value: string, opacity: number) => {
@@ -156,6 +161,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   useEffect(() => {
     if (!multiSelectMode) return;
     const handleMultiSelectShortcut = (event: KeyboardEvent) => {
+      if (hasOpenDialog()) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
         const target = event.target as HTMLElement | null;
         const tagName = target?.tagName;
@@ -312,14 +318,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const handleApplyBulkSpeaker = () => {
     if (validSelectedSubtitleIds.length === 0 || !effectiveBulkSpeakerId) return;
-    setPendingBulkAction({ type: 'speaker', speakerId: effectiveBulkSpeakerId, ids: validSelectedSubtitleIds });
+    void onBulkUpdateSpeaker(validSelectedSubtitleIds, effectiveBulkSpeakerId); resetMultiSelectState();
     setShowBulkSpeakerPicker(false);
   };
 
   const handleCreateBubbleSnapshot = (ids = validSelectedSubtitleIds) => {
     if (ids.length === 0) return;
     if (ids.length > 100) {
-      showToast?.(t('subtitle.bubbleSnapshotLimit', { count: 100 }));
+      showToast?.(t('subtitle.bubbleSnapshotLimit', { count: 100 }), 'warning');
       return;
     }
     void onCreateBubbleSnapshot?.(ids);
@@ -454,10 +460,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
           throw new Error('execCommand copy failed');
         }
       }
-      showToast?.(t('subtitle.contextCopyTextSuccess'));
+      showToast?.(t('subtitle.contextCopyTextSuccess'), 'success');
     } catch (error) {
       console.error('Failed to copy subtitle text:', error);
-      showToast?.(t('subtitle.contextCopyTextFailed'));
+      showToast?.(t('subtitle.contextCopyTextFailed'), 'error');
     }
   };
 
@@ -473,9 +479,9 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
 
   const saveModalEdit = () => {
     if (!editModalSubtitle) return;
-    const newStart = parseFloat(modalEditForm.start);
-    const newEnd = parseFloat(modalEditForm.end);
-    if (!Number.isFinite(newStart) || !Number.isFinite(newEnd) || newEnd < newStart) {
+    const newStart = parseTimeInput(modalEditForm.start);
+    const newEnd = parseTimeInput(modalEditForm.end);
+    if (newStart === null || newEnd === null || newStart < 0 || newEnd < newStart) {
       return;
     }
     onUpdateSubtitle(editModalSubtitle.id, {
@@ -527,10 +533,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
       e.preventDefault();
       e.stopPropagation();
     }
-    const newStart = parseFloat(editForm.start);
-    const newEnd = parseFloat(editForm.end);
+    const newStart = parseTimeInput(editForm.start);
+    const newEnd = parseTimeInput(editForm.end);
     
-    if (isNaN(newStart) || isNaN(newEnd)) {
+    if (newStart === null || newEnd === null || newStart < 0 || newEnd < newStart) {
       return;
     }
 
@@ -614,6 +620,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
   // Global shortcuts for Region Edit
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (hasOpenDialog()) return;
       const isEditableTarget = () => {
         const tag = (e.target as HTMLElement)?.tagName;
         return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
@@ -647,7 +654,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             label: t('subtitle.contextBulkShow', { count: contextMenu.selectedIds.length }),
             action: () => {
               setContextMenu(null);
-              setPendingBulkAction({ type: 'visibility', visible: true, ids: contextMenu.selectedIds });
+              void onBulkUpdateVisibility(contextMenu.selectedIds, true);
             },
           },
           {
@@ -655,7 +662,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             label: t('subtitle.contextBulkHide', { count: contextMenu.selectedIds.length }),
             action: () => {
               setContextMenu(null);
-              setPendingBulkAction({ type: 'visibility', visible: false, ids: contextMenu.selectedIds });
+              void onBulkUpdateVisibility(contextMenu.selectedIds, false);
             },
           },
           {
@@ -825,7 +832,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
                 style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
               >
-                {t('common.confirm')}
+                {t('subtitle.selectSpeaker')}
               </button>
             </>
           ) : null}
@@ -847,7 +854,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 className="px-2 py-1 rounded border text-[0.625rem] disabled:opacity-40"
                 style={{ borderColor: `${secondaryThemeColor}33`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
               >
-                {t('common.confirm')}
+                {t('subtitle.contextBulkChangeSpeaker', { count: validSelectedSubtitleIds.length })}
               </button>
             </>
           ) : null}
@@ -1121,20 +1128,16 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1 font-mono text-[0.625rem]">
                         <Clock size={10} />
-                        <input
-                          type="number"
-                          step="0.1"
+                        <TimeInput language={language} field="start" start={parseTimeInput(editForm.start) ?? 0} end={parseTimeInput(editForm.end) ?? Infinity}
                           value={editForm.start}
-                          onChange={(e) => setEditForm({...editForm, start: e.target.value})}
+                          onValueChange={(value) => setEditForm(prev => ({ ...prev, start: value }))}
                           className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                           style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                         />
                         <span>-</span>
-                        <input
-                          type="number"
-                          step="0.1"
+                        <TimeInput language={language} field="end" start={parseTimeInput(editForm.start) ?? 0} end={parseTimeInput(editForm.end) ?? Infinity}
                           value={editForm.end}
-                          onChange={(e) => setEditForm({...editForm, end: e.target.value})}
+                          onValueChange={(value) => setEditForm(prev => ({ ...prev, end: value }))}
                           className={`w-16 px-1 py-0.5 rounded border text-xs focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
                           style={{ backgroundColor: uiTheme.inputBg, borderColor: `${themeColor}55`, color: uiTheme.text }}
                         />
@@ -1212,7 +1215,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
         )}
       </div>
       {pendingBulkAction && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center p-4" style={{ backgroundColor: isDarkMode ? 'rgba(3, 7, 18, 0.55)' : 'rgba(15, 23, 42, 0.16)' }}>
+        <Dialog aria-label={t('common.close')} onClose={cancelBulkAction} className="absolute inset-0 z-30 flex items-center justify-center p-4" style={{ backgroundColor: isDarkMode ? 'rgba(3, 7, 18, 0.55)' : 'rgba(15, 23, 42, 0.16)' }}>
           <div
             className="w-full max-w-md rounded-xl border shadow-2xl overflow-hidden"
             style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
@@ -1266,14 +1269,14 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 className="px-3 py-1.5 rounded text-xs text-white"
                 style={{ backgroundColor: secondaryThemeColor }}
               >
-                {t('common.confirm')}
+                {t('subtitle.deleteCount', { count: pendingSelectedSubtitleIds.length })}
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
       {bulkSpeakerModalIds ? (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+        <Dialog aria-label={t('subtitle.contextBulkChangeSpeaker', { count: bulkSpeakerModalIds.length })} onClose={() => setBulkSpeakerModalIds(null)} className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
           <div className="w-full max-w-xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
             <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
               <div>
@@ -1305,26 +1308,38 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
                 disabled={!effectiveBulkSpeakerId}
                 onClick={() => {
                   if (!bulkSpeakerModalIds || !effectiveBulkSpeakerId) return;
-                  setPendingBulkAction({ type: 'speaker', speakerId: effectiveBulkSpeakerId, ids: bulkSpeakerModalIds });
+                  void onBulkUpdateSpeaker(bulkSpeakerModalIds, effectiveBulkSpeakerId); resetMultiSelectState();
                   setBulkSpeakerModalIds(null);
                 }}
                 className="rounded-xl px-4 py-2 text-sm text-white disabled:opacity-40"
                 style={{ backgroundColor: secondaryThemeColor }}
               >
-                {t('common.confirm')}
+                {t('action.replaceSpeaker')}
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       ) : null}
       {contextMenu && typeof document !== 'undefined' ? createPortal(
         <div
+          role="menu" aria-label={t('subtitle.title')}
+          onKeyDown={event => {
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setContextMenu(null); return; }
+            if (event.key === 'Tab') { setContextMenu(null); return; }
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault(); event.stopPropagation();
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+          }}
           className="fixed z-[1200] min-w-[12rem] overflow-hidden rounded-2xl border shadow-2xl"
           style={{ left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - (contextMenu.selectedIds.length > 0 ? 330 : 260))), backgroundColor: uiTheme.panelBgElevated, borderColor: `${secondaryThemeColor}33`, color: uiTheme.text }}
           onClick={(event) => event.stopPropagation()}
         >
           {contextMenuItems.map((item, index) => (
             <button
+              role="menuitem" autoFocus={index === 0}
               key={item.key}
               type="button"
               onClick={item.action}
@@ -1344,7 +1359,7 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
         document.body
       ) : null}
       {editModalSubtitle ? (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+        <Dialog aria-label={t('subtitle.contextEdit')} onClose={() => setEditModalSubtitleId(null)} className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
             <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
               <div>
@@ -1357,8 +1372,8 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             </div>
             <div className="space-y-4 px-6 py-6">
               <div className="grid gap-3 md:grid-cols-2">
-                <input value={modalEditForm.start} onChange={(e) => setModalEditForm((prev) => ({ ...prev, start: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
-                <input value={modalEditForm.end} onChange={(e) => setModalEditForm((prev) => ({ ...prev, end: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+                <TimeInput language={language} field="start" start={parseTimeInput(modalEditForm.start) ?? 0} end={parseTimeInput(modalEditForm.end) ?? Infinity} value={modalEditForm.start} onValueChange={(value) => setModalEditForm(prev => ({ ...prev, start: value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
+                <TimeInput language={language} field="end" start={parseTimeInput(modalEditForm.start) ?? 0} end={parseTimeInput(modalEditForm.end) ?? Infinity} value={modalEditForm.end} onValueChange={(value) => setModalEditForm(prev => ({ ...prev, end: value }))} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
               </div>
               <div className="space-y-1.5">
                 <textarea ref={modalEditTextareaRef} data-paste-owner={`modal:${editModalSubtitleId ?? ''}`} value={modalEditForm.text} onChange={(e) => setModalEditForm((prev) => ({ ...prev, text: e.target.value }))} onPaste={handleEditorPaste} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveModalEdit(); } }} className="min-h-[12rem] w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-y" style={{ backgroundColor: uiTheme.inputBg, borderColor: rgba(themeColor, 0.24), color: uiTheme.text }} />
@@ -1382,10 +1397,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
               <button type="button" onClick={saveModalEdit} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('subtitle.save')}</button>
             </div>
           </div>
-        </div>
+        </Dialog>
       ) : null}
       {speakerModalSubtitle ? (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+        <Dialog aria-label={t('subtitle.contextChangeSpeaker')} onClose={() => setSpeakerModalSubtitleId(null)} className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
           <div className="w-full max-w-xl overflow-hidden rounded-[28px] border shadow-2xl" style={{ background: `linear-gradient(180deg, ${uiTheme.panelBgElevated} 0%, ${uiTheme.panelBg} 68%, ${rgba(secondaryThemeColor, isDarkMode ? 0.12 : 0.08)} 100%)`, borderColor: rgba(secondaryThemeColor, isDarkMode ? 0.32 : 0.26), color: uiTheme.text }}>
             <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: uiTheme.border, backgroundColor: rgba(themeColor, isDarkMode ? 0.1 : 0.06) }}>
               <div>
@@ -1410,10 +1425,10 @@ export function SubtitlePanel({ subtitles, speakers, currentTime, isDarkMode, la
             </div>
             <div className="flex justify-end gap-2 border-t px-6 py-4" style={{ borderColor: uiTheme.border }}>
               <button type="button" onClick={() => setSpeakerModalSubtitleId(null)} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.textMuted }}>{t('common.cancel')}</button>
-              <button type="button" onClick={saveSpeakerModal} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('common.confirm')}</button>
+              <button type="button" onClick={saveSpeakerModal} className="rounded-xl px-4 py-2 text-sm text-white" style={{ backgroundColor: secondaryThemeColor }}>{t('action.replaceSpeaker')}</button>
             </div>
           </div>
-        </div>
+        </Dialog>
       ) : null}
     </div>
   );

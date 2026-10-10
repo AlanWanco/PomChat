@@ -1,3 +1,4 @@
+import { Dialog } from './ui/Dialog';
 import { ExternalLink, GitBranch, RefreshCw, Sparkles, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
@@ -49,7 +50,7 @@ export function AboutModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={onClose}>
+    <Dialog aria-label="PomChat Studio" onClose={onClose} className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 backdrop-blur-sm" onClick={onClose}>
       <div
         className="w-[min(92vw,640px)] rounded-2xl border shadow-2xl overflow-hidden"
         style={{ backgroundColor: uiTheme.panelBg, borderColor: uiTheme.border, color: uiTheme.text }}
@@ -87,7 +88,7 @@ export function AboutModal({
             </div>
             <div className="rounded-xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
               <div className="text-xs uppercase tracking-wider mb-1" style={{ color: uiTheme.textMuted }}>{t('about.platform')}</div>
-              <div className="font-semibold">{window.electron ? 'Desktop (Electron)' : 'Web Preview'}</div>
+              <div className="font-semibold">{window.electron ? t('about.desktop') : t('about.webPreview')}</div>
             </div>
           </div>
 
@@ -130,7 +131,7 @@ export function AboutModal({
                   <div>
                     <div className="font-medium text-red-500">{t('about.updateCheckFailed')}</div>
                     <div className="mt-1" style={{ color: uiTheme.textSoft }}>
-                      {isGithubUnreachable ? '哼！哼！哼！啊啊啊啊啊啊啊啊啊啊啊啊连不上GitHub！！' : updateErrorText}
+                      {isGithubUnreachable ? t('about.networkHelp') : updateErrorText}
                     </div>
                   </div>
                 )}
@@ -154,6 +155,6 @@ export function AboutModal({
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

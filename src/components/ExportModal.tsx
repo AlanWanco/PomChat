@@ -1,4 +1,6 @@
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Dialog } from './ui/Dialog';
+import { parseTimeInput as parseFlexibleTime, correctTimeEndpoint } from '../utils/timeInput';
+import { memo, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Download, FolderOpen, Sparkles, Timer, Trash2, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens, rgba } from '../theme';
@@ -76,30 +78,6 @@ interface ExportModalProps {
   onFilenameTemplateChange?: (template: 'default' | 'timestamp' | 'unix' | 'custom') => void;
   onCustomFilenameChange?: (filename: string) => void;
 }
-
-const parseFlexibleTime = (value: string) => {
-  const input = value.trim();
-  if (!input) return null;
-
-  if (/^\d+(\.\d+)?$/.test(input)) {
-    const seconds = Number(input);
-    return Number.isFinite(seconds) ? seconds : null;
-  }
-
-  const parts = input.split(':').map((part) => part.trim()).filter(Boolean);
-  if (parts.length < 2 || parts.length > 3) return null;
-
-  const numericParts = parts.map((part) => Number(part));
-  if (numericParts.some((part) => !Number.isFinite(part) || part < 0)) return null;
-
-  if (parts.length === 2) {
-    const [minutes, seconds] = numericParts;
-    return minutes * 60 + seconds;
-  }
-
-  const [hours, minutes, seconds] = numericParts;
-  return hours * 3600 + minutes * 60 + seconds;
-};
 
 const formatTime = (seconds: number) => {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00.00';
@@ -199,6 +177,7 @@ const buildFilenamePreview = (
 };
 
 interface ExportProgressPanelProps {
+  canExport: boolean;
   language: Language;
   isDarkMode: boolean;
   themeColor: string;
@@ -215,6 +194,7 @@ interface ExportProgressPanelProps {
 }
 
 const ExportProgressPanel = memo(function ExportProgressPanel({
+  canExport,
   language,
   isDarkMode,
   themeColor,
@@ -319,8 +299,8 @@ const ExportProgressPanel = memo(function ExportProgressPanel({
       </button>
       <button
         type="button"
-        onClick={() => void onStartExport()}
-        disabled={isExporting}
+        onClick={() => { if (canExport) void onStartExport(); }}
+        disabled={isExporting || !canExport}
         className="flex-1 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-transform disabled:cursor-not-allowed disabled:opacity-70"
         style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${secondaryThemeColor} 100%)`, boxShadow: `0 16px 30px ${rgba(secondaryThemeColor, 0.25)}` }}
       >
@@ -379,6 +359,8 @@ export const ExportModal = memo(function ExportModal({
 }: ExportModalProps) {
   const t = (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
   const uiTheme = createThemeTokens(themeColor, isDarkMode);
+  const [rangeMessage, setRangeMessage] = useState('');
+  const rangeMessageId = useId();
   const [startInput, setStartInput] = useState(formatTime(rangeStart));
   const [endInput, setEndInput] = useState(formatTime(rangeEnd));
   const [localCustomFilename, setLocalCustomFilename] = useState(customFilename);
@@ -401,18 +383,6 @@ export const ExportModal = memo(function ExportModal({
     return () => window.cancelAnimationFrame(frame);
   }, [rangeStart, rangeEnd, customFilename]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isExporting) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isExporting, isOpen, onClose]);
-
   const exportSpan = useMemo(() => Math.max(0, rangeEnd - rangeStart), [rangeEnd, rangeStart]);
   const filenamePreview = useMemo(
     () => buildFilenamePreview(projectTitle, exportFormat, filenameTemplate, filenameEditorMode, localCustomFilename, previewNow),
@@ -421,19 +391,17 @@ export const ExportModal = memo(function ExportModal({
   const simpleTemplates = ['default', 'timestamp', 'unix'] as const;
 
   const commitRangeInput = (field: 'start' | 'end', value: string) => {
-    const next = parseFlexibleTime(value);
-    if (next === null) {
-      setStartInput(formatTime(rangeStart));
-      setEndInput(formatTime(rangeEnd));
-      return;
-    }
+    const parsed = parseFlexibleTime(value);
+    const next = parsed === null ? (field === 'start' ? rangeStart : rangeEnd) : correctTimeEndpoint(parsed, field, rangeStart, rangeEnd);
+    setRangeMessage(parsed === null ? t('input.timeInvalid') : next !== parsed ? t('input.timeRange') : '');
+    if (field === 'start') setStartInput(formatTime(next)); else setEndInput(formatTime(next));
     onRangeChange(field === 'start' ? { start: next } : { end: next });
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 px-4 py-4 overflow-y-auto">
+    <Dialog aria-label={t('export.title')} onClose={() => { if (!isExporting) onClose(); }} className="fixed inset-0 z-[160] flex items-start justify-center bg-black/55 px-4 py-4 overflow-y-auto">
       <div
         className="w-full max-w-[60rem] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[28px] border shadow-2xl [&_.text-xs]:text-sm flex flex-col"
         style={{
@@ -513,6 +481,7 @@ export const ExportModal = memo(function ExportModal({
                 <div>
                   <div className="text-sm font-medium">{t('export.range')}</div>
                   <div className="text-xs mt-1" style={{ color: uiTheme.textMuted }}>{t('export.rangeHint')}</div>
+                  <p id={rangeMessageId} role="status" className="text-xs mt-1" style={{ color: rangeMessage || exportSpan === 0 ? (isDarkMode ? '#fbbf24' : '#92400e') : uiTheme.textMuted }}>{rangeMessage || (exportSpan === 0 ? t('input.zeroDuration') : t('input.timeHint'))}</p>
                   <div className="text-[0.6875rem] mt-1" style={{ color: uiTheme.textMuted }}>
                     {t('export.rangeSourceTimes', { subtitle: formatTime(Math.max(0, subtitleEndTime)), audio: formatTime(Math.max(0, audioEndTime)) })}
                   </div>
@@ -540,12 +509,12 @@ export const ExportModal = memo(function ExportModal({
                       </div>
                    </div>
                   <input
-                    value={startInput}
+                    aria-label={t('input.start')} aria-describedby={rangeMessageId} value={startInput}
                     onChange={(event) => setStartInput(event.target.value)}
                     onBlur={() => commitRangeInput('start', startInput)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') commitRangeInput('start', startInput);
-                      if (event.key === 'Escape') setStartInput(formatTime(rangeStart));
+                      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setStartInput(formatTime(rangeStart)); }
                     }}
                     disabled={isExporting}
                     className="w-full rounded-xl border px-3 py-2 text-sm font-mono outline-none disabled:cursor-not-allowed disabled:opacity-60"
@@ -580,12 +549,12 @@ export const ExportModal = memo(function ExportModal({
                       </div>
                    </div>
                   <input
-                    value={endInput}
+                    aria-label={t('input.end')} aria-describedby={rangeMessageId} value={endInput}
                     onChange={(event) => setEndInput(event.target.value)}
                     onBlur={() => commitRangeInput('end', endInput)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') commitRangeInput('end', endInput);
-                      if (event.key === 'Escape') setEndInput(formatTime(rangeEnd));
+                      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setEndInput(formatTime(rangeEnd)); }
                     }}
                     disabled={isExporting}
                     className="w-full rounded-xl border px-3 py-2 text-sm font-mono outline-none disabled:cursor-not-allowed disabled:opacity-60"
@@ -901,6 +870,7 @@ export const ExportModal = memo(function ExportModal({
               </div>
 
              <ExportProgressPanel
+               canExport={exportSpan > 0}
                language={language}
                isDarkMode={isDarkMode}
                themeColor={themeColor}
@@ -918,6 +888,6 @@ export const ExportModal = memo(function ExportModal({
            </section>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 });

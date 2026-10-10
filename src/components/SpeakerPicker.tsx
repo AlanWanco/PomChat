@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties } from 'react';
 import type { SharedChatSpeaker } from './chat/SharedChatBubbles';
@@ -79,6 +79,7 @@ export function SpeakerPicker({
   disabled = false,
   menuWidth = 180,
 }: SpeakerPickerProps) {
+  const menuId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -130,29 +131,27 @@ export function SpeakerPicker({
       }
       setIsOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setIsOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    const closeOnViewportChange = () => setIsOpen(false);
+    const closeOnViewportChange = (event: Event) => { if (event.target instanceof Node && menuRef.current?.contains(event.target)) return; setIsOpen(false); };
 
     document.addEventListener('pointerdown', closeOnOutsidePointer, true);
-    document.addEventListener('keydown', closeOnEscape, true);
     window.addEventListener('resize', closeOnViewportChange);
     window.addEventListener('scroll', closeOnViewportChange, true);
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePointer, true);
-      document.removeEventListener('keydown', closeOnEscape, true);
       window.removeEventListener('resize', closeOnViewportChange);
       window.removeEventListener('scroll', closeOnViewportChange, true);
     };
   }, [isOpen]);
 
+  useLayoutEffect(() => {
+    if (isOpen) {
+      const selected = menuRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+      (selected || menuRef.current?.querySelector<HTMLButtonElement>('button'))?.focus({ preventScroll: true });
+    }
+  }, [isOpen]);
+  const closeMenu = () => { setIsOpen(false); triggerRef.current?.focus({ preventScroll: true }); };
   const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       if (!isOpen) {
         openMenu();
@@ -161,6 +160,15 @@ export function SpeakerPicker({
   };
 
   const handleOptionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, speakerId: string) => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation();
+      const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button') || []);
+      const index = items.indexOf(event.currentTarget);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next]?.focus({ preventScroll: true }); return;
+    }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenu(); return; }
+    if (event.key === 'Tab') { closeMenu(); return; }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onChange(speakerId);
@@ -171,7 +179,7 @@ export function SpeakerPicker({
 
   const menu = isOpen && menuPosition && typeof document !== 'undefined' ? createPortal(
     <div
-      ref={menuRef}
+      ref={menuRef} id={menuId} data-dialog-popup="true"
       role="listbox"
       aria-label={ariaLabel}
       className="overflow-y-auto rounded-xl border p-1 shadow-2xl"
@@ -196,10 +204,11 @@ export function SpeakerPicker({
             type="button"
             role="option"
             aria-selected={isSelected}
+            tabIndex={isSelected ? 0 : -1}
             onClick={(event) => {
               event.stopPropagation();
               onChange(speakerId);
-              setIsOpen(false);
+              closeMenu();
             }}
             onKeyDown={(event) => handleOptionKeyDown(event, speakerId)}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
@@ -233,6 +242,7 @@ export function SpeakerPicker({
         role="combobox"
         aria-label={ariaLabel}
         aria-expanded={isOpen}
+        aria-controls={isOpen ? menuId : undefined}
         aria-haspopup="listbox"
         disabled={disabled || options.length === 0}
         onPointerDown={(event) => event.stopPropagation()}

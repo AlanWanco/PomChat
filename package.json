@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test:biliup": "node scripts/test-biliup.mjs",
     "test:history": "node scripts/test-history.mjs",
+    "test:settings": "node scripts/test-settings-panel.mjs",
     "test:remotion:gpu": "node scripts/test-remotion-gpu.mjs",
     "preview": "vite preview"
   },

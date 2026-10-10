@@ -178,3 +178,12 @@ textarea,
     transform: translateX(0);
   }
 }
+
+/* Keep keyboard focus visible on controls that reset utility outlines. */
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--podchat-accent, #7c3aed) !important;
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .group .group-hover\:opacity-100 { opacity: 1; }
+}

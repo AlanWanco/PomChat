@@ -1,3 +1,5 @@
+import type { ToastType } from './ui/Toast';
+import { Dialog } from './ui/Dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, Copy, Download, Image as ImageIcon, RotateCcw, X } from 'lucide-react';
 import { translate, type Language } from '../i18n';
@@ -54,7 +56,7 @@ interface BubbleSnapshotModalProps {
   exportScale: number;
   onExportScaleChange: (value: number) => void;
   onClose: () => void;
-  showToast: (message: string) => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 type TileAlign = 'left' | 'center' | 'right';
@@ -690,10 +692,10 @@ export function BubbleSnapshotModal({
         }
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       }
-      showToast(t('bubbleSnapshot.copySuccess'));
+      showToast(t('bubbleSnapshot.copySuccess'), 'success');
     } catch (error) {
       console.error('Failed to copy bubble snapshot image:', error);
-      showToast(t('bubbleSnapshot.copyFailed'));
+      showToast(t('bubbleSnapshot.copyFailed'), 'error');
     } finally {
       setCopying(false);
     }
@@ -741,10 +743,10 @@ export function BubbleSnapshotModal({
         link.click();
         window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       }
-      showToast(t('bubbleSnapshot.saveSuccess'));
+      showToast(t('bubbleSnapshot.saveSuccess'), 'success');
     } catch (error) {
       console.error('Failed to save bubble snapshot image:', error);
-      showToast(t('bubbleSnapshot.saveFailed'));
+      showToast(t('bubbleSnapshot.saveFailed'), 'error');
     } finally {
       setSaving(false);
     }
@@ -803,7 +805,7 @@ export function BubbleSnapshotModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[220] flex items-center justify-center px-4 py-6" style={{ backgroundColor: 'rgba(2, 6, 23, 0.72)', backdropFilter: 'blur(10px)' }}>
+      <Dialog aria-label={t('common.close')} onClose={onClose} className="fixed inset-0 z-[220] flex items-center justify-center px-4 py-6" style={{ backgroundColor: 'rgba(2, 6, 23, 0.72)', backdropFilter: 'blur(10px)' }}>
         <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border shadow-2xl" style={{ backgroundColor: uiTheme.panelBgElevated, borderColor: uiTheme.border, color: uiTheme.text }}>
           <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: uiTheme.border }}>
             <div className="flex items-center gap-3">
@@ -1187,7 +1189,7 @@ export function BubbleSnapshotModal({
             </div>
           </div>
         </div>
-      </div>
+      </Dialog>
 
       <div style={{ position: 'fixed', left: '-100000px', top: 0, pointerEvents: 'none', opacity: 0, zIndex: -1 }}>
         <div
