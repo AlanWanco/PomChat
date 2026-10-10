@@ -718,7 +718,7 @@ export function SettingsPanel({
     const newSpeakers = { 
       ...config.speakers, 
       [newId]: { 
-        name: `${t('speakers.add')} ${newId}`, 
+        name: t('defaults.speakerName', { id: newId }),
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${newId}`, 
         side: "left", 
         style: { bgColor: "#6b7280", textColor: "#ffffff", nameColor: "#ffffff", nameStrokeWidth: 0, nameStrokeColor: "#000000", borderRadius: 28, opacity: 0.9, borderWidth: 0, avatarBorderColor: "#ffffff", avatarBorderWidth: 4, borderColor: "#ffffff", borderOpacity: 1.0, margin: 14, paddingX: 20, paddingY: 12, shadowSize: 1, fontFamily: 'system-ui', fontSize: 30, fontWeight: 'normal', trackIndex: 1, trackPaddingLeft: 5, trackPaddingRight: 5 }
@@ -1236,7 +1236,7 @@ export function SettingsPanel({
             <div
               className="flex min-h-8 w-5 shrink-0 flex-col items-center justify-center gap-1 transition-transform duration-[700ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.2]"
               style={{ transformOrigin: 'top center' }}
-              title="Section navigation"
+              title={t('settings.sectionNavigation')}
             >
               {visibleSettingsSections.map((section) => (
                 <span
@@ -2273,7 +2273,7 @@ export function SettingsPanel({
                                 {(currentBackgroundSlide.text || 'T').slice(0, 2)}
                               </div>
                             ) : currentBackgroundSlide.image ? (
-                              <img src={resolveAssetSrc ? resolveAssetSrc(currentBackgroundSlide.image) : currentBackgroundSlide.image} alt="preview" className="w-full h-full object-cover" />
+                              <img src={resolveAssetSrc ? resolveAssetSrc(currentBackgroundSlide.image) : currentBackgroundSlide.image} alt={t('image.assetPreview')} className="w-full h-full object-cover" />
                             ) : (
                               <div className="text-[0.625rem] opacity-50">IMG</div>
                             )}
@@ -2613,7 +2613,7 @@ export function SettingsPanel({
                             </select>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.animationSpeed')}</span>
+                            <span className="text-xs opacity-70">{t('project.assetAnimationDuration')}</span>
                             {renderNumberInput(currentBackgroundSlide.animationDuration ?? 0.01, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationDuration: Math.max(0, value) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
                         </div>
@@ -2728,7 +2728,7 @@ export function SettingsPanel({
                       <div className="flex gap-2 items-center">
                         <img 
                           src={resolveLocalPreviewPath(speaker.avatar)} 
-                          alt="avatar" 
+                          alt={t('image.avatar')}
                           referrerPolicy="no-referrer"
                           className="w-8 h-8 rounded-full shadow-sm object-cover shrink-0"
                           style={{ backgroundColor: uiTheme.panelBgSubtle, border: `${speaker.style?.avatarBorderWidth ?? 4}px solid ${speaker.style?.avatarBorderColor || '#fff'}` }}

@@ -254,7 +254,7 @@ export async function runSettingsPanelTests() {
 
     patch({ activeTab: 'project' });
     await settle();
-    const nav = document.querySelector<HTMLElement>('[title="Section navigation"]')!.parentElement!;
+    const nav = document.querySelector<HTMLElement>(`[title="${t('settings.sectionNavigation')}"]`)!.parentElement!;
     const navButtons = [...nav.querySelectorAll('button')];
     assert(navButtons.length === 5, 'Project navigation only contains its five visible sections');
     assert(!navButtons.some((item) => item.textContent?.includes(t('project.insertImages'))), 'Asset navigation was moved out of the project tab');
@@ -269,20 +269,20 @@ export async function runSettingsPanelTests() {
       if (target) target.getBoundingClientRect = () => new DOMRect(0, index < 2 ? index * 80 : index * 200, 400, 100);
     });
     flushSync(() => container.dispatchEvent(new Event('scroll')));
-    const dots = document.querySelector('[title="Section navigation"]')!.children;
+    const dots = document.querySelector(`[title="${t('settings.sectionNavigation')}"]`)!.children;
     assert((dots[1] as HTMLElement).style.transform === 'scale(1.35)', 'Scroll measurement highlights matching section');
     targets[2]!.getBoundingClientRect = () => new DOMRect(0, 90, 400, 100);
     flushSync(() => window.dispatchEvent(new Event('resize')));
     assert((dots[2] as HTMLElement).style.transform === 'scale(1.35)', 'Resize remeasures navigation');
     patch({ activeTab: 'global' });
     await settle();
-    assert(!document.querySelector('[title="Section navigation"]'), 'No navigation when sections are empty');
+    assert(!document.querySelector(`[title="${t('settings.sectionNavigation')}"]`), 'No navigation when sections are empty');
     patch({ activeTab: 'speakers' });
     await settle();
-    assert(document.querySelector('[title="Section navigation"]'), 'Speaker navigation appears after empty section set');
+    assert(document.querySelector(`[title="${t('settings.sectionNavigation')}"]`), 'Speaker navigation appears after empty section set');
     patch({ activeTab: 'project' });
     await settle();
-    assert([...document.querySelector('[title="Section navigation"]')!.children].filter((dot) => (dot as HTMLElement).style.transform === 'scale(1.35)').length === 1, 'Returning to project remeasures active marker');
+    assert([...document.querySelector(`[title="${t('settings.sectionNavigation')}"]`)!.children].filter((dot) => (dot as HTMLElement).style.transform === 'scale(1.35)').length === 1, 'Returning to project remeasures active marker');
     results.push('导航：仅保留项目分组、滚动、窗口尺寸变化、空分组和标签页切换');
 
     patch({ activeTab: 'assets', focusInsertImageSettingsKey: 4 });

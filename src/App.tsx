@@ -590,7 +590,7 @@ const sanitizeProjectConfig = (parsed: any) => {
   return merged;
 };
 
-const createBlankProjectConfig = (projectTitle: string) => ({
+const createBlankProjectConfig = (projectTitle: string, language: Language) => ({
   ...DEFAULT_PROJECT_CONFIG,
   fps: 30,
   projectId: `project-${Date.now()}`,
@@ -601,13 +601,13 @@ const createBlankProjectConfig = (projectTitle: string) => ({
   content: [],
   speakers: {
     A: {
-      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.speakerGeneric'),
+      name: translate(language, 'defaults.speakerGeneric'),
       avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=A',
       side: 'left',
       style: { ...DEFAULT_BUBBLE_STYLE }
     },
     ANNOTATION: {
-      name: translate(DEFAULT_I18N_LANGUAGE, 'defaults.annotationSpeaker'),
+      name: translate(language, 'defaults.annotationSpeaker'),
       avatar: '',
       side: 'center',
       type: 'annotation',
@@ -808,6 +808,7 @@ function PreviewInlineMedia({
 
 function PreviewBackgroundAsset({
   src,
+  alt,
   blur,
   brightness,
   canvasWidth,
@@ -837,6 +838,7 @@ function PreviewBackgroundAsset({
   isPlaying = false,
 }: {
   src?: string;
+  alt: string;
   blur: number;
   brightness: number;
   canvasWidth: number;
@@ -1010,7 +1012,7 @@ function PreviewBackgroundAsset({
     : (
       <img
         src={src}
-        alt="Background asset"
+        alt={alt}
         draggable={false}
         referrerPolicy="no-referrer"
         className="w-full h-full select-none"
@@ -3529,7 +3531,7 @@ const [previewScale, setPreviewScale] = useState(1);
   useEffect(() => {
     const updatePrefix = hasUpdateAvailable ? `[${t('app.updateAvailablePrefix')}] ` : '';
     const suffix = showAutoSavedTitle
-      ? ' [已自动保存]'
+      ? ` [${t('app.autoSaved')}]`
       : (isProjectDirty ? ' *' : '');
 
     if (projectPath) {
@@ -6166,7 +6168,7 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!window.electron) {
       // Web mode fallback
       setProjectPath('web-demo');
-      const cleanConfig = { ...createBlankProjectConfig(t('app.newProject')), ...safeOverrides };
+      const cleanConfig = { ...createBlankProjectConfig(t('app.newProject'), language), ...safeOverrides };
       clearHistory();
       clearProjectDirty();
       setConfig((prev: any) => ({
@@ -6185,7 +6187,7 @@ const [previewScale, setPreviewScale] = useState(1);
       });
       
       if (!result.canceled && result.filePath && isProjectLifecycleCurrent(lifecycle) && getHistory().revision === projectRevision) {
-        const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...safeOverrides };
+        const newConfig = { ...createBlankProjectConfig(t('app.newProject'), language), ...safeOverrides };
         const written = await enqueueProjectFileOperation(() => {
           if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== projectRevision) {
             return false;
@@ -6240,7 +6242,7 @@ const [previewScale, setPreviewScale] = useState(1);
           }
         : {}),
     };
-    const blankConfig = createBlankProjectConfig(t('app.newProject'));
+    const blankConfig = createBlankProjectConfig(t('app.newProject'), language);
     clearHistory();
     clearProjectDirty();
     setProjectResourceCheckDialog(null);
@@ -6587,7 +6589,7 @@ const [previewScale, setPreviewScale] = useState(1);
       if (isImage) overrides.background = { ...(DEFAULT_PROJECT_CONFIG.background || {}), image: filePath };
       if (isAss) overrides.assPath = filePath;
       
-      const newConfig = { ...createBlankProjectConfig(t('app.newProject')), ...overrides };
+      const newConfig = { ...createBlankProjectConfig(t('app.newProject'), language), ...overrides };
       const written = await enqueueProjectFileOperation(() => {
         if (!isProjectLifecycleCurrent(lifecycle) || getHistory().revision !== importRevision) {
           return false;
@@ -8567,7 +8569,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     ) : (
                       <img
                         src={resolvedBackground}
-                        alt="Background"
+                        alt={t('image.background')}
                         referrerPolicy="no-referrer"
                         className="w-full h-full"
                         style={sharedStyle}
@@ -8602,6 +8604,7 @@ const [previewScale, setPreviewScale] = useState(1);
                     editOverlay={undefined}
                     />
                   ) : <PreviewBackgroundAsset
+                    alt={t('image.assetPreview')}
                     src={resolvePath(slide.image)}
                     canvasWidth={canvasWidth}
                     canvasHeight={canvasHeight}
@@ -8821,6 +8824,7 @@ const [previewScale, setPreviewScale] = useState(1);
                       editOverlay={undefined}
                     />
                   ) : <PreviewBackgroundAsset
+                    alt={t('image.assetPreview')}
                     src={resolvePath(slide.image)}
                     canvasWidth={canvasWidth}
                     canvasHeight={canvasHeight}
@@ -9782,7 +9786,7 @@ const [previewScale, setPreviewScale] = useState(1);
               });
 
               if (!nextSpeakers.ANNOTATION) {
-                nextSpeakers.ANNOTATION = prev?.speakers?.ANNOTATION || DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION;
+                nextSpeakers.ANNOTATION = prev?.speakers?.ANNOTATION || { ...DEFAULT_PROJECT_CONFIG.speakers.ANNOTATION, name: t('defaults.annotationSpeaker') };
               }
 
               const mergedContent = isIncremental

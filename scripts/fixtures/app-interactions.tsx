@@ -58,7 +58,7 @@ export async function runAppInteractionTests() {
     click([...modal.querySelectorAll('button')].find(el => el.textContent?.trim() === t('common.delete'))!); await settle();
     const reassign = document.querySelector('[aria-label="'+t('speakers.reassign')+'"]')!;
     click([...reassign.querySelectorAll('button')].find(el => el.textContent === t('common.delete'))!);
-    click(button(t('action.save'))); await settle();
+    click([...modal.querySelectorAll('button')].find(el => el.textContent?.trim() === t('action.save'))!); await settle();
     click([...modal.querySelectorAll('button')].find(el => el.textContent === t('common.close'))!); await settle();
     shortcut('s'); await settle();
     assert(!stored().speakers.A && stored().content[0].speaker === 'B', 'Style save serializes speaker deletion and subtitle reassignment together');

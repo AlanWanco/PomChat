@@ -76,7 +76,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
           <img
             key={logoShakeKey}
             src={pomchatIconWhite}
-            alt="PomChat logo"
+            alt={t('image.logo')}
             className="w-10 h-10 object-contain"
             style={{ animation: 'pomchat-logo-wiggle 560ms cubic-bezier(0.22, 1, 0.36, 1)' }}
           />
@@ -189,7 +189,7 @@ export function WelcomeScreen({ onNewProject, onOpenProject, onOpenRecent, onRem
         <div className="mt-12 max-w-2xl px-4 py-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-xl text-sm flex items-start gap-3">
           <span className="mt-1 w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
           <div className="space-y-1">
-            <div className="font-semibold">PomChat Web Preview</div>
+            <div className="font-semibold">{t('welcome.webPreviewTitle')}</div>
             <div>{t('welcome.webMode')}</div>
           </div>
         </div>

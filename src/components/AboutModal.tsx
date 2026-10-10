@@ -88,7 +88,7 @@ export function AboutModal({
             </div>
             <div className="rounded-xl border p-4" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.cardBg }}>
               <div className="text-xs uppercase tracking-wider mb-1" style={{ color: uiTheme.textMuted }}>{t('about.platform')}</div>
-              <div className="font-semibold">{window.electron ? 'Desktop (Electron)' : 'Web Preview'}</div>
+              <div className="font-semibold">{window.electron ? t('about.desktop') : t('about.webPreview')}</div>
             </div>
           </div>
 
@@ -131,7 +131,7 @@ export function AboutModal({
                   <div>
                     <div className="font-medium text-red-500">{t('about.updateCheckFailed')}</div>
                     <div className="mt-1" style={{ color: uiTheme.textSoft }}>
-                      {isGithubUnreachable ? '哼！哼！哼！啊啊啊啊啊啊啊啊啊啊啊啊连不上GitHub！！' : updateErrorText}
+                      {isGithubUnreachable ? t('about.networkHelp') : updateErrorText}
                     </div>
                   </div>
                 )}

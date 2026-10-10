@@ -242,7 +242,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
   const handleAdd = () => {
     let key = 'S'; for (let i = 0; i < 99; i++) { key = i === 0 ? 'S' : `S_${i + 1}`; if (!localSpeakers[key]) break; }
     setLocalSpeakers({ ...localSpeakers, [key]: {
-      name: `${t('speakers.add') || 'Add'} ${key}`,
+      name: t('defaults.speakerName', { id: key }),
       avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${key}`,
       side: 'left',
       type: 'speaker',
@@ -1556,7 +1556,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
               {leftTab === 'presets' && typeof window !== 'undefined' && window.electron && (
                 <button onClick={() => void handlePersistAllPresetAvatars()} className="px-3 py-2 rounded-xl text-xs transition-all duration-300"
                   style={{ border: `1px solid ${secondaryThemeColor}55`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}12` }}
-                  title={t('preset.persistAvatarHint') || '把所有预设头像保存到本机 avatar 文件夹（绝对路径）并自动保存'}>
+                  title={t('preset.persistAvatarHint')}>
                   {t('preset.persistAvatar') || '持久化全部预设头像'}
                 </button>
               )}

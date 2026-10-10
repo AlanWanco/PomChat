@@ -383,8 +383,8 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
         const mergedStyle = hasSelectedStyle ? { ...baseStyle, ...importedStyle } : baseStyle;
         const assPresetKey = hasSelectedStyle ? ensurePresetKey(styleName || name || 'Default', mergedStyle, isAnnotation) : undefined;
         const displayName = isAnnotation
-          ? '注释'
-          : formatImportedSpeakerName(language, name || `角色${String.fromCharCode(charCode)}`, styleName, shouldIncludeStyleInName);
+          ? t('defaults.annotationSpeaker')
+          : formatImportedSpeakerName(language, name || t('defaults.speakerName', { id: String.fromCharCode(charCode) }), styleName, shouldIncludeStyleInName);
         const normalizedSpeakerName = displayName.trim().toLowerCase();
         const speakerUniqueKey = isAnnotation ? `annotation:${styleName || 'default'}` : normalizedSpeakerName;
         if (createdSpeakerKeys.has(speakerUniqueKey)) {
@@ -432,7 +432,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
       const speakerId = isAnnotation ? 'ANNOTATION' : String.fromCharCode(charCode++);
 
       newSpeakers[speakerId] = {
-        name: isAnnotation ? '注释' : (styleName || `角色${speakerId}`),
+        name: isAnnotation ? t('defaults.annotationSpeaker') : (styleName || t('defaults.speakerName', { id: speakerId })),
         avatar: isAnnotation ? '' : `https://api.dicebear.com/7.x/adventurer/svg?seed=${styleName || speakerId}`,
         side: isAnnotation ? 'center' : (charCode % 2 === 0 ? 'left' : 'right'),
         type: isAnnotation ? 'annotation' : 'speaker',
@@ -450,7 +450,7 @@ export function AssImportModal({ assPath, assContent, existingPresets, existingA
     // If nothing selected, just provide a default A
     if (Object.keys(newSpeakers).length === 0) {
       newSpeakers['A'] = {
-        name: "默认角色",
+        name: t('defaults.speakerGeneric'),
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=A`,
         side: "left",
         assActorName: '',

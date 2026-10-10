@@ -1442,7 +1442,7 @@ export const PlayerControls = memo(function PlayerControls({
                 border: `1.5px solid ${secondaryThemeColor}55`,
                 boxShadow: `0 0 0 0 transparent`
               }}
-              title="Double click to jump (supports 00:00:00.00)"
+              title={t('player.jumpHint')}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = `${secondaryThemeColor}28`;
                 e.currentTarget.style.boxShadow = `0 4px 12px ${secondaryThemeColor}22`;
