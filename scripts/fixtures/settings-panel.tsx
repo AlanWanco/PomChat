@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { SettingsPanel } from '../../src/components/SettingsPanel';
 import { BiliupProvider } from '../../src/components/BiliupProvider';
+import { createThemeTokens } from '../../src/theme';
 import { translate } from '../../src/i18n';
 import type { BackgroundSlideItem } from '../../src/remotion/types';
 
@@ -284,6 +285,39 @@ export async function runSettingsPanelTests() {
     await settle();
     assert([...document.querySelector(`[title="${t('settings.sectionNavigation')}"]`)!.children].filter((dot) => (dot as HTMLElement).style.transform === 'scale(1.35)').length === 1, 'Returning to project remeasures active marker');
     results.push('导航：仅保留项目分组、滚动、窗口尺寸变化、空分组和标签页切换');
+
+    for (const language of ['en', 'zh-CN'] as const) for (const isDarkMode of [false, true]) {
+      patch({ language, isDarkMode, activeTab: 'project' });
+      const theme = createThemeTokens(props.themeColor, isDarkMode);
+      const color = (value: string) => {
+        const probe = document.createElement('span');
+        probe.style.color = value;
+        return probe.style.color;
+      };
+      const tabKeys = ['global', 'project', 'speakers', 'annotation', 'assets'] as const;
+      for (const selected of ['project', 'speakers', 'annotation', 'assets', 'global', 'speakers'] as const) {
+        click(button(translate(language, `tab.${selected}`)));
+        await settle();
+        for (const key of tabKeys) {
+          const tab = button(translate(language, `tab.${key}`));
+          const active = key === selected;
+          assert(tab.style.color === color(active ? theme.text : theme.textSoft), `${language}/${isDarkMode}: ${key} text matches selection`);
+          assert(tab.classList.contains('border-b-2') === active, `${key} underline matches selection`);
+          if (active) assert(tab.style.borderColor === color(props.secondaryThemeColor), 'Selected underline uses theme color');
+          assert(tab.classList.contains('font-medium') && tab.classList.contains('transition-colors'), 'Tab typography and transitions match');
+          if (key === 'speakers' || key === 'annotation') {
+            assert(tab.getAttribute('aria-pressed') === String(active), `${key} aria-pressed matches selection`);
+          }
+        }
+        const contentKey = {
+          project: 'project.layout', speakers: 'speakers.name', annotation: 'annotation.position',
+          assets: 'project.addTextAsset', global: 'global.language',
+        }[selected];
+        assert(document.body.textContent?.includes(translate(language, contentKey)), `${selected} content appears`);
+        assert(!!document.querySelector(`input[value="Alice"]`) === (selected === 'speakers'), 'Speaker editor only appears on its tab');
+      }
+    }
+    results.push('标签高亮：项目 → 角色 → 注释 → 其他页签 → 角色，中英文及明暗主题');
 
     patch({ activeTab: 'assets', focusInsertImageSettingsKey: 4 });
     scrolls.length = 0;

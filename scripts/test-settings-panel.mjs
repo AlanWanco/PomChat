@@ -47,7 +47,7 @@ try {
   await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await page.goto({ url: `http://127.0.0.1:${server.address().port}`, timeout: 30_000 });
   const results = await page.evaluate(async () => window.SettingsRegression.runSettingsPanelTests());
-  assert.equal(results.length, 7);
+  assert.equal(results.length, 8);
   results.push(...await page.evaluate(async () => window.SettingsRegression.runUiInteractionTests()));
   results.push(...await page.evaluate(async () => window.SettingsRegression.runAppInteractionTests()));
   if (screenshots) {

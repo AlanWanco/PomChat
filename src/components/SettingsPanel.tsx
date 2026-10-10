@@ -1195,11 +1195,14 @@ export function SettingsPanel({
          >
            {t('tab.project')}
          </button>
-         {(['speakers', 'annotation'] as const).map(tab => <button key={tab} type="button"
-           aria-pressed={activeTab === 'speakers' && speakerSubTab === tab}
-           className="flex-1 py-2 text-sm border-b-2"
-           style={{ borderColor: activeTab === 'speakers' && speakerSubTab === tab ? secondaryThemeColor : 'transparent', color: uiTheme.text }}
-           onClick={() => { setActiveTab('speakers'); setSpeakerSubTab(tab); }}>{t(`tab.${tab}`)}</button>)}
+         {(['speakers', 'annotation'] as const).map(tab => {
+           const isSelected = activeTab === 'speakers' && speakerSubTab === tab;
+           return <button key={tab} type="button"
+             aria-pressed={isSelected}
+             className={`flex-1 py-2 font-medium transition-colors text-sm ${isSelected ? 'border-b-2' : ''}`}
+             style={isSelected ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
+             onClick={() => { setActiveTab('speakers'); setSpeakerSubTab(tab); }}>{t(`tab.${tab}`)}</button>;
+         })}
            <button 
             className={`flex-1 py-2 font-medium transition-colors text-sm ${activeTab === 'assets' ? 'border-b-2' : ''}`}
             style={activeTab === 'assets' ? { borderColor: secondaryThemeColor, color: uiTheme.text } : { color: uiTheme.textSoft }}
