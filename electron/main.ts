@@ -9,6 +9,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 import { registerBiliup } from './biliup';
+import { decodeAudioWaveform } from './audioWaveform';
 
 const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/AlanWanco/PomChat/releases/latest';
@@ -1798,6 +1799,33 @@ ipcMain.handle('read-binary-file', async (_event, payload: string | { filePath: 
   }
   const buffer = fs.readFileSync(resolvedPath);
   return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+});
+
+ipcMain.handle('generate-audio-waveform-samples', async (_event, payload: { audioPath: string; projectFilePath?: string | null }) => {
+  if (!payload || typeof payload.audioPath !== 'string' || !payload.audioPath.trim()) {
+    return null;
+  }
+
+  let audioPath: string | null;
+  try {
+    const projectFilePath = typeof payload.projectFilePath === 'string' ? payload.projectFilePath : null;
+    const candidatePath = projectFilePath
+      ? resolveProjectResourcePath(projectFilePath, payload.audioPath)
+      : payload.audioPath;
+    audioPath = resolveLocalMediaPath(candidatePath);
+    if (!audioPath || !fs.statSync(audioPath).isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    return await decodeAudioWaveform(resolveRemotionBinary('ffmpeg'), audioPath);
+  } catch (error) {
+    console.error('Failed to generate waveform samples:', error);
+    return null;
+  }
 });
 
 ipcMain.handle('save-clipboard-image-to-project-assets', async (_event, payload: { projectFilePath: string; bytes: number[]; contentType?: string; preferredName?: string }) => {

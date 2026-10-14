@@ -10,6 +10,8 @@ import { createThemeTokens, rgba } from '../theme';
 interface PlayerControlsProps {
   audioPath: string;
   audioBlob?: Blob | null;
+  waveformSourcePath?: string;
+  waveformProjectPath?: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   duration: number;
   isPlaying: boolean;
@@ -82,6 +84,8 @@ const formatTime = (seconds: number) => {
 export const PlayerControls = memo(function PlayerControls({ 
   audioPath,
   audioBlob = null,
+  waveformSourcePath,
+  waveformProjectPath,
   audioRef,
   duration, 
   isPlaying, 
@@ -525,24 +529,53 @@ export const PlayerControls = memo(function PlayerControls({
 
     // Let WaveSurfer decode the source directly so containers like M4A
     // can still produce peaks even when playback is handled elsewhere.
+    const waveformInstance = wavesurfer.current;
     const loadWaveform = audioBlob
-      ? wavesurfer.current.loadBlob(audioBlob)
-      : wavesurfer.current.load(audioPath);
+      ? waveformInstance.loadBlob(audioBlob)
+      : waveformInstance.load(audioPath);
 
-    void loadWaveform.catch((error) => {
+    void loadWaveform.catch(async (error) => {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      if (wavesurfer.current !== waveformInstance) {
         return;
       }
 
       const fallbackSrc = audioRef.current?.currentSrc || audioRef.current?.src || '';
-      if (fallbackSrc && fallbackSrc !== audioPath && wavesurfer.current) {
-        void wavesurfer.current.load(fallbackSrc).catch((fallbackError) => {
+      if (fallbackSrc && fallbackSrc !== audioPath) {
+        try {
+          await waveformInstance.load(fallbackSrc);
+          return;
+        } catch (fallbackError) {
           if (fallbackError instanceof DOMException && fallbackError.name === 'AbortError') {
             return;
           }
-          console.error('WaveSurfer load failed:', fallbackError);
-        });
-        return;
+        }
+      }
+
+      if (window.electron?.generateAudioWaveformSamples && waveformSourcePath) {
+        try {
+          const samples = await window.electron.generateAudioWaveformSamples({
+            audioPath: waveformSourcePath,
+            projectFilePath: waveformProjectPath,
+          });
+          if (samples?.length && wavesurfer.current === waveformInstance) {
+            const mediaDuration = Math.max(
+              durationRef.current || 0,
+              audioRef.current?.duration || 0,
+              waveformInstance.getDuration() || 0,
+            );
+            const source = fallbackSrc || audioPath;
+            await waveformInstance.load(source, [samples], mediaDuration);
+            return;
+          }
+        } catch (fallbackError) {
+          if (fallbackError instanceof DOMException && fallbackError.name === 'AbortError') {
+            return;
+          }
+          console.error('WaveSurfer FFmpeg fallback failed:', fallbackError);
+        }
       }
 
       console.error('WaveSurfer load failed:', error);
@@ -560,7 +593,7 @@ export const PlayerControls = memo(function PlayerControls({
       wsRegions.current = null;
       waveformContainer.innerHTML = '';
     };
-  }, [audioBlob, audioPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor, applyZoomLevel]);
+  }, [audioBlob, audioPath, waveformSourcePath, waveformProjectPath, isDarkMode, onSeek, audioRef, waveformBaseColor, waveformHeight, waveformProgressColor, secondaryThemeColor, applyZoomLevel]);
 
   useEffect(() => {
     const updateOverlayMetrics = () => {
