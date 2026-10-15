@@ -25,11 +25,20 @@ export interface BiliupTemplate {
   closeDanmu: boolean;
 }
 
+export const BILIUP_MAX_TITLE_LENGTH = 80;
+
 export const BILIUP_MAX_TAGS = 10;
 export const BILIUP_MAX_TAG_HISTORY = 100;
 export const BILIUP_SCHEDULE_MIN_LEAD_SECONDS = 4 * 60 * 60;
 export const BILIUP_SCHEDULE_MAX_AHEAD_SECONDS = 15 * 24 * 60 * 60;
 export const BILIUP_VIDEO_EXTENSIONS = ['mp4', 'mkv', 'flv', 'webm', 'ts', 'm2ts', 'mts', 'mov', 'avi', 'm4v', 'mpeg', 'mpg', '3gp', 'wmv', 'ogv'] as const;
+
+/** The title an upload will use: trimmed and capped exactly like the upload protocol does. */
+export function getBiliupUploadTitle(template?: Pick<BiliupTemplate, 'title'> | null) {
+  const raw = (template?.title || '').trim();
+  const effective = Array.from(raw).slice(0, BILIUP_MAX_TITLE_LENGTH).join('');
+  return { raw, effective, shortened: effective !== raw };
+}
 
 export function isBiliupVideoPath(value: string): boolean {
   const trimmed = value.trim();

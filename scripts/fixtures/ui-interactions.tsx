@@ -13,6 +13,7 @@ import { BiliupProvider } from '../../src/components/BiliupProvider';
 import { parseTimeInput, correctTimeEndpoint } from '../../src/utils/timeInput';
 import { AVATAR_PLACEHOLDER, handleAvatarError } from '../../src/utils/avatarFallback';
 import { translate } from '../../src/i18n';
+import { emptyBiliupPreferences, idleBiliupState, newBiliupTemplate } from '../../src/biliup';
 
 // Uses only synthetic props. No file writes, network upload, or real account access.
 export async function runUiInteractionTests() {
@@ -173,6 +174,56 @@ export async function runUiInteractionTests() {
     await render(<BiliupProvider><ExportModal {...appearance} isOpen outputPath="" quickSaveDir="" rangeStart={10} rangeEnd={10} defaultRangeStart={0} isExporting={false} exportSucceeded={false} statusMessage={null} onClose={noop} onCancelExport={noop} onOutputPathChange={noop} onChoosePath={noop} onQuickSave={noop} onRangeChange={noop} onStartExport={noop} onRevealOutput={noop} /></BiliupProvider>);
     assert(button(t('export.startButton')).disabled, 'Zero-duration export is disabled');
     results.push('导出：零时长不能提交');
+
+    // The export panel must name the title this upload will use.
+    const globalWindow = window as unknown as { electron?: unknown };
+    const previousElectron = globalWindow.electron;
+    const ok = (value: unknown) => Promise.resolve({ ok: true, value });
+    const installBiliupMock = (title: string) => {
+      const preferences = {
+        ...emptyBiliupPreferences,
+        directory: '/tmp/synthetic-biliup',
+        autoUpload: true,
+        selectedAccountId: 'acc-1',
+        selectedTemplateId: 'tpl-1',
+        accounts: [{ id: 'acc-1', name: 'Synthetic account', directory: '' }],
+        templates: [{ ...newBiliupTemplate(), id: 'tpl-1', name: 'Synthetic template', title, tag: 'synthetic' }],
+      };
+      globalWindow.electron = {
+        biliup: {
+          load: () => ok(preferences),
+          state: () => ok(idleBiliupState),
+          onState: () => () => {},
+          save: (next: unknown) => ok(next),
+          open: () => {},
+        },
+      };
+    };
+    const exportModal = (
+      <ExportModal {...appearance} isOpen outputPath="" quickSaveDir="" rangeStart={0} rangeEnd={1} defaultRangeStart={0} isExporting={false} exportSucceeded={false} statusMessage={null} onClose={noop} onCancelExport={noop} onOutputPathChange={noop} onChoosePath={noop} onQuickSave={noop} onRangeChange={noop} onStartExport={noop} onRevealOutput={noop} />
+    );
+    try {
+      installBiliupMock('  合成投稿标题  ');
+      // A fresh key forces the provider to reload the mocked preferences.
+      await render(<BiliupProvider key="biliup-title-ready">{exportModal}</BiliupProvider>);
+      for (let attempt = 0; attempt < 40 && !document.querySelector('[data-testid="biliup-upload-title"]'); attempt += 1) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      const titleLine = document.querySelector('[data-testid="biliup-upload-title"]');
+      assert(titleLine, `The export panel must show the upload title. Body: ${document.body.textContent?.slice(0, 200)}`);
+      assert(titleLine.textContent?.includes('合成投稿标题'), `Upload title must be visible: ${titleLine.textContent}`);
+      assert(titleLine.getAttribute('data-title-state') === 'ready', 'A valid template title must be marked ready');
+
+      installBiliupMock('   ');
+      await render(<BiliupProvider key="biliup-title-missing">{exportModal}</BiliupProvider>);
+      const missingLine = document.querySelector('[data-testid="biliup-upload-title"]');
+      assert(missingLine?.getAttribute('data-title-state') === 'missing', 'A template without a title must be flagged');
+      assert(missingLine?.textContent?.includes(t('biliup.uploadTitleMissing')), 'The missing title must be explained');
+      results.push('导出面板：显示本次上传标题及缺失提示');
+    } finally {
+      if (previousElectron === undefined) delete globalWindow.electron;
+      else globalWindow.electron = previousElectron;
+    }
 
     let uploadClosed = false;
     await render(<BiliupProvider><BiliupModal {...appearance} onClose={() => { uploadClosed = true; }} /></BiliupProvider>);

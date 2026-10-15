@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { BiliupTemplate } from '../src/biliup';
-import { validateBiliupSchedule, validateBiliupTemplate } from '../src/biliup';
+import { BILIUP_MAX_TITLE_LENGTH, validateBiliupSchedule, validateBiliupTemplate } from '../src/biliup';
 
 export function plainTerminalLine(text: string): string {
   // Strip remaining terminal control bytes, keeping tab/newline/carriage return.
@@ -39,7 +39,7 @@ export function buildBiliupUploadArgs(template: BiliupTemplate, filename: string
   if (error) throw new Error(error);
   const scheduleError = validateBiliupSchedule(template.dtime);
   if (scheduleError) throw new Error(scheduleError);
-  const title = Array.from(template.title.trim()).slice(0, 80).join('');
+  const title = Array.from(template.title.trim()).slice(0, BILIUP_MAX_TITLE_LENGTH).join('');
   if (!title) throw new Error('template');
   const args = ['--user-cookie', cookieFile, 'upload'];
   const add = (flag: string, value?: string | number) => {

@@ -14,7 +14,7 @@ try {
     return import(pathToFileURL(outfile).href);
   };
   const { extractBiliupBvid, extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
-  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate } = await compile('src/biliup.ts', 'model');
+  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate, getBiliupUploadTitle } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
   assert.equal(parseBiliupProgress(' 12.5% '), 12.5);
@@ -80,6 +80,14 @@ try {
   assert.deepEqual(normalized.tagHistory, ['one', 'two']);
   assert.equal(normalized.projectFolderTemplate, '{$yyyyMMdd}_{$BVID}_{$ProjectName}');
   assert.equal(normalized.checkSubmission, false);
+  // The export panel must show the same title the upload will send.
+  assert.deepEqual(getBiliupUploadTitle({ title: '  合成标题  ' }), { raw: '合成标题', effective: '合成标题', shortened: false });
+  assert.deepEqual(getBiliupUploadTitle(undefined), { raw: '', effective: '', shortened: false });
+  assert.deepEqual(getBiliupUploadTitle({ title: '\0' }), { raw: '\0', effective: '\0', shortened: false });
+  const capsTitle = getBiliupUploadTitle({ title: '中'.repeat(120) });
+  assert.equal(Array.from(capsTitle.effective).length, 80, 'The panel must cap the title exactly like the upload');
+  assert(capsTitle.shortened, 'A capped title must be flagged as shortened');
+
   console.log('biliup tests passed: byte progress, ANSI, redaction, args, title limits, tags, validation, preferences, accounts');
 } finally {
   rmSync(temporary, { recursive: true, force: true });

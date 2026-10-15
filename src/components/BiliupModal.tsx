@@ -7,10 +7,12 @@ import { CalendarDays, Check, Clock3, FolderOpen, ImagePlus, Info, Trash2, Uploa
 import {
   BILIUP_MAX_TAG_HISTORY,
   BILIUP_MAX_TAGS,
+  BILIUP_MAX_TITLE_LENGTH,
   BILIUP_VIDEO_EXTENSIONS,
   BILIUP_SCHEDULE_MAX_AHEAD_SECONDS,
   BILIUP_SCHEDULE_MIN_LEAD_SECONDS,
   biliupLines,
+  getBiliupUploadTitle,
   isBiliupVideoPath,
   mergeBiliupTags,
   newBiliupTemplate,
@@ -397,7 +399,18 @@ export const BiliupExportControls = memo(function BiliupExportControls({ languag
       </button>
     </div>
     <p className="text-xs opacity-70">{t('biliup.autoHint')}</p>
-    {biliup.autoUpload && <p className="text-xs">{t('biliup.account')}: {biliup.preferences.accounts.find((item) => item.id === biliup.preferences.selectedAccountId)?.name || '—'} · {biliup.preferences.templates.find((item) => item.id === biliup.preferences.selectedTemplateId)?.name || '—'}</p>}
+    {biliup.autoUpload && (() => {
+      const account = biliup.preferences.accounts.find((item) => item.id === biliup.preferences.selectedAccountId);
+      const template = biliup.preferences.templates.find((item) => item.id === biliup.preferences.selectedTemplateId);
+      const uploadTitle = getBiliupUploadTitle(template);
+      return <>
+        <p className="text-xs">{t('biliup.account')}: {account?.name || '—'} · {template?.name || '—'}</p>
+        <p className="text-xs break-words" data-testid="biliup-upload-title" data-title-state={uploadTitle.effective ? 'ready' : 'missing'} title={uploadTitle.raw || undefined} style={{ color: uploadTitle.effective ? undefined : '#f59e0b' }}>
+          {t('biliup.uploadTitle')}: {uploadTitle.effective || t('biliup.uploadTitleMissing')}
+          {uploadTitle.shortened && <span className="ml-1 opacity-70">({translate(language, 'biliup.uploadTitleShortened', { count: BILIUP_MAX_TITLE_LENGTH })})</span>}
+        </p>
+      </>;
+    })()}
     {biliup.error && <p role="alert" className="text-xs text-red-500">{t(`biliup.error.${biliup.error}`)}</p>}
   </div>;
 });
