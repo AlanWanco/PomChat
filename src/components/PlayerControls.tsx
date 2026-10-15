@@ -38,7 +38,7 @@ interface PlayerControlsProps {
   editingSub?: { id: string, start: number, end: number, text: string } | null;
   rangeSubtitle?: { id: string, start: number, end: number, text: string } | null;
   nearbySubtitles?: Array<{ id: string; start: number; end: number; text: string; speakerId?: string }>;
-  backgroundSlides?: Array<{ id: string; start: number; end: number; name?: string; type?: 'image' | 'text'; image?: string; text?: string; layer?: 'background' | 'overlay'; backgroundOrder?: number; overlayOrder?: number }>;
+  backgroundSlides?: Array<{ id: string; start: number; end: number; name?: string; type?: 'image' | 'text' | 'audio-viz'; image?: string; text?: string; layer?: 'background' | 'overlay'; backgroundOrder?: number; overlayOrder?: number }>;
   onBackgroundSlidesChange?: (slides: Array<{ id: string; start: number; end: number }>) => void;
   onEditingSubChange?: (start: number, end: number) => void;
   onEditInsertImage?: (id: string) => void;
@@ -164,7 +164,7 @@ export const PlayerControls = memo(function PlayerControls({
     : waveformOverlayMetricsState;
   const backgroundSlideDragRef = useRef<{ id: string; edge: 'start' | 'end' | 'move'; initialStart: number; initialEnd: number; anchorTime: number } | null>(null);
   const [waveformHoverPreview, setWaveformHoverPreview] = useState<{ x: number; time: number } | null>(null);
-  const [insertImageHoverLabel, setInsertImageHoverLabel] = useState<{ x: number; y: number; label: string; type?: 'image' | 'text'; image?: string; text?: string } | null>(null);
+  const [insertImageHoverLabel, setInsertImageHoverLabel] = useState<{ x: number; y: number; label: string; type?: 'image' | 'text' | 'audio-viz'; image?: string; text?: string } | null>(null);
   const [isBackgroundSlideTrackCollapsed, setIsBackgroundSlideTrackCollapsed] = useState(true);
 
   const zoomRangeRef = useRef<HTMLInputElement>(null);
@@ -1177,7 +1177,7 @@ export const PlayerControls = memo(function PlayerControls({
                                 const rect = event.currentTarget.getBoundingClientRect();
                                 const x = rect.left + rect.width / 2;
                                 const y = rect.top;
-                                setInsertImageHoverLabel({ x, y, label: `${slide.type === 'text' ? t('project.assetTypeText') : t('project.assetTypeImage')} ${slide.name}`, type: slide.type, image: slide.image, text: slide.text });
+                                setInsertImageHoverLabel({ x, y, label: `${slide.type === 'text' ? t('project.assetTypeText') : slide.type === 'audio-viz' ? t('project.assetTypeAudioViz') : t('project.assetTypeImage')} ${slide.name}`, type: slide.type, image: slide.image, text: slide.text });
                               }
                             }}
                             onMouseLeave={() => {
@@ -1191,7 +1191,11 @@ export const PlayerControls = memo(function PlayerControls({
                             style={{
                               backgroundColor: slide.group === 'background' ? themeColor : secondaryThemeColor,
                               boxShadow: `0 0 0 1px ${rgba(slide.group === 'background' ? themeColor : secondaryThemeColor, isDarkMode ? 0.18 : 0.12)}`,
-                              backgroundImage: slide.type === 'text' ? `linear-gradient(135deg, transparent 25%, ${rgba('#ffffff', 0.18)} 25%, ${rgba('#ffffff', 0.18)} 50%, transparent 50%, transparent 75%, ${rgba('#ffffff', 0.18)} 75%, ${rgba('#ffffff', 0.18)} 100%)` : undefined,
+                              backgroundImage: slide.type === 'text'
+                                ? `linear-gradient(135deg, transparent 25%, ${rgba('#ffffff', 0.18)} 25%, ${rgba('#ffffff', 0.18)} 50%, transparent 50%, transparent 75%, ${rgba('#ffffff', 0.18)} 75%, ${rgba('#ffffff', 0.18)} 100%)`
+                                : slide.type === 'audio-viz'
+                                ? `repeating-linear-gradient(90deg, ${rgba('#ffffff', 0.42)} 0px, ${rgba('#ffffff', 0.42)} 2px, transparent 2px, transparent 5px)`
+                                : undefined,
                               backgroundSize: slide.type === 'text' ? '8px 8px' : undefined,
                             }}
                           />

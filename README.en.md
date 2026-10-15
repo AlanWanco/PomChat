@@ -41,6 +41,7 @@ If you already have audio and subtitles, PomChat Studio is designed to handle th
 - Configure avatars, names, bubble colors, fonts, borders, shadows, and animation
 - Support image / GIF / video as background media, with fit modes (Cover/Contain/Fill) and alignment controls
 - Support inserted image / text layers with per-layer ordering, timing, scale, rotation, offset, animation, text stroke, and shadow controls
+- Support an inserted audio visualization layer that follows the project audio, using either a scrolling energy history or a bouncing spectrum; it covers the whole audio by default and sits below the chat, with the same ordering, timing, position, size, color, opacity, and animation controls as other assets
 - When dropping a background video, detect embedded audio and optionally reuse it as the project audio track
 - Import/export style presets on both desktop and web, and auto-generate presets from detected ASS styles
 - Mobile web layout is optimized with adaptive preview scaling, a collapsible/resizable bottom panel, and compact playback controls
@@ -267,6 +268,10 @@ On Windows, the workflow produces both:
 - Fixed preview/export chat drift in long conversations: export ranges now reset correctly on project switches, and the chat stack keeps a stable bottom-anchored follow behavior
 - Fixed waveform-to-timeline mismatch: default waveform zoom is now calibrated from the real audio duration so the waveform length better matches the actual track
 
+### Q. Why is an asset missing from a transparent (mov-alpha / webm-alpha) export?
+
+A. Transparent exports are background-free by design: the background image is dropped, and image or text assets placed on the "below chat" layer are left out. Move them to "above chat" in Layer position if they should appear in a transparent video. Audio visualizations are the exception — they are generated content and are kept on every layer.
+
 ## Todo
 
 - [ ] Add GPU-accelerated export support, such as hardware encoder paths like macOS `VideoToolbox`
@@ -274,6 +279,7 @@ On Windows, the workflow produces both:
 - [ ] Add support for inserting a single image either inside the message flow or as a freely positioned element
 - [ ] Add standalone animation support for inserted images for supplemental, transition, or emphasis use cases
 - [ ] Add rotating background image support, allowing multiple backgrounds to switch or crossfade over time
+- [x] Add an audio visualization asset (scrolling energy / bouncing spectrum) that follows the project audio and participates in asset layers, timing, and video export
 - [ ] Add undo/redo support (subtitle edits, style changes, and layout adjustments)
 - [x] Support importing ASS styles into speaker/bubble styles (including color, opacity, and border width)
 - [x] Add a GitHub Pages version with basic subtitle and audio import preview capabilities

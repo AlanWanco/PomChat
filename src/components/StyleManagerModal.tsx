@@ -729,6 +729,23 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       className={`w-full border rounded px-2 py-1 pr-8 text-xs ${ic}`}
       style={{ backgroundColor: uiTheme.inputBg, borderColor: uiTheme.border, color: uiTheme.text }} />;
   };
+  const renderToggle = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: boolean, disabled?: boolean) => (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={value}
+      data-toggle-key={String(key)}
+      onClick={() => updateFn(key, !value)}
+      className="w-full flex items-center justify-center rounded-md border px-2 py-1 text-xs transition-colors disabled:opacity-50"
+      style={{
+        backgroundColor: value ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+        borderColor: value ? `${secondaryThemeColor}55` : uiTheme.border,
+        color: uiTheme.text,
+      }}
+    >
+      {value ? t('common.enabled') : t('common.disabled')}
+    </button>
+  );
   const renderRange = (updateFn: StyleEditorUpdate, key: keyof SpeakerStyle, value: number | undefined, min: number, max: number, step: number, disabled?: boolean) => (
     <div className="flex items-center gap-2" style={{ opacity: disabled ? 0.5 : 1 }}><input type="range" disabled={disabled} min={min} max={max} step={step} value={value ?? 0} onChange={(e) => updateFn(key, parseFloat(e.target.value))} className="flex-1" style={{ accentColor: themeColor }} /><span className="text-xs w-8 text-right font-mono">{value ?? 0}</span></div>
   );
@@ -792,6 +809,10 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
         </div>
         <button disabled={disabled} onClick={swapBgText ? () => swapBgText() : () => { const bg = style?.bgColor || '#2563eb'; const tc = style?.textColor || '#ffffff'; updateFn('bgColor', tc); updateFn('textColor', bg); }} className="text-xs px-2 py-1 rounded w-full" style={{ backgroundColor: uiTheme.panelBgSubtle, color: uiTheme.text, opacity: disabled ? 0.5 : 1 }}>{t('speakers.swapBgText') || 'Swap'}</button>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.opacity')}</span>{renderRange(updateFn, 'opacity', style?.opacity, 0, 1, 0.05, disabled)}</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.bubbleShadow')}</span>{renderToggle(updateFn, 'bubbleShadow', style?.bubbleShadow !== false, disabled)}</div>
+          <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.textShadow')}</span>{renderToggle(updateFn, 'textShadow', style?.textShadow !== false, disabled)}</div>
+        </div>
       </>)}
       {!isAnnotationStyle && renderSection(t('speakers.border'), 'border', <>
         <div className="grid grid-cols-2 gap-2">
@@ -813,16 +834,6 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
           <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.paddingY')}</span>{renderNum(updateFn, 'paddingY', style?.paddingY, 0, undefined, undefined, disabled)}</div>
         </div>
         <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum(updateFn, 'shadowSize', style?.shadowSize, 0, 64, undefined, disabled)}</div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer" style={{ opacity: disabled ? 0.5 : undefined }}>
-            <input type="checkbox" disabled={disabled} checked={style?.bubbleShadow !== false} onChange={(e) => updateFn('bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-            {t('speakers.bubbleShadow')}
-          </label>
-          <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer" style={{ opacity: disabled ? 0.5 : undefined }}>
-            <input type="checkbox" disabled={disabled} checked={style?.textShadow !== false} onChange={(e) => updateFn('textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-            {t('speakers.textShadow')}
-          </label>
-        </div>
       </>)}
     </>
     );
@@ -1181,16 +1192,22 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                       </button>
                     </div>
                   </div>
-                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={editingSpeaker.showAvatar !== false}
-                      onChange={(e) => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, showAvatar: e.target.checked }), true)}
-                      className="w-3.5 h-3.5"
-                      style={{ accentColor: secondaryThemeColor }}
-                    />
-                    <span>{t('project.showAvatar')}</span>
-                  </label>
+                  <div className="space-y-1">
+                    <span className="text-[0.625rem] opacity-70">{t('project.showAvatar')}</span>
+                    <button
+                      type="button"
+                      aria-pressed={editingSpeaker.showAvatar !== false}
+                      onClick={() => updateSpeaker(editingSpeakerId!, (s) => ({ ...s, showAvatar: editingSpeaker.showAvatar === false }), true)}
+                      className="w-full flex items-center justify-center rounded-md border px-2 py-1 text-xs transition-colors"
+                      style={{
+                        backgroundColor: editingSpeaker.showAvatar !== false ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+                        borderColor: editingSpeaker.showAvatar !== false ? `${secondaryThemeColor}55` : uiTheme.border,
+                        color: uiTheme.text,
+                      }}
+                    >
+                      {editingSpeaker.showAvatar !== false ? t('common.enabled') : t('common.disabled')}
+                    </button>
+                  </div>
                   <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('style.presets')}</span>
                     <div className="flex items-center gap-2">
                       <select value={editingSpeaker.preset || ''} onChange={(e) => {
@@ -1517,14 +1534,8 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
                     <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.shadow')}</span>{renderNum((k, v) => updateStyle('ANNOTATION', k, v), 'shadowSize', s?.shadowSize ?? 1, 0, 64)}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer">
-                      <input type="checkbox" checked={s?.bubbleShadow !== false} onChange={(e) => updateStyle('ANNOTATION', 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                      {t('speakers.bubbleShadow')}
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[0.6875rem] opacity-80 cursor-pointer">
-                      <input type="checkbox" checked={s?.textShadow !== false} onChange={(e) => updateStyle('ANNOTATION', 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                      {t('speakers.textShadow')}
-                    </label>
+                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.bubbleShadow')}</span>{renderToggle((k, v) => updateStyle('ANNOTATION', k, v), 'bubbleShadow', s?.bubbleShadow !== false)}</div>
+                    <div className="space-y-1"><span className="text-[0.625rem] opacity-70">{t('speakers.textShadow')}</span>{renderToggle((k, v) => updateStyle('ANNOTATION', k, v), 'textShadow', s?.textShadow !== false)}</div>
                   </div>
                 </>)}
                 {renderSection(t('style.bubbleStyle'), 'bubble', <>

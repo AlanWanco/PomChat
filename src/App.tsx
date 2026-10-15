@@ -28,6 +28,25 @@ import { buildFontFaceCss, createFontPresetFamilyName, findMatchingFontPresetId,
 import { Camera, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import { Tooltip } from './components/ui/Tooltip';
 import type { BackgroundSlideItem } from './remotion/types';
+import { AudioVizAsset } from './remotion/AudioVizAsset';
+import {
+  AUDIO_VIZ_DEFAULT_ALIGNMENT,
+  AUDIO_VIZ_DEFAULT_COLOR,
+  AUDIO_VIZ_DEFAULT_COLORS,
+  AUDIO_VIZ_DEFAULT_MODE,
+  AUDIO_VIZ_MAX_COLORS,
+  AUDIO_VIZ_MIN_COLORS,
+  getAudioVizBounds,
+} from './remotion/audioVizLayout';
+import {
+  AUDIO_VIZ_BAR_LIMITS,
+  AUDIO_VIZ_GAIN_LIMITS,
+  AUDIO_VIZ_SAMPLE_RATE,
+  AUDIO_VIZ_SMOOTHING_LIMITS,
+  buildAudioVizGrid,
+  decodeAudioVizGrid,
+  type AudioVizGrid,
+} from './remotion/audioVizGrid';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
 import { buildAssContent } from './assExport';
 import './App.css';
@@ -490,8 +509,14 @@ const sanitizeProjectConfig = (parsed: any) => {
       slides: Array.isArray(parsed?.background?.slides)
         ? parsed.background.slides.map((slide: any, index: number) => ({
             id: typeof slide?.id === 'string' && slide.id ? slide.id : `slide-${index + 1}`,
-            type: slide?.type === 'text' ? 'text' : 'image',
-            name: typeof slide?.name === 'string' ? slide.name : ((slide?.type === 'text' ? translate(DEFAULT_I18N_LANGUAGE, 'defaults.textAssetName', { index: index + 1 }) : translate(DEFAULT_I18N_LANGUAGE, 'defaults.imageAssetName', { index: index + 1 }))),
+            type: slide?.type === 'text' ? 'text' : slide?.type === 'audio-viz' ? 'audio-viz' : 'image',
+            name: typeof slide?.name === 'string'
+              ? slide.name
+              : translate(
+                DEFAULT_I18N_LANGUAGE,
+                slide?.type === 'text' ? 'defaults.textAssetName' : slide?.type === 'audio-viz' ? 'defaults.audioVizAssetName' : 'defaults.imageAssetName',
+                { index: index + 1 },
+              ),
             image: typeof slide?.image === 'string' ? slide.image : '',
             text: typeof slide?.text === 'string' ? slide.text : translate(DEFAULT_I18N_LANGUAGE, 'project.defaultTextAssetContent'),
             start: typeof slide?.start === 'number' && Number.isFinite(slide.start) ? slide.start : 0,
@@ -522,6 +547,28 @@ const sanitizeProjectConfig = (parsed: any) => {
             fontSize: typeof slide?.fontSize === 'number' && Number.isFinite(slide.fontSize) ? slide.fontSize : 96,
             fontWeight: typeof slide?.fontWeight === 'string' ? slide.fontWeight : '700',
             textAlign: typeof slide?.textAlign === 'string' && ['left', 'center', 'right'].includes(slide.textAlign) ? slide.textAlign : 'center',
+            audioVizMode: slide?.audioVizMode === 'energy' ? 'energy' : AUDIO_VIZ_DEFAULT_MODE,
+            audioVizColorMode: slide?.audioVizColorMode === 'gradient' ? 'gradient' : 'solid',
+            audioVizColor: typeof slide?.audioVizColor === 'string' && slide.audioVizColor ? slide.audioVizColor : AUDIO_VIZ_DEFAULT_COLOR,
+            audioVizColors: (() => {
+              const colors = Array.isArray(slide?.audioVizColors)
+                ? slide.audioVizColors.filter((color: any) => typeof color === 'string' && color).slice(0, AUDIO_VIZ_MAX_COLORS)
+                : [];
+              return colors.length >= AUDIO_VIZ_MIN_COLORS ? colors : [...AUDIO_VIZ_DEFAULT_COLORS];
+            })(),
+            audioVizCornerStyle: slide?.audioVizCornerStyle === 'square' ? 'square' : 'rounded',
+            audioVizAlignment: slide?.audioVizAlignment === 'center' ? 'center' : AUDIO_VIZ_DEFAULT_ALIGNMENT,
+            audioVizBars: typeof slide?.audioVizBars === 'number' && Number.isFinite(slide.audioVizBars)
+              ? Math.min(AUDIO_VIZ_BAR_LIMITS.max, Math.max(AUDIO_VIZ_BAR_LIMITS.min, Math.round(slide.audioVizBars)))
+              : undefined,
+            audioVizGain: typeof slide?.audioVizGain === 'number' && Number.isFinite(slide.audioVizGain)
+              ? Math.min(AUDIO_VIZ_GAIN_LIMITS.max, Math.max(AUDIO_VIZ_GAIN_LIMITS.min, slide.audioVizGain))
+              : undefined,
+            audioVizSmoothing: typeof slide?.audioVizSmoothing === 'number' && Number.isFinite(slide.audioVizSmoothing)
+              ? Math.min(AUDIO_VIZ_SMOOTHING_LIMITS.max, Math.max(AUDIO_VIZ_SMOOTHING_LIMITS.min, slide.audioVizSmoothing))
+              : undefined,
+            audioVizWidth: typeof slide?.audioVizWidth === 'number' && Number.isFinite(slide.audioVizWidth) && slide.audioVizWidth > 0 ? Math.round(slide.audioVizWidth) : undefined,
+            audioVizHeight: typeof slide?.audioVizHeight === 'number' && Number.isFinite(slide.audioVizHeight) && slide.audioVizHeight > 0 ? Math.round(slide.audioVizHeight) : undefined,
             visible: slide?.visible === false ? false : true,
           }))
         : []
@@ -1191,6 +1238,10 @@ function PreviewTextAsset({
 }
 
 function getPreviewSlideBounds(slide: BackgroundSlideItem, canvasWidth: number, canvasHeight: number) {
+  if (slide.type === 'audio-viz') {
+    return getAudioVizBounds(slide, canvasWidth, canvasHeight);
+  }
+
   if (slide.type === 'text') {
     const fontSize = slide.fontSize ?? 96;
     const text = slide.text || '';
@@ -3193,6 +3244,17 @@ const [previewScale, setPreviewScale] = useState(1);
     };
   }, [uiFontScale]);
 
+  // Shared accent for the global focus ring and themed stepper buttons.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousAccent = root.style.getPropertyValue('--podchat-accent');
+    root.style.setProperty('--podchat-accent', secondaryThemeColor);
+    return () => {
+      if (previousAccent) root.style.setProperty('--podchat-accent', previousAccent);
+      else root.style.removeProperty('--podchat-accent');
+    };
+  }, [secondaryThemeColor]);
+
   useEffect(() => {
     if (!window.electron || !hasHydratedElectronConfigRef.current) return;
     window.electron.setProxy(proxyState.trim()).catch((err: any) => {
@@ -3930,7 +3992,7 @@ const [previewScale, setPreviewScale] = useState(1);
 
   async function ensureBackgroundSlideIntrinsicSizes(lifecycle?: ProjectResourceOperationToken) {
     const slides = Array.isArray(configRef.current.background?.slides) ? configRef.current.background.slides : [];
-    const targets = slides.filter((slide: BackgroundSlideItem) => slide.type !== 'text' && slide.image && (!slide.intrinsicWidth || !slide.intrinsicHeight));
+    const targets = slides.filter((slide: BackgroundSlideItem) => (slide.type || 'image') === 'image' && slide.image && (!slide.intrinsicWidth || !slide.intrinsicHeight));
     if (targets.length === 0) {
       return {} as Record<string, { width: number; height: number }>;
     }
@@ -5674,6 +5736,71 @@ const [previewScale, setPreviewScale] = useState(1);
     )
   ), [fontPresets, cachedRemoteAssets, projectPath]);
   const backgroundSlides = Array.isArray(config.background?.slides) ? config.background.slides : [];
+  const audioVizSlideCount = backgroundSlides.filter((slide: BackgroundSlideItem) => slide.type === 'audio-viz').length;
+  const [audioVizGrid, setAudioVizGrid] = useState<AudioVizGrid | null>(null);
+  const [audioVizStatus, setAudioVizStatus] = useState<'idle' | 'analyzing' | 'ready' | 'unavailable'>('idle');
+  const audioVizSourceKey = audioVizSlideCount > 0
+    ? (desktopLocalAudioSource ? `desktop:${projectPath || ''}:${config.audioPath}` : `browser:${resolvedAudioPath}`)
+    : '';
+
+  // Analyze once per audio source. The editor and the export read the same grid,
+  // so the bars do not drift between preview and rendered video.
+  useEffect(() => {
+    if (!audioVizSourceKey) {
+      setAudioVizGrid(null);
+      setAudioVizStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setAudioVizStatus('analyzing');
+
+    const analyze = async () => {
+      try {
+        const electronBridge = window.electron;
+        if (electronBridge?.generateAudioVizGrid && desktopLocalAudioSource && config.audioPath) {
+          const buffer = await electronBridge.generateAudioVizGrid({ audioPath: config.audioPath, projectFilePath: projectPath || null });
+          if (cancelled) return;
+          const grid = buffer ? decodeAudioVizGrid(buffer) : null;
+          if (!grid) throw new Error('Audio analysis returned no usable data.');
+          setAudioVizGrid(grid);
+          setAudioVizStatus('ready');
+          return;
+        }
+
+        const response = await fetch(resolvedAudioPath, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Audio request failed with status ${response.status}.`);
+        const encoded = await response.arrayBuffer();
+        // Analyse at the same rate as the desktop/export path so both produce the same grid.
+        const context = new AudioContext({ sampleRate: AUDIO_VIZ_SAMPLE_RATE });
+        try {
+          const decoded = await context.decodeAudioData(encoded);
+          const grid = buildAudioVizGrid(
+            Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index)),
+            decoded.sampleRate,
+          );
+          if (cancelled) return;
+          setAudioVizGrid(grid);
+          setAudioVizStatus('ready');
+        } finally {
+          void context.close().catch(() => {});
+        }
+      } catch (error) {
+        if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return;
+        console.warn('Audio visualization analysis failed:', error);
+        setAudioVizGrid(null);
+        setAudioVizStatus('unavailable');
+      }
+    };
+
+    void analyze();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [audioVizSourceKey, config.audioPath, desktopLocalAudioSource, projectPath, resolvedAudioPath]);
+
   const activeInsertImageSlide = backgroundSlides.find((slide: BackgroundSlideItem) => slide.id === activeInsertImageId) || null;
   const enterInsertImageEditMode = useCallback((id: string) => {
     setActiveInsertImageId(id);
@@ -8016,6 +8143,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigChange={handleSettingsConfigChange}
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
+                audioVizStatus={audioVizStatus}
+                audioDuration={duration}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
                 onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
@@ -8451,6 +8580,8 @@ const [previewScale, setPreviewScale] = useState(1);
                   onConfigChange={handleSettingsConfigChange}
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
+                audioVizStatus={audioVizStatus}
+                audioDuration={duration}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
                 onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                   isDarkMode={isDarkMode}
@@ -8603,6 +8734,18 @@ const [previewScale, setPreviewScale] = useState(1);
                       }}
                       onPointerDown={undefined}
                     editOverlay={undefined}
+                    />
+                  ) : slide.type === 'audio-viz' ? (
+                    <AudioVizAsset
+                      slide={slide}
+                      grid={audioVizGrid}
+                      currentTime={previewRenderTime}
+                      canvasWidth={canvasWidth}
+                      canvasHeight={canvasHeight}
+                      onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
+                      blur={slide.inheritBackgroundFilters === false ? 0 : (config.background.blur || 0)}
+                      brightness={slide.inheritBackgroundFilters === false ? 1 : (config.background.brightness ?? 1)}
+                      label={(slide.name || '').trim() || t('project.assetTypeAudioViz')}
                     />
                   ) : <PreviewBackgroundAsset
                     alt={t('image.assetPreview')}
@@ -8824,6 +8967,18 @@ const [previewScale, setPreviewScale] = useState(1);
                     onPointerDown={undefined}
                       editOverlay={undefined}
                     />
+                  ) : slide.type === 'audio-viz' ? (
+                    <AudioVizAsset
+                      slide={slide}
+                      grid={audioVizGrid}
+                      currentTime={previewRenderTime}
+                      canvasWidth={canvasWidth}
+                      canvasHeight={canvasHeight}
+                      onEditBoxChange={(box) => updateSlideEditBox(slide.id, box)}
+                      blur={0}
+                      brightness={1}
+                      label={(slide.name || '').trim() || t('project.assetTypeAudioViz')}
+                    />
                   ) : <PreviewBackgroundAsset
                     alt={t('image.assetPreview')}
                     src={resolvePath(slide.image)}
@@ -8911,6 +9066,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 return (
                   <div
                     key={`global-hit-${slide.id}`}
+                    data-slide-hit-id={slide.id}
                     className="absolute pointer-events-auto"
                     style={{
                       left: `${previewFrameOverlayOffset.left + (box.centerX - box.width / 2) * previewScale}px`,
@@ -9047,6 +9203,8 @@ const [previewScale, setPreviewScale] = useState(1);
                   onConfigChange={handleSettingsConfigChange}
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                   onConfigPreviewChange={applyDebouncedConfigChange}
+                audioVizStatus={audioVizStatus}
+                audioDuration={duration}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
                 onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
                 isDarkMode={isDarkMode}
@@ -9151,9 +9309,11 @@ const [previewScale, setPreviewScale] = useState(1);
           id: slide.id,
           start: slide.start,
           end: slide.end,
-          name: (slide.name || '').trim() || (slide.type === 'text'
-            ? translate(DEFAULT_I18N_LANGUAGE, 'defaults.textAssetName', { index: index + 1 })
-            : translate(DEFAULT_I18N_LANGUAGE, 'defaults.imageAssetName', { index: index + 1 })),
+          name: (slide.name || '').trim() || translate(
+            DEFAULT_I18N_LANGUAGE,
+            slide.type === 'text' ? 'defaults.textAssetName' : slide.type === 'audio-viz' ? 'defaults.audioVizAssetName' : 'defaults.imageAssetName',
+            { index: index + 1 },
+          ),
           type: slide.type || 'image',
           image: slide.image ? resolvePath(slide.image) : undefined,
           text: slide.text,
@@ -9213,6 +9373,8 @@ const [previewScale, setPreviewScale] = useState(1);
                 onConfigChange={handleSettingsConfigChange}
                 onConfigAndPresetsChange={handleConfigAndPresetsChange}
                 onConfigPreviewChange={applyDebouncedConfigChange}
+                audioVizStatus={audioVizStatus}
+                audioDuration={duration}
                 onHistoryInteractionStart={() => { pointerInteractionRef.current = true; }}
                 onHistoryInteractionEnd={() => { pointerInteractionRef.current = false; if (!isNumberEditing()) flushPendingDebouncedConfigCommit(); }}
             isDarkMode={isDarkMode}

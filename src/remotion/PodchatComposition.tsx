@@ -1,12 +1,54 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, Loop, OffthreadVideo, Sequence, continueRender, delayRender, useCurrentFrame, useVideoConfig } from 'remotion';
 import { Gif } from '@remotion/gif';
 import type { BackgroundSlideItem, PodchatExportInput } from './types';
 import { ChatAnnotationBubble, ChatMessageBubble, computeInterruptedMessageRows, computeSimpleMessageRows, getBubbleAnimationWindow, getBubbleMotionState, getItemsAfterLastClear } from '../components/chat/SharedChatBubbles';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './textAssetLayout';
+import { AudioVizAsset } from './AudioVizAsset';
+import { decodeAudioVizGrid, type AudioVizGrid } from './audioVizGrid';
 import { buildFontFaceCss, withCjkFontFallback } from '../fontPresets';
 
 const MESSAGE_FALLBACK_COUNT = 32;
+
+/**
+ * Fetch the precomputed analysis. Rendering waits for it, and a missing or broken
+ * file degrades to the silent baseline instead of failing the export.
+ */
+const useAudioVizGrid = (url?: string) => {
+  const [grid, setGrid] = React.useState<AudioVizGrid | null>(null);
+  React.useEffect(() => {
+    if (!url) {
+      setGrid(null);
+      return;
+    }
+    let cancelled = false;
+    const handle = delayRender('Loading audio visualization data');
+    let settled = false;
+    const release = () => {
+      if (settled) return;
+      settled = true;
+      continueRender(handle);
+    };
+    void (async () => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        const decoded = decodeAudioVizGrid(await response.arrayBuffer());
+        if (!decoded) throw new Error('The analysis file is not readable');
+        if (!cancelled) setGrid(decoded);
+      } catch (error) {
+        console.warn('Audio visualization data is unavailable:', error);
+      } finally {
+        release();
+      }
+    })();
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [url]);
+  return grid;
+};
 
 const parseSizePx = (value: string | number | undefined, fallback: number) => {
   if (typeof value === 'number') return value;
@@ -266,7 +308,8 @@ const renderSlideAsset = ({
 
 export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
   const frame = useCurrentFrame();
-  const { fps, width } = useVideoConfig();
+  const audioVizGrid = useAudioVizGrid(props.audioVizGrid);
+  const { fps, width, height } = useVideoConfig();
   const currentTime = props.exportRange.start + frame / fps;
   const avatarStartFrame = Math.max(0, Math.round(props.exportRange.start * fps));
   const sortedContent = [...props.content]
@@ -414,7 +457,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
               <Gif
                 src={props.background.image}
                 width={props.dimensions.width || width}
-                height={props.dimensions.height || width}
+                height={props.dimensions.height || height}
                 fit={backgroundObjectFit as 'fill' | 'contain' | 'cover'}
                 delayRenderTimeoutInMilliseconds={120000}
                 style={{
@@ -481,7 +524,18 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
       ) : null}
       {backgroundSlidesBelowChat.map((slide) => (
         <AbsoluteFill key={`bg-slide-${slide.id}`}>
-          {slide.type === 'text'
+          {slide.type === 'audio-viz'
+            ? <AudioVizAsset
+                slide={slide}
+                grid={audioVizGrid}
+                currentTime={currentTime}
+                canvasWidth={props.dimensions.width || width}
+                canvasHeight={props.dimensions.height || height}
+                blur={slide.inheritBackgroundFilters === false ? 0 : (props.background?.blur ?? 0)}
+                brightness={slide.inheritBackgroundFilters === false ? 1 : (props.background?.brightness ?? 1)}
+                label={slide.name || 'audio visualization'}
+              />
+            : slide.type === 'text'
             ? renderSlideText({ slide, currentTime, blur: slide.inheritBackgroundFilters === false ? 0 : (props.background?.blur ?? 0), brightness: slide.inheritBackgroundFilters === false ? 1 : (props.background?.brightness ?? 1) })
             : renderSlideAsset({
                 src: slide.image,
@@ -506,7 +560,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                 fps,
                 exportStart: props.exportRange.start,
                 width: props.dimensions.width || width,
-                height: props.dimensions.height || width,
+                height: props.dimensions.height || height,
               })}
         </AbsoluteFill>
       ))}
@@ -688,7 +742,18 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
       ) : null}
       {backgroundSlidesAboveChat.map((slide) => (
         <AbsoluteFill key={`overlay-slide-${slide.id}`}>
-          {slide.type === 'text'
+          {slide.type === 'audio-viz'
+            ? <AudioVizAsset
+                slide={slide}
+                grid={audioVizGrid}
+                currentTime={currentTime}
+                canvasWidth={props.dimensions.width || width}
+                canvasHeight={props.dimensions.height || height}
+                blur={0}
+                brightness={1}
+                label={slide.name || 'audio visualization'}
+              />
+            : slide.type === 'text'
             ? renderSlideText({ slide, currentTime, blur: 0, brightness: 1 })
             : renderSlideAsset({
                 src: slide.image,
@@ -713,7 +778,7 @@ export const PodchatComposition: React.FC<PodchatExportInput> = (props) => {
                 fps,
                 exportStart: props.exportRange.start,
                 width: props.dimensions.width || width,
-                height: props.dimensions.height || width,
+                height: props.dimensions.height || height,
               })}
         </AbsoluteFill>
       ))}

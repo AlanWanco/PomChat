@@ -5,7 +5,7 @@ export interface ExportRange {
 
 export interface BackgroundSlideItem {
   id: string;
-  type?: 'image' | 'text';
+  type?: 'image' | 'text' | 'audio-viz';
   name?: string;
   visible?: boolean;
   image?: string;
@@ -40,6 +40,19 @@ export interface BackgroundSlideItem {
   fontSize?: number;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right';
+  /** Audio visualization driven by the project audio. Time ranges, layer, order, transform,
+   * opacity, visibility and animation behave exactly like image and text assets. */
+  audioVizMode?: 'energy' | 'spectrum';
+  audioVizColorMode?: 'solid' | 'gradient';
+  audioVizColor?: string;
+  audioVizColors?: string[];
+  audioVizCornerStyle?: 'rounded' | 'square';
+  audioVizAlignment?: 'center' | 'bottom';
+  audioVizBars?: number;
+  audioVizGain?: number;
+  audioVizSmoothing?: number;
+  audioVizWidth?: number;
+  audioVizHeight?: number;
 }
 
 export interface SubtitleContentItem {
@@ -122,6 +135,8 @@ export interface PodchatExportInput {
     height: number;
   };
   audioPath?: string;
+  /** Media URL of the precomputed analysis grid; set by the export worker. */
+  audioVizGrid?: string;
   background?: {
     image?: string;
     blur?: number;

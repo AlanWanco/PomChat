@@ -5,7 +5,7 @@ import { parseTimeInput } from '../utils/timeInput';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User } from 'lucide-react';
+import { Settings, Image as ImageIcon, Users, Save, Moon, Sun, Trash2, Plus, X, Check, ArrowLeftRight, LayoutTemplate, Type, Box, Layout, FolderOpen, Clock3, Pencil, Copy, Eye, EyeOff, SkipForward, User, AudioLines } from 'lucide-react';
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
@@ -14,8 +14,40 @@ import { FONT_FILE_EXTENSIONS, createFontPresetFamilyName, formatFontFamilyValue
 import { BiliupDirectorySettings } from './BiliupModal';
 import { handleUndoablePathPaste } from '../utils/undoablePathPaste';
 import type { BackgroundSlideItem } from '../remotion/types';
+import {
+  AUDIO_VIZ_DEFAULT_ALIGNMENT,
+  AUDIO_VIZ_DEFAULT_COLOR,
+  AUDIO_VIZ_DEFAULT_COLORS,
+  AUDIO_VIZ_DEFAULT_MODE,
+  AUDIO_VIZ_MAX_COLORS,
+  AUDIO_VIZ_MIN_COLORS,
+  getAudioVizBaseSize,
+} from '../remotion/audioVizLayout';
+import { AUDIO_VIZ_BAR_LIMITS, AUDIO_VIZ_GAIN_LIMITS, AUDIO_VIZ_SMOOTHING_LIMITS } from '../remotion/audioVizGrid';
 
 const EMPTY_BACKGROUND_SLIDES: BackgroundSlideItem[] = [];
+
+type AudioVizStatus = 'idle' | 'analyzing' | 'ready' | 'unavailable';
+
+/** Shared by the add button and the property panel so new assets stay consistent. */
+const createAudioVizSlideDefaults = (canvasWidth: number) => {
+  const size = getAudioVizBaseSize({}, canvasWidth);
+  return {
+    audioVizMode: AUDIO_VIZ_DEFAULT_MODE,
+    audioVizColorMode: 'solid' as const,
+    audioVizColor: AUDIO_VIZ_DEFAULT_COLOR,
+    audioVizColors: [...AUDIO_VIZ_DEFAULT_COLORS],
+    audioVizCornerStyle: 'rounded' as const,
+    audioVizAlignment: AUDIO_VIZ_DEFAULT_ALIGNMENT,
+    audioVizBars: 48,
+    audioVizGain: 5,
+    audioVizSmoothing: 0.04,
+    audioVizWidth: size.width,
+    audioVizHeight: size.height,
+    // Bars are a graphic element: the project background blur would smear them.
+    inheritBackgroundFilters: false,
+  };
+};
 
 const FONT_OPTIONS = [
   { label: 'System UI', value: 'system-ui' },
@@ -83,6 +115,8 @@ interface SettingsPanelProps {
   activeInsertImageId?: string | null;
   focusInsertImageSettingsKey?: number;
   onActiveInsertImageChange?: (id: string | null) => void;
+  audioVizStatus?: AudioVizStatus;
+  audioDuration?: number;
   onEditInsertImage?: (id: string) => void;
   onAlignInsertAsset?: (mode: 'center-horizontal' | 'center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'align-bottom') => void;
   resolveAssetSrc?: (src?: string) => string | undefined;
@@ -115,6 +149,8 @@ export function SettingsPanel({
   activeInsertImageId,
   focusInsertImageSettingsKey = 0,
   onActiveInsertImageChange,
+  audioVizStatus = 'idle',
+  audioDuration = 0,
   onEditInsertImage,
   onAlignInsertAsset,
   resolveAssetSrc,
@@ -467,27 +503,34 @@ export function SettingsPanel({
     updateBackgroundSlides(nextSlides);
   };
 
-  const addBackgroundSlide = (type: 'image' | 'text' = 'image') => {
+  const addBackgroundSlide = (type: 'image' | 'text' | 'audio-viz' = 'image') => {
     const nextIndex = backgroundSlides.length + 1;
     const defaultStart = Math.max(0, Number(currentTime.toFixed(2)));
     const defaultEnd = Number((defaultStart + 30).toFixed(2));
     const maxBackgroundOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer === 'background').map((item: any) => item.backgroundOrder ?? 0));
     const maxOverlayOrder = Math.max(-1, ...backgroundSlides.filter((item: any) => item.layer !== 'background').map((item: any) => item.overlayOrder ?? 0));
+    const isAudioViz = type === 'audio-viz';
+    // A visualization normally covers the whole episode and sits behind the chat.
+    const fallbackAudioEnd = audioDuration > 0 ? Number(audioDuration.toFixed(2)) : defaultEnd;
     const slide = {
       id: `slide-${Date.now()}`,
       type,
-      name: type === 'text' ? `${t('project.assetTypeText')}${nextIndex}` : `${t('project.assetTypeImage')}${nextIndex}`,
+      name: type === 'text'
+        ? `${t('project.assetTypeText')}${nextIndex}`
+        : type === 'audio-viz'
+        ? `${t('project.assetTypeAudioViz')}${nextIndex}`
+        : `${t('project.assetTypeImage')}${nextIndex}`,
       image: '',
       text: t('project.textContent'),
-      start: defaultStart,
-      end: defaultEnd,
+      start: isAudioViz ? 0 : defaultStart,
+      end: isAudioViz ? fallbackAudioEnd : defaultEnd,
       scale: 1,
       offsetX: 0,
       offsetY: 0,
       rotation: 0,
-      backgroundOrder: maxBackgroundOrder + 1,
+      backgroundOrder: isAudioViz ? 0 : maxBackgroundOrder + 1,
       overlayOrder: maxOverlayOrder + 1,
-      layer: 'overlay',
+      layer: isAudioViz ? 'background' : 'overlay',
       inheritBackgroundFilters: true,
       animationStyle: 'none',
       animationDuration: 0,
@@ -505,12 +548,13 @@ export function SettingsPanel({
       fontSize: 96,
       fontWeight: '700',
       textAlign: 'center',
+      ...(isAudioViz ? createAudioVizSlideDefaults(config.dimensions?.width ?? 1920) : {}),
     };
     updateBackgroundSlides([...backgroundSlides, slide]);
     setActiveBackgroundSlideTab(slide.id);
     setPendingScrollSlideId(slide.id);
     onActiveInsertImageChange?.(slide.id);
-    if (type === 'image') {
+    if (type === 'image' || isAudioViz) {
       onSeek?.(slide.start);
       onEditInsertImage?.(slide.id);
     }
@@ -1052,6 +1096,34 @@ export function SettingsPanel({
     }
     return '#FFFFFF';
   };
+
+  /** Shared on/off control: the same look as the follow-global-padding toggle. */
+  const renderToggleButton = (
+    label: string,
+    value: boolean,
+    onToggle: (next: boolean) => void,
+    testId: string,
+    options?: { disabled?: boolean },
+  ) => (
+    <div className="space-y-1 min-w-0">
+      <span className="text-xs opacity-70 block truncate" title={label}>{label}</span>
+      <button
+        type="button"
+        disabled={options?.disabled}
+        aria-pressed={value}
+        data-testid={testId}
+        onClick={() => onToggle(!value)}
+        className="w-full flex items-center justify-center rounded-md border px-2 py-1.5 text-xs transition-colors disabled:opacity-50"
+        style={{
+          backgroundColor: value ? `${secondaryThemeColor}14` : uiTheme.panelBgSubtle,
+          borderColor: value ? `${secondaryThemeColor}55` : uiTheme.border,
+          color: uiTheme.text,
+        }}
+      >
+        {value ? t('common.enabled') : t('common.disabled')}
+      </button>
+    </div>
+  );
 
   const renderColorInput = (value: string, onChange: (value: string) => void) => (
     <div className="flex items-center gap-2 rounded px-2 py-1.5" style={{ backgroundColor: uiTheme.panelBgSubtle }}>
@@ -1702,7 +1774,7 @@ export function SettingsPanel({
                 <div className="space-y-1.5 col-span-2">
                   <span className="text-xs opacity-70 inline-flex items-center gap-1">
                     {t('project.fps')}
-                    <Tooltip content={t('project.fpsTip')} placement="bottom" width={224} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                    <Tooltip content={t('project.fpsTip')} placement="bottom" width={224} className="inline-flex" backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                       <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                     </Tooltip>
                   </span>
@@ -1987,7 +2059,7 @@ export function SettingsPanel({
                   <div className="space-y-1.5">
                     <span className="text-xs font-semibold opacity-80 inline-flex items-center gap-1">
                       {t('project.animationStyle')}
-                      <Tooltip content={t('project.animationStyleTip')} placement="bottom" width={224} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                      <Tooltip content={t('project.animationStyleTip')} placement="bottom" width={224} className="inline-flex" backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                         <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                       </Tooltip>
                     </span>
@@ -2134,7 +2206,7 @@ export function SettingsPanel({
                   <div className="flex justify-between items-center">
                     <span className="text-xs opacity-70 inline-flex items-center gap-1">
                       {t('project.blur')}
-                      <Tooltip content={t('project.blurTip')} placement="right-top" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                      <Tooltip content={t('project.blurTip')} placement="right-top" width={240} className="inline-flex" backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                         <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                       </Tooltip>
                     </span>
@@ -2187,12 +2259,19 @@ export function SettingsPanel({
                   <button type="button" onClick={() => addBackgroundSlide('text')} className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-all duration-300" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: themeColor, boxShadow: `0 0 12px ${secondaryThemeColor}44` }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${themeColor}14`; e.currentTarget.style.boxShadow = `0 0 20px ${secondaryThemeColor}66, 0 0 40px ${secondaryThemeColor}22`; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = uiTheme.panelBgSubtle; e.currentTarget.style.boxShadow = `0 0 12px ${secondaryThemeColor}44`; }}>
                     <Type size={16} /> {t('project.addTextAsset')}
                   </button>
+                  <button type="button" onClick={() => addBackgroundSlide('audio-viz')} data-testid="add-audio-viz" className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-all duration-300" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle, color: secondaryThemeColor, boxShadow: `0 0 12px ${themeColor}44` }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${secondaryThemeColor}14`; e.currentTarget.style.boxShadow = `0 0 20px ${themeColor}66, 0 0 40px ${themeColor}22`; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = uiTheme.panelBgSubtle; e.currentTarget.style.boxShadow = `0 0 12px ${themeColor}44`; }}>
+                    <AudioLines size={16} /> {t('project.addAudioVizAsset')}
+                  </button>
                 </div>
 
                 {backgroundSlides.length > 0 ? (
                   <>
                     <div ref={backgroundSlideTabsRef} className="flex flex-col gap-1 max-h-[260px] overflow-y-auto custom-scrollbar">                      {tabOrderedSlides.map((slide: any, index: number) => {
-                        const fallbackLabel = slide.type === 'text' ? `${t('project.assetTypeText')}${index + 1}` : `${t('project.assetTypeImage')}${index + 1}`;
+                        const fallbackLabel = slide.type === 'text'
+                          ? `${t('project.assetTypeText')}${index + 1}`
+                          : slide.type === 'audio-viz'
+                          ? `${t('project.assetTypeAudioViz')}${index + 1}`
+                          : `${t('project.assetTypeImage')}${index + 1}`;
                         const label = (slide.name || '').trim() || fallbackLabel;
                         const isActive = (currentBackgroundSlide?.id || activeBackgroundSlideTab) === slide.id;
                         const previewSrc = slide.type === 'image' && slide.image ? (resolveAssetSrc ? resolveAssetSrc(slide.image) : slide.image) : null;
@@ -2236,6 +2315,8 @@ export function SettingsPanel({
                             <div className="shrink-0 w-8 h-8 rounded border flex items-center justify-center overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                               {slide.type === 'image' && previewSrc ? (
                                 <img src={previewSrc} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                              ) : slide.type === 'audio-viz' ? (
+                                <AudioLines size={14} style={{ color: slide.audioVizColorMode === 'gradient' ? secondaryThemeColor : (slide.audioVizColor || secondaryThemeColor) }} />
                               ) : slide.type === 'text' ? (
                                 <div className="px-1 text-[0.5rem] leading-tight text-center line-clamp-2" style={{ color: slide.textColor || uiTheme.textMuted }}>
                                   {(slide.text || '').slice(0, 6)}
@@ -2271,7 +2352,9 @@ export function SettingsPanel({
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="shrink-0 w-10 h-10 rounded-md border flex items-center justify-center overflow-hidden" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBg }}>
-                            {currentBackgroundSlide.type === 'text' ? (
+                            {currentBackgroundSlide.type === 'audio-viz' ? (
+                              <AudioLines size={18} style={{ color: secondaryThemeColor }} />
+                            ) : currentBackgroundSlide.type === 'text' ? (
                               <div className="px-1 text-[0.625rem] leading-tight font-semibold text-center" style={{ color: currentBackgroundSlide.textColor || uiTheme.text }}>
                                 {(currentBackgroundSlide.text || 'T').slice(0, 2)}
                               </div>
@@ -2306,7 +2389,7 @@ export function SettingsPanel({
                           </button>
                         </div>
 
-                        {currentBackgroundSlide.type !== 'text' ? (
+                        {(currentBackgroundSlide.type || 'image') === 'image' ? (
                           <div className="space-y-1.5">
                             <div className="flex gap-2">
                               <input
@@ -2354,7 +2437,7 @@ export function SettingsPanel({
                               {t('project.quickPasteFilePathTip')}
                             </div>
                           </div>
-                        ) : (
+                        ) : currentBackgroundSlide.type === 'text' ? (
                           <div className="space-y-1.5">
                             <span className="text-xs opacity-70">{t('project.textContent')}</span>
                             <textarea
@@ -2364,7 +2447,7 @@ export function SettingsPanel({
                               style={{ ...inputSurfaceStyle, minHeight: '88px', resize: 'vertical' }}
                             />
                           </div>
-                        )}
+                        ) : null}
 
                         <div className="space-y-1.5">
                           <div className="flex gap-2">
@@ -2373,7 +2456,11 @@ export function SettingsPanel({
                               onEditInsertImage?.(currentBackgroundSlide.id);
                             }} className="flex-1 h-8 rounded-md border px-2.5 text-[0.6875rem] transition-colors inline-flex items-center justify-center gap-1.5 font-medium leading-none" style={{ borderColor: `${secondaryThemeColor}66`, backgroundColor: `${secondaryThemeColor}16`, color: uiTheme.text, boxShadow: `0 6px 16px ${secondaryThemeColor}18` }}>
                               <Pencil size={14} style={{ color: secondaryThemeColor }} />
-                              {currentBackgroundSlide.type === 'text' ? t('project.editTextAsset') : t('project.editImageAsset')}
+                              {currentBackgroundSlide.type === 'text'
+                                ? t('project.editTextAsset')
+                                : currentBackgroundSlide.type === 'audio-viz'
+                                ? t('project.editAudioVizAsset')
+                                : t('project.editImageAsset')}
                             </button>
                             <button type="button" onClick={() => {
                               const duration = (currentBackgroundSlide.end ?? 0) - (currentBackgroundSlide.start ?? 0);
@@ -2425,8 +2512,22 @@ export function SettingsPanel({
                             {renderNumberInput(currentBackgroundSlide.scale ?? 1, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, scale: Math.max(0.1, value) })), { min: 0.1, step: 0.05, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.slideRotation')}</span>
-                            {renderNumberInput(currentBackgroundSlide.rotation ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, rotation: value })), { step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="text-xs opacity-70">{t('project.slideRotation')}</span>
+                              <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{Math.round(currentBackgroundSlide.rotation ?? 0)}°</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-180"
+                              max="180"
+                              step="1"
+                              value={currentBackgroundSlide.rotation ?? 0}
+                              aria-label={t('project.slideRotation')}
+                              data-testid="asset-rotation"
+                              onChange={(event) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, rotation: Number(event.target.value) }))}
+                              className="w-full"
+                              style={themedRangeStyle}
+                            />
                           </div>
                         </div>
 
@@ -2467,13 +2568,13 @@ export function SettingsPanel({
 
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70 inline-flex items-center gap-1">
+                            <span className="text-xs opacity-70 inline-flex items-center gap-1 h-4">
                               {t('project.insertImageLayer')}
-                              <Tooltip content={t('project.insertImageLayerTip')} placement="bottom" width={240} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
+                              <Tooltip content={t('project.insertImageLayerTip')} placement="bottom" width={240} className="inline-flex" backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.78)' : 'rgba(255, 255, 255, 0.78)'} borderColor={`${secondaryThemeColor}33`} textColor={uiTheme.text}>
                                 <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border text-[0.625rem] font-semibold" style={{ borderColor: `${secondaryThemeColor}66`, color: secondaryThemeColor, backgroundColor: `${secondaryThemeColor}14` }}>?</span>
                               </Tooltip>
                             </span>
-                            <select value={currentBackgroundSlide.layer || 'background'} onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => {
+                            <select value={currentBackgroundSlide.layer || 'background'} data-testid="asset-layer" onChange={(e) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => {
                               const nextLayer = e.target.value as 'background' | 'overlay';
                               if (nextLayer === slide.layer) {
                                 return { ...slide, layer: nextLayer };
@@ -2491,8 +2592,8 @@ export function SettingsPanel({
                               <option value="overlay">{t('project.insertImageLayerOverlay')}</option>
                             </select>
                           </div>
-                          <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.insertImageOrder')}</span>
+                          <div className="space-y-1.5" data-testid="asset-layer-order">
+                            <span className="text-xs opacity-70 inline-flex items-center gap-1 h-4">{t('project.insertImageOrder')}</span>
                             {renderNumberInput(
                               (currentBackgroundSlide.layer || 'background') === 'overlay'
                                 ? ((currentBackgroundSlide.overlayOrder ?? 0) + 1)
@@ -2503,7 +2604,7 @@ export function SettingsPanel({
                           </div>
                         </div>
 
-                        {currentBackgroundSlide.type !== 'text' ? (
+                        {(currentBackgroundSlide.type || 'image') === 'image' ? (
                           <div className="space-y-2">
                             <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
                             <div className="grid grid-cols-2 gap-3">
@@ -2512,8 +2613,22 @@ export function SettingsPanel({
                                 {renderColorInput(currentBackgroundSlide.imageBorderColor || '#FFFFFF', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageBorderColor: value })))}
                               </div>
                               <div className="space-y-1.5">
-                                <span className="text-xs opacity-70">{t('project.imageBorderWidth')}</span>
-                                {renderNumberInput(currentBackgroundSlide.imageBorderWidth ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageBorderWidth: Math.max(0, value) })), { min: 0, step: 0.5, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="text-xs opacity-70">{t('project.imageBorderWidth')}</span>
+                                  <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{Math.round((currentBackgroundSlide.imageBorderWidth ?? 0) * 10) / 10}px</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="40"
+                                  step="0.5"
+                                  value={currentBackgroundSlide.imageBorderWidth ?? 0}
+                                  aria-label={t('project.imageBorderWidth')}
+                                  data-testid="asset-image-border-width"
+                                  onChange={(event) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageBorderWidth: Math.max(0, Number(event.target.value)) }))}
+                                  className="w-full"
+                                  style={themedRangeStyle}
+                                />
                               </div>
                             </div>
                             </div>
@@ -2524,13 +2639,181 @@ export function SettingsPanel({
                                 {renderColorInput(currentBackgroundSlide.imageShadowColor || '#00000066', (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageShadowColor: value })))}
                               </div>
                               <div className="space-y-1.5">
-                                <span className="text-xs opacity-70">{t('project.imageShadowSize')}</span>
-                                {renderNumberInput(currentBackgroundSlide.imageShadowSize ?? 0, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageShadowSize: Math.max(0, value) })), { min: 0, step: 1, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="text-xs opacity-70">{t('project.imageShadowSize')}</span>
+                                  <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{Math.round(currentBackgroundSlide.imageShadowSize ?? 0)}px</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="80"
+                                  step="1"
+                                  value={currentBackgroundSlide.imageShadowSize ?? 0}
+                                  aria-label={t('project.imageShadowSize')}
+                                  data-testid="asset-image-shadow-size"
+                                  onChange={(event) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, imageShadowSize: Math.max(0, Number(event.target.value)) }))}
+                                  className="w-full"
+                                  style={themedRangeStyle}
+                                />
                               </div>
                             </div>
                             </div>
                           </div>
                         ) : null}
+
+                        {currentBackgroundSlide.type === 'audio-viz' ? (() => {
+                          const colors = Array.isArray(currentBackgroundSlide.audioVizColors) && currentBackgroundSlide.audioVizColors.length >= AUDIO_VIZ_MIN_COLORS
+                            ? currentBackgroundSlide.audioVizColors
+                            : AUDIO_VIZ_DEFAULT_COLORS;
+                          const colorMode = currentBackgroundSlide.audioVizColorMode === 'gradient' ? 'gradient' : 'solid';
+                          const setViz = (updater: (slide: BackgroundSlideItem) => BackgroundSlideItem) => updateBackgroundSlide(currentBackgroundSlide.id, updater);
+                          const fieldClass = `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`;
+                          return <>
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                              <div className="grid grid-cols-2 gap-3">
+                                <label className="space-y-1.5">
+                                  <span className="text-xs opacity-70">{t('project.audioVizMode')}</span>
+                                  <select value={currentBackgroundSlide.audioVizMode === 'energy' ? 'energy' : AUDIO_VIZ_DEFAULT_MODE} data-testid="audio-viz-mode" className={fieldClass} style={inputSurfaceStyle} onChange={(e) => setViz((slide) => ({ ...slide, audioVizMode: e.target.value as 'energy' | 'spectrum' }))}>
+                                    <option value="spectrum">{t('project.audioVizModeSpectrum')}</option>
+                                    <option value="energy">{t('project.audioVizModeEnergy')}</option>
+                                  </select>
+                                </label>
+                                <label className="space-y-1.5">
+                                  <span className="text-xs opacity-70">{t('project.audioVizAlign')}</span>
+                                  <select value={currentBackgroundSlide.audioVizAlignment === 'center' ? 'center' : AUDIO_VIZ_DEFAULT_ALIGNMENT} data-testid="audio-viz-align" className={fieldClass} style={inputSurfaceStyle} onChange={(e) => setViz((slide) => ({ ...slide, audioVizAlignment: e.target.value as 'center' | 'bottom' }))}>
+                                    <option value="bottom">{t('project.audioVizBottom')}</option>
+                                    <option value="center">{t('project.audioVizCenter')}</option>
+                                  </select>
+                                </label>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <label className="space-y-1.5">
+                                  <span className="text-xs opacity-70">{t('project.audioVizCorners')}</span>
+                                  <select value={currentBackgroundSlide.audioVizCornerStyle === 'square' ? 'square' : 'rounded'} data-testid="audio-viz-corners" className={fieldClass} style={inputSurfaceStyle} onChange={(e) => setViz((slide) => ({ ...slide, audioVizCornerStyle: e.target.value as 'rounded' | 'square' }))}>
+                                    <option value="rounded">{t('project.audioVizRounded')}</option>
+                                    <option value="square">{t('project.audioVizSquare')}</option>
+                                  </select>
+                                </label>
+                                <label className="space-y-1.5">
+                                  <span className="text-xs opacity-70">{t('project.audioVizColorMode')}</span>
+                                  <select value={colorMode} data-testid="audio-viz-color-mode" className={fieldClass} style={inputSurfaceStyle} onChange={(e) => setViz((slide) => ({ ...slide, audioVizColorMode: e.target.value as 'solid' | 'gradient' }))}>
+                                    <option value="solid">{t('project.audioVizSolid')}</option>
+                                    <option value="gradient">{t('project.audioVizGradient')}</option>
+                                  </select>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border p-2.5 space-y-2" style={{ borderColor: uiTheme.border, backgroundColor: uiTheme.panelBgSubtle }}>
+                              {colorMode === 'solid' ? (
+                                <div className="space-y-1.5">
+                                  <span className="text-xs opacity-70">{t('project.audioVizColor')}</span>
+                                  <div data-testid="audio-viz-color">{renderColorInput(currentBackgroundSlide.audioVizColor || AUDIO_VIZ_DEFAULT_COLOR, (value) => setViz((slide) => ({ ...slide, audioVizColor: value })))}</div>
+                                </div>
+                              ) : <>
+                                <div className="h-4 rounded border" style={{ borderColor: uiTheme.border, background: `linear-gradient(90deg, ${colors.join(', ')})` }} />
+                                {colors.map((color: string, index: number) => (
+                                  <div className="flex items-center gap-2" key={`${index}-${color}`}>
+                                    <span className="flex-1 text-xs opacity-70">{t('project.audioVizGradientColor', { index: index + 1 })}</span>
+                                    <input
+                                      type="color"
+                                      value={toColorPickerValue(color)}
+                                      data-testid={`audio-viz-gradient-color-${index}`}
+                                      className="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-md shadow-sm"
+                                      onChange={(e) => {
+                                        const next = e.target.value.toUpperCase();
+                                        setViz((slide) => ({
+                                          ...slide,
+                                          audioVizColors: (Array.isArray(slide.audioVizColors) ? slide.audioVizColors : colors).map((existing: string, colorIndex: number) => (colorIndex === index ? next : existing)),
+                                        }));
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      data-testid={`audio-viz-remove-color-${index}`}
+                                      disabled={colors.length <= AUDIO_VIZ_MIN_COLORS}
+                                      title={t('project.audioVizRemoveColor', { index: index + 1 })}
+                                      aria-label={t('project.audioVizRemoveColor', { index: index + 1 })}
+                                      className="shrink-0 p-1.5 rounded border disabled:opacity-40"
+                                      style={{ borderColor: uiTheme.border, color: '#ef4444' }}
+                                      onClick={() => setViz((slide) => ({
+                                        ...slide,
+                                        audioVizColors: (Array.isArray(slide.audioVizColors) ? slide.audioVizColors : colors).filter((_existing: string, colorIndex: number) => colorIndex !== index),
+                                      }))}
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    data-testid="audio-viz-add-color"
+                                    disabled={colors.length >= AUDIO_VIZ_MAX_COLORS}
+                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs disabled:opacity-40"
+                                    style={{ borderColor: uiTheme.border, color: secondaryThemeColor }}
+                                    onClick={() => setViz((slide) => ({
+                                      ...slide,
+                                      audioVizColors: [...(Array.isArray(slide.audioVizColors) ? slide.audioVizColors : colors), '#FFFFFF'].slice(0, AUDIO_VIZ_MAX_COLORS),
+                                    }))}
+                                  >
+                                    <Plus size={12} /> {t('project.audioVizAddColor')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-testid="audio-viz-reverse-colors"
+                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-md border py-1.5 text-xs"
+                                    style={{ borderColor: uiTheme.border, color: themeColor }}
+                                    onClick={() => setViz((slide) => ({
+                                      ...slide,
+                                      audioVizColors: [...(Array.isArray(slide.audioVizColors) ? slide.audioVizColors : colors)].reverse(),
+                                    }))}
+                                  >
+                                    <ArrowLeftRight size={12} /> {t('project.audioVizReverseColors')}
+                                  </button>
+                                </div>
+                                <p className="text-[0.625rem] opacity-55 leading-relaxed">{t('project.audioVizGradientHint')}</p>
+                              </>}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5" data-testid="audio-viz-bars">
+                                <span className="text-xs opacity-70">{t('project.audioVizBars')}</span>
+                                {renderNumberInput(currentBackgroundSlide.audioVizBars ?? 48, (value) => setViz((slide) => ({ ...slide, audioVizBars: Math.round(value) })), { integer: true, min: AUDIO_VIZ_BAR_LIMITS.min, max: AUDIO_VIZ_BAR_LIMITS.max, step: AUDIO_VIZ_BAR_LIMITS.step, className: fieldClass, style: inputSurfaceStyle })}
+                              </div>
+                              <div className="space-y-1.5" data-testid="audio-viz-gain">
+                                <span className="text-xs opacity-70">{t('project.audioVizGain')}</span>
+                                {renderNumberInput(currentBackgroundSlide.audioVizGain ?? 5, (value) => setViz((slide) => ({ ...slide, audioVizGain: value })), { min: AUDIO_VIZ_GAIN_LIMITS.min, max: AUDIO_VIZ_GAIN_LIMITS.max, step: AUDIO_VIZ_GAIN_LIMITS.step, className: fieldClass, style: inputSurfaceStyle })}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5" data-testid="audio-viz-smoothing">
+                                <span className="text-xs opacity-70">{t('project.audioVizSmoothing')} (ms)</span>
+                                {renderNumberInput(Math.round((currentBackgroundSlide.audioVizSmoothing ?? 0.04) * 1000), (value) => setViz((slide) => ({ ...slide, audioVizSmoothing: value / 1000 })), { integer: true, min: AUDIO_VIZ_SMOOTHING_LIMITS.min * 1000, max: AUDIO_VIZ_SMOOTHING_LIMITS.max * 1000, step: AUDIO_VIZ_SMOOTHING_LIMITS.step * 1000, className: fieldClass, style: inputSurfaceStyle })}
+                              </div>
+                              <div className="space-y-1.5" data-testid="audio-viz-width">
+                                <span className="text-xs opacity-70">{t('project.audioVizWidth')}</span>
+                                {renderNumberInput(currentBackgroundSlide.audioVizWidth ?? getAudioVizBaseSize(currentBackgroundSlide, config.dimensions?.width ?? 1920).width, (value) => setViz((slide) => ({ ...slide, audioVizWidth: Math.max(24, Math.round(value)) })), { integer: true, min: 24, step: 10, className: fieldClass, style: inputSurfaceStyle })}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5" data-testid="audio-viz-height">
+                                <span className="text-xs opacity-70">{t('project.audioVizHeight')}</span>
+                                {renderNumberInput(currentBackgroundSlide.audioVizHeight ?? getAudioVizBaseSize(currentBackgroundSlide, config.dimensions?.width ?? 1920).height, (value) => setViz((slide) => ({ ...slide, audioVizHeight: Math.max(16, Math.round(value)) })), { integer: true, min: 16, step: 8, className: fieldClass, style: inputSurfaceStyle })}
+                              </div>
+                              <div className="space-y-1.5" />
+                            </div>
+
+                            <p className="text-[0.625rem] opacity-55 leading-relaxed">{t('project.audioVizHint')}</p>
+                            {audioVizStatus === 'analyzing' ? (
+                              <p className="text-[0.625rem] leading-relaxed" style={{ color: secondaryThemeColor }}>{t('project.audioVizAnalyzing')}</p>
+                            ) : audioVizStatus === 'unavailable' ? (
+                              <p className="text-[0.625rem] leading-relaxed" style={{ color: '#ef4444' }}>{t('project.audioVizAnalysisUnavailable')}{!window.electron ? ` ${t('project.audioVizDesktopOnly')}` : ''}</p>
+                            ) : null}
+                          </>;
+                        })() : null}
 
                         {currentBackgroundSlide.type === 'text' ? (
                           <>
@@ -2616,14 +2899,42 @@ export function SettingsPanel({
                             </select>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.assetAnimationDuration')}</span>
-                            {renderNumberInput(currentBackgroundSlide.animationDuration ?? 0.01, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationDuration: Math.max(0, value) })), { min: 0, step: 0.01, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="text-xs opacity-70">{t('project.assetAnimationDuration')}</span>
+                              <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{Number((currentBackgroundSlide.animationDuration ?? 0.01).toFixed(2))}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="2"
+                              step="0.01"
+                              value={currentBackgroundSlide.animationDuration ?? 0.01}
+                              aria-label={t('project.assetAnimationDuration')}
+                              data-testid="asset-animation-duration"
+                              onChange={(event) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, animationDuration: Math.max(0, Number(event.target.value)) }))}
+                              className="w-full"
+                              style={themedRangeStyle}
+                            />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <span className="text-xs opacity-70">{t('project.assetOpacity')}</span>
-                            {renderNumberInput(currentBackgroundSlide.opacity ?? 1, (value) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, opacity: Math.max(0, Math.min(1, value)) })), { min: 0, max: 1, step: 0.05, className: `w-full border rounded-md px-3 py-2 text-sm focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="text-xs opacity-70">{t('project.assetOpacity')}</span>
+                              <span className="text-xs font-mono px-1.5 py-0.5 rounded shrink-0" style={{ color: themeColor, backgroundColor: `${themeColor}18` }}>{Math.round((currentBackgroundSlide.opacity ?? 1) * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={currentBackgroundSlide.opacity ?? 1}
+                              aria-label={t('project.assetOpacity')}
+                              data-testid="asset-opacity"
+                              onChange={(event) => updateBackgroundSlide(currentBackgroundSlide.id, (slide) => ({ ...slide, opacity: Math.max(0, Math.min(1, Number(event.target.value))) }))}
+                              className="w-full"
+                              style={themedRangeStyle}
+                            />
                           </div>
                           <div className="space-y-1.5">
                             <label className="block text-xs opacity-70">{t('project.insertImageInheritFilters')}</label>
@@ -2780,16 +3091,12 @@ export function SettingsPanel({
                         </div>
                       </div>
 
-                      <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={speaker.showAvatar !== false}
-                          onChange={(e) => updateSpeaker(key, (currentSpeaker) => ({ ...currentSpeaker, showAvatar: e.target.checked }), { preservePreset: true })}
-                          className="w-3.5 h-3.5"
-                          style={{ accentColor: secondaryThemeColor }}
-                        />
-                        <span>{t('project.showAvatar')}</span>
-                      </label>
+                      {renderToggleButton(
+                        t('project.showAvatar'),
+                        speaker.showAvatar !== false,
+                        (next) => updateSpeaker(key, (currentSpeaker) => ({ ...currentSpeaker, showAvatar: next }), { preservePreset: true }),
+                        'speaker-show-avatar',
+                      )}
 
                       <div className="flex justify-between items-center pt-1 gap-2">
                         <div className="flex-1 flex items-center gap-1">
@@ -3081,6 +3388,11 @@ export function SettingsPanel({
                         </div>
                       </div>
 
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        {renderToggleButton(t('speakers.bubbleShadow'), speaker.style?.bubbleShadow !== false, (next) => updateSpeakerStyle(key, 'bubbleShadow', next), 'speaker-bubble-shadow')}
+                        {renderToggleButton(t('speakers.textShadow'), speaker.style?.textShadow !== false, (next) => updateSpeakerStyle(key, 'textShadow', next), 'speaker-text-shadow')}
+                      </div>
+
                     </div>
 
                     <hr style={{ borderColor: uiTheme.border }} />
@@ -3113,19 +3425,16 @@ export function SettingsPanel({
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                         <div className="space-y-1">
-                          <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderWidth')}</span>
-                          {renderNumberInput(speaker.style?.borderWidth ?? 0, (value) => updateSpeakerStyle(key, 'borderWidth', value), { min: 0, max: 10, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
-                        </div>
-                        <div className="space-y-1">
                           <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderRadius')}</span>
                           {renderNumberInput(speaker.style?.borderRadius ?? 28, (value) => updateSpeakerStyle(key, 'borderRadius', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                         </div>
-                        <div className="space-y-1 col-span-2">
+                        <div className="space-y-1">
                           <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.borderOpacity')}</span>
                           <div className="flex items-center gap-2">
-                            <input 
+                            <input
                               type="range" min="0" max="1" step="0.05"
                               value={speaker.style?.borderOpacity ?? 1.0}
+                              aria-label={t('speakers.borderOpacity')}
                               onChange={(e) => previewSpeakerStyle(key, 'borderOpacity', parseFloat(e.target.value))}
                               className="w-full" style={themedRangeStyle}
                             />
@@ -3154,16 +3463,6 @@ export function SettingsPanel({
                           <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('speakers.shadow')}</span>
                           {renderNumberInput(speaker.style?.shadowSize ?? 1, (value) => updateSpeakerStyle(key, 'shadowSize', value), { min: 0, max: 64, className: `w-full border rounded px-2 py-1 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                          </div>
-                       </div>
-                       <div className="grid grid-cols-2 gap-2">
-                         <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
-                           <input type="checkbox" checked={speaker.style?.bubbleShadow !== false} onChange={(e) => updateSpeakerStyle(key, 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                           {t('speakers.bubbleShadow')}
-                         </label>
-                         <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
-                           <input type="checkbox" checked={speaker.style?.textShadow !== false} onChange={(e) => updateSpeakerStyle(key, 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                           {t('speakers.textShadow')}
-                         </label>
                        </div>
                      </div>
                     </div>
@@ -3437,16 +3736,6 @@ export function SettingsPanel({
                         {renderNumberInput(annotation.style?.shadowSize ?? 1, (value) => updateSpeakerStyle('ANNOTATION', 'shadowSize', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
-                        <input type="checkbox" checked={annotation.style?.bubbleShadow !== false} onChange={(e) => updateSpeakerStyle('ANNOTATION', 'bubbleShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                        {t('speakers.bubbleShadow')}
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs opacity-80 cursor-pointer">
-                        <input type="checkbox" checked={annotation.style?.textShadow !== false} onChange={(e) => updateSpeakerStyle('ANNOTATION', 'textShadow', e.target.checked)} className="w-3.5 h-3.5 shrink-0" style={{ accentColor: secondaryThemeColor }} />
-                        {t('speakers.textShadow')}
-                      </label>
-                    </div>
                     </div>
 
                     <hr style={{ borderColor: uiTheme.border }} />
@@ -3494,6 +3783,10 @@ export function SettingsPanel({
                         {renderNumberInput(annotation.style?.opacity ?? 0.9, (value) => updateSpeakerStyle('ANNOTATION', 'opacity', value), { min: 0, max: 1, step: 0.05, className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}
                       </div>
                     </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderToggleButton(t('speakers.bubbleShadow'), annotation.style?.bubbleShadow !== false, (next) => updateSpeakerStyle('ANNOTATION', 'bubbleShadow', next), 'annotation-bubble-shadow')}
+                        {renderToggleButton(t('speakers.textShadow'), annotation.style?.textShadow !== false, (next) => updateSpeakerStyle('ANNOTATION', 'textShadow', next), 'annotation-text-shadow')}
+                      </div>
                       <div className="space-y-1">
                         <span className="text-[0.625rem] uppercase tracking-wider opacity-70">{t('annotation.maxWidth')}</span>
                         {renderNumberInput(annotation.style?.maxWidth ?? 720, (value) => updateSpeakerStyle('ANNOTATION', 'maxWidth', value), { className: `w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${inputClass}`, style: inputSurfaceStyle })}

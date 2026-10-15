@@ -1,5 +1,5 @@
 import { beginNumberEdit, endNumberEdit } from '../../utils/inputSession';
-import { useEffect, useLayoutEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
+import React, { useEffect, useLayoutEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
 import { translate, type Language } from '../../i18n';
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'min' | 'max' | 'step'> & {
@@ -28,6 +28,12 @@ export function NumberInput({ value, onValueChange, min = -Infinity, max = Infin
     const label = node?.parentElement?.parentElement?.querySelector('span, label');
     if (label?.textContent && node) node.setAttribute('aria-label', label.textContent);
   });
+  const accent = 'var(--podchat-accent, currentColor)';
+  const stepperStyle = {
+    color: accent,
+    borderColor: `color-mix(in srgb, ${accent} 33%, transparent)`,
+    backgroundColor: `color-mix(in srgb, ${accent} 9%, transparent)`,
+  } as React.CSSProperties;
   const normalize = (next: number) => Math.max(min, Math.min(max, integer ? Math.round(next) : next));
   const publish = (next: number) => { latest.current = next; onValueChange(next); };
   const commit = () => {
@@ -58,7 +64,7 @@ export function NumberInput({ value, onValueChange, min = -Infinity, max = Infin
     return () => node.removeEventListener('wheel', wheel);
   });
   return <div className="relative min-w-0">
-    <input {...props} ref={input} type="text" inputMode={parseValue ? 'text' : 'decimal'} role="spinbutton" data-number-draft="true"
+    <input {...props} className={`${props.className ?? ''} pr-8`} ref={input} type="text" inputMode={parseValue ? 'text' : 'decimal'} role="spinbutton" data-number-draft="true"
       aria-valuenow={value} aria-valuemin={Number.isFinite(min) ? min : undefined} aria-valuemax={Number.isFinite(max) ? max : undefined}
       aria-describedby={message ? id : props['aria-describedby']} value={draft ?? String(value)}
       onFocus={(event) => { beginNumberEdit(input.current); initial.current = value; latest.current = value; setDraft(String(value)); props.onFocus?.(event); }}
@@ -77,9 +83,11 @@ export function NumberInput({ value, onValueChange, min = -Infinity, max = Infin
         else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); changeBy(event.key === 'ArrowUp' ? 1 : -1); }
         props.onKeyDown?.(event);
       }} />
-    <div className="absolute right-1 top-1 flex flex-col text-[9px] leading-none">
-      <button type="button" aria-label={t('input.increase')} disabled={props.disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => { input.current?.focus(); changeBy(1); }}>▲</button>
-      <button type="button" aria-label={t('input.decrease')} disabled={props.disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => { input.current?.focus(); changeBy(-1); }}>▼</button>
+    <div className="absolute inset-y-0 right-1 flex flex-col justify-center gap-0.5">
+      {/* Centred and bounded by the input, matching the pre-0.5.1 control.
+          The accent variable follows the app theme, so steppers keep the themed colours. */}
+      <button type="button" aria-label={t('input.increase')} disabled={props.disabled} data-stepper="up" className="h-3.5 w-4 rounded border text-[0.5625rem] leading-none" style={stepperStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => { input.current?.focus(); changeBy(1); }}>▲</button>
+      <button type="button" aria-label={t('input.decrease')} disabled={props.disabled} data-stepper="down" className="h-3.5 w-4 rounded border text-[0.5625rem] leading-none" style={stepperStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => { input.current?.focus(); changeBy(-1); }}>▼</button>
     </div>
     {message && <p id={id} role="status" className="text-xs mt-1 text-amber-600">{message}</p>}
   </div>;

@@ -44,6 +44,7 @@ interface Window {
     readFile: (filePath: string) => Promise<string>;
     readBinaryFile: (payload: string | { filePath: string; projectFilePath?: string | null }) => Promise<Uint8Array | number[] | null>;
     generateAudioWaveformSamples: (payload: { audioPath: string; projectFilePath?: string | null }) => Promise<Float32Array | null>;
+    generateAudioVizGrid: (payload: { audioPath: string; projectFilePath?: string | null }) => Promise<ArrayBuffer | Uint8Array | null>;
     inspectProjectResources: (payload: { projectFilePath: string; resources: Array<{ id: string; value: string }> }) => Promise<Array<{ id: string; state: 'ok' | 'updated-relative' | 'missing'; resolvedValue: string; suggestedValue?: string }>>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
     writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => Promise<boolean>;

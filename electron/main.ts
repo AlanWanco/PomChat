@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 import { registerBiliup } from './biliup';
 import { decodeAudioWaveform } from './audioWaveform';
+import { encodeAudioVizGridForIpc, getAudioVizGrid, writeAudioVizGridFile } from './audioViz';
 
 const GITHUB_REPO_URL = 'https://github.com/AlanWanco/PomChat';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/AlanWanco/PomChat/releases/latest';
@@ -1334,6 +1335,7 @@ ipcMain.handle('export-video', async (_event, config) => {
 
   updateNativeExportProgress(0);
   let temporaryOutputPath: string | null = null;
+  let audioVizGridPath: string | null = null;
 
   try {
     const outputExtension = path.extname(outputPath) || (config?.exportFormat === 'mov-alpha' ? '.mov' : config?.exportFormat === 'webm-alpha' ? '.webm' : '.mp4');
@@ -1342,6 +1344,17 @@ ipcMain.handle('export-video', async (_event, config) => {
       `.${path.basename(outputPath)}.${process.pid}.${exportStartedAt}.part${outputExtension}`,
     );
     const workerConfig = { ...config, outputPath: temporaryOutputPath };
+    if (config?.audioPath && Array.isArray(config?.background?.slides)
+      && config.background.slides.some((slide: { type?: string }) => slide?.type === 'audio-viz')) {
+      // Precompute the analysis once, then hand it to the worker as a local file.
+      const audioSource = resolveLocalMediaPath(config.audioPath) || config.audioPath;
+      try {
+        audioVizGridPath = await writeAudioVizGridFile(resolveRemotionBinary('ffmpeg'), audioSource, app.getPath('temp'));
+        workerConfig.audioVizGridPath = audioVizGridPath;
+      } catch (error) {
+        console.error('Failed to prepare the audio visualization grid for export:', error);
+      }
+    }
     const exportMetaBase = {
       outputPath,
       outputFilename: path.basename(outputPath),
@@ -1644,6 +1657,13 @@ ipcMain.handle('export-video', async (_event, config) => {
     };
   } finally {
     clearNativeExportProgress();
+    if (audioVizGridPath) {
+      try {
+        fs.rmSync(audioVizGridPath, { force: true });
+      } catch {
+        // The analysis file lives in the temp directory; leaving it behind is harmless.
+      }
+    }
   }
 });
 
@@ -1824,6 +1844,34 @@ ipcMain.handle('generate-audio-waveform-samples', async (_event, payload: { audi
     return await decodeAudioWaveform(resolveRemotionBinary('ffmpeg'), audioPath);
   } catch (error) {
     console.error('Failed to generate waveform samples:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('generate-audio-viz-grid', async (_event, payload: { audioPath: string; projectFilePath?: string | null }) => {
+  if (!payload || typeof payload.audioPath !== 'string' || !payload.audioPath.trim()) {
+    return null;
+  }
+
+  let source: string;
+  try {
+    const projectFilePath = typeof payload.projectFilePath === 'string' ? payload.projectFilePath : null;
+    const candidatePath = projectFilePath
+      ? resolveProjectResourcePath(projectFilePath, payload.audioPath)
+      : payload.audioPath;
+    source = resolveLocalMediaPath(candidatePath) || candidatePath;
+    if (!/^(https?:)?\/\//i.test(source) && !fs.statSync(source).isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    // FFmpeg also reads remote URLs, so cached remote audio is analyzed the same way.
+    return encodeAudioVizGridForIpc(await getAudioVizGrid(resolveRemotionBinary('ffmpeg'), source));
+  } catch (error) {
+    console.error('Failed to analyze audio for visualization:', error);
     return null;
   }
 });

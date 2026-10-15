@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('electron', {
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
   readBinaryFile: (payload: string | { filePath: string; projectFilePath?: string | null }) => ipcRenderer.invoke('read-binary-file', payload),
   generateAudioWaveformSamples: (payload: { audioPath: string; projectFilePath?: string | null }) => ipcRenderer.invoke('generate-audio-waveform-samples', payload),
+  generateAudioVizGrid: (payload: { audioPath: string; projectFilePath?: string | null }) => ipcRenderer.invoke('generate-audio-viz-grid', payload),
   inspectProjectResources: (payload: { projectFilePath: string; resources: Array<{ id: string; value: string }> }) => ipcRenderer.invoke('inspect-project-resources', payload),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('write-file', filePath, content),
   writeBinaryFile: (payload: { filePath: string; bytes: number[] }) => ipcRenderer.invoke('write-binary-file', payload),

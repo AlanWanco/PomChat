@@ -573,6 +573,10 @@ const prepareInputProps = (config, mediaServer, binariesDirectory) => {
         : item)
       : config.content,
     audioPath: toMediaUrl(config.audioPath, mediaServer),
+    // The editor analyses the audio once and hands the result to the worker; the
+    // render reads those numbers instead of decoding audio itself.
+    audioVizGrid: config.audioVizGridPath ? mediaServer.urlForPath(config.audioVizGridPath) : undefined,
+    audioVizGridPath: undefined,
     fontPresets: Object.fromEntries(
       Object.entries(config.fontPresets || {}).map(([key, preset]) => [
         key,
@@ -789,8 +793,11 @@ const runRender = async (config) => {
         image: '',
         blur: 0,
         brightness: 1,
+        // A transparent export drops the background: only overlay assets survive.
+        // Audio visualizations are kept on any layer, since they are generated content
+        // rather than part of the replaced background.
         slides: Array.isArray(inputProps.background?.slides)
-          ? inputProps.background.slides.filter((slide) => slide?.layer === 'overlay')
+          ? inputProps.background.slides.filter((slide) => slide?.layer === 'overlay' || slide?.type === 'audio-viz')
           : [],
       };
     }
