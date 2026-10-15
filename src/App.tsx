@@ -53,6 +53,7 @@ import './App.css';
 import { useBiliupActions } from './components/BiliupContext';
 import { isProjectAssetResource } from './utils/projectResources';
 import { setExportProgressSnapshot } from './exportProgressStore';
+import { DEFAULT_EXPORT_PREFERENCES, readExportPreferences, type ExportPreferences } from './utils/exportPreferences';
 
 const LIGHT_THEME_DEFAULT = '#9ca4b8';
 const DARK_THEME_DEFAULT = '#545454';
@@ -359,6 +360,7 @@ const DEFAULT_UI_CONFIG = {
   audioVolume: 0.8,
   waveformZoomLevel: 50,
   exportFilenameEditorMode: 'simple' as 'simple' | 'advanced',
+  exportPreferences: { ...DEFAULT_EXPORT_PREFERENCES },
   subtitlePanelCompactMode: false,
   recentProject: null as string | null,
   recentProjects: [] as string[],
@@ -609,11 +611,8 @@ const sanitizeProjectConfig = (parsed: any) => {
       uiFontScale: typeof parsed?.ui?.uiFontScale === 'number' && Number.isFinite(parsed.ui.uiFontScale) ? Math.max(0.8, Math.min(1.4, parsed.ui.uiFontScale)) : DEFAULT_UI_CONFIG.uiFontScale,
       audioVolume: typeof parsed?.ui?.audioVolume === 'number' && Number.isFinite(parsed.ui.audioVolume) ? Math.max(0, Math.min(1, parsed.ui.audioVolume)) : DEFAULT_UI_CONFIG.audioVolume,
       waveformZoomLevel: typeof parsed?.ui?.waveformZoomLevel === 'number' && Number.isFinite(parsed.ui.waveformZoomLevel) ? Math.max(10, Math.min(1000, parsed.ui.waveformZoomLevel)) : 50,
-      exportFilenameEditorMode: parsed?.ui?.exportFilenameEditorMode === 'advanced'
-        ? 'advanced'
-        : (parsed?.filenameTemplate === 'custom' && typeof parsed?.customFilename === 'string' && /\{\$[A-Za-z0-9-]+\}/.test(parsed.customFilename)
-          ? 'advanced'
-          : 'simple'),
+      exportFilenameEditorMode: readExportPreferences(parsed).filenameEditorMode,
+      exportPreferences: readExportPreferences(parsed),
       subtitlePanelCompactMode: parsed?.ui?.subtitlePanelCompactMode === true,
       recentProject: typeof parsed?.ui?.recentProject === 'string' ? parsed.ui.recentProject : null,
       recentProjects: Array.isArray(parsed?.ui?.recentProjects) ? parsed.ui.recentProjects.filter((item: unknown) => typeof item === 'string').slice(0, 10) : [],
@@ -1429,7 +1428,7 @@ function App() {
   const [importAssDataIncremental, setImportAssDataIncremental] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [quickSavePath, setQuickSavePath] = useState('');
-  const [exportOutputPath, setExportOutputPath, exportOutputPathRef] = useLiveState('');
+  const [exportOutputPath, setExportOutputPath, exportOutputPathRef] = useLiveState(() => readExportPreferences(config).outputPath);
   const [exportRange, setExportRange, exportRangeRef] = useLiveState({ start: 0, end: 0 });
   const [isExporting, setIsExporting, isExportingRef] = useLiveState(false);
   const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null);
@@ -1458,14 +1457,14 @@ function App() {
   const [bubbleSnapshotSidePadding, setBubbleSnapshotSidePadding, bubbleSnapshotSidePaddingRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotSidePadding ?? DEFAULT_UI_CONFIG.bubbleSnapshotSidePadding));
   const [bubbleSnapshotBubbleWidthPercent, setBubbleSnapshotBubbleWidthPercent, bubbleSnapshotBubbleWidthPercentRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotBubbleWidthPercent ?? DEFAULT_UI_CONFIG.bubbleSnapshotBubbleWidthPercent));
   const [bubbleSnapshotExportScale, setBubbleSnapshotExportScale, bubbleSnapshotExportScaleRef] = useLiveState(() => Number(config.ui?.bubbleSnapshotExportScale ?? DEFAULT_UI_CONFIG.bubbleSnapshotExportScale));
-  const [exportQuality, setExportQuality, exportQualityRef] = useLiveState<'fast' | 'balance' | 'high'>('balance');
-  const [exportHardware, setExportHardware, exportHardwareRef] = useLiveState<'auto' | 'gpu' | 'cpu'>('auto');
-  const [exportParallelSegments, setExportParallelSegments, exportParallelSegmentsRef] = useLiveState(false);
-  const [exportFormat, setExportFormat, exportFormatRef] = useLiveState<'mp4' | 'mov-alpha' | 'webm-alpha'>('mp4');
-  const [exportLogEnabled, setExportLogEnabled, exportLogEnabledRef] = useLiveState(() => Boolean(config.exportLogEnabled));
-  const [filenameTemplate, setFilenameTemplate, filenameTemplateRef] = useLiveState<'default' | 'timestamp' | 'unix' | 'custom'>('default');
-  const [customFilename, setCustomFilename, customFilenameRef] = useLiveState('');
-  const [persistedCustomFilename, setPersistedCustomFilename, persistedCustomFilenameRef] = useLiveState('');
+  const [exportQuality, setExportQuality, exportQualityRef] = useLiveState<'fast' | 'balance' | 'high'>(() => readExportPreferences(config).exportQuality);
+  const [exportHardware, setExportHardware, exportHardwareRef] = useLiveState<'auto' | 'gpu' | 'cpu'>(() => readExportPreferences(config).exportHardware);
+  const [exportParallelSegments, setExportParallelSegments, exportParallelSegmentsRef] = useLiveState(() => readExportPreferences(config).exportParallelSegments);
+  const [exportFormat, setExportFormat, exportFormatRef] = useLiveState<'mp4' | 'mov-alpha' | 'webm-alpha'>(() => readExportPreferences(config).exportFormat);
+  const [exportLogEnabled, setExportLogEnabled, exportLogEnabledRef] = useLiveState(() => readExportPreferences(config).exportLogEnabled);
+  const [filenameTemplate, setFilenameTemplate, filenameTemplateRef] = useLiveState<'default' | 'timestamp' | 'unix' | 'custom'>(() => readExportPreferences(config).filenameTemplate);
+  const [customFilename, setCustomFilename, customFilenameRef] = useLiveState(() => readExportPreferences(config).customFilename);
+  const [persistedCustomFilename, setPersistedCustomFilename, persistedCustomFilenameRef] = useLiveState(() => readExportPreferences(config).customFilename);
   const [cachedRemoteAssets, setCachedRemoteAssets, cachedRemoteAssetsRef] = useLiveState<Record<string, string>>({});
   const [presets, setPresets, presetsRef] = useLiveState<Record<string, any>>(() => config.ui?.presets ?? DEFAULT_UI_CONFIG.presets);
   const [annotationPresets, setAnnotationPresets, annotationPresetsRef] = useLiveState<Record<string, any>>(() => config.ui?.annotationPresets ?? DEFAULT_UI_CONFIG.annotationPresets);
@@ -1515,10 +1514,10 @@ function App() {
   const customFilenamePersistTimeoutRef = useRef<number | null>(null);
   const autoSavedTitleTimeoutRef = useRef<number | null>(null);
   const pendingUnsavedProjectActionRef = useRef<(() => void | Promise<void>) | null>(null);
-  const simpleModeCustomFilenameRef = useRef('');
+  const simpleModeCustomFilenameRef = useRef(readExportPreferences(config).simpleCustomFilename);
   const isProjectDirtyRef = useRef(false);
   const pendingElectronAppCloseRef = useRef(false);
-  const advancedModeCustomFilenameRef = useRef('');
+  const advancedModeCustomFilenameRef = useRef(readExportPreferences(config).advancedCustomFilename);
   const debouncedConfigCommitTimerRef = useRef<number | null>(null);
 
   const waveformZoomPersistTimeoutRef = useRef<number | null>(null);
@@ -1538,6 +1537,19 @@ function App() {
     [duration, latestSubtitleEnd, exportRange.end]
   );
   const hasAudioSource = Boolean(webAudioObjectUrl || config.audioPath);
+  const getExportPreferencesSnapshot = useCallback((): ExportPreferences => ({
+    outputPath: exportOutputPathRef.current,
+    filenameEditorMode: exportFilenameEditorModeRef.current,
+    filenameTemplate: filenameTemplateRef.current,
+    customFilename: customFilenameRef.current,
+    simpleCustomFilename: simpleModeCustomFilenameRef.current,
+    advancedCustomFilename: advancedModeCustomFilenameRef.current,
+    exportQuality: exportQualityRef.current,
+    exportHardware: exportHardwareRef.current,
+    exportParallelSegments: exportParallelSegmentsRef.current,
+    exportFormat: exportFormatRef.current,
+    exportLogEnabled: exportLogEnabledRef.current,
+  }), []);
   const createHistorySnapshot = useCallback((): HistorySnapshot => ({
     config: {
       ...configRef.current,
@@ -1559,6 +1571,7 @@ function App() {
         audioVolume: audioVolumeRef.current,
         waveformZoomLevel: waveformZoomLevelRef.current,
         exportFilenameEditorMode: exportFilenameEditorModeRef.current,
+        exportPreferences: getExportPreferencesSnapshot(),
         subtitlePanelCompactMode: subtitlePanelCompactModeRef.current,
         presets: presetsRef.current,
         annotationPresets: annotationPresetsRef.current,
@@ -1735,13 +1748,7 @@ function App() {
     exportRangeTouchedRef.current = false;
     isApplyingConfigExportRangeRef.current = false;
     setExportRange({ start: 0, end: 0 });
-    setExportQuality('balance');
-    setExportHardware('auto');
-    setExportParallelSegments(false);
-    setExportFormat('mp4');
-    setExportLogEnabled(true);
     setQuickSavePath('');
-    setExportOutputPath('');
     setExportStatusMessage(null);
     setLastExportOutputPath('');
     setLastExportSucceeded(false);
@@ -1749,11 +1756,6 @@ function App() {
     setShowAutoSavedTitle(false);
     setShowExportModal(false);
     setExportProgressSnapshot(null);
-    setFilenameTemplate('default');
-    setCustomFilename('');
-    setPersistedCustomFilename('');
-    simpleModeCustomFilenameRef.current = '';
-    advancedModeCustomFilenameRef.current = '';
     setSpeakerReplaceDialog(null);
     setImportProjectSettingsDialog(null);
     setProjectResourceCheckDialog(null);
@@ -1811,6 +1813,7 @@ function App() {
     setAudioVolume(snapshot.config.ui.audioVolume);
     setWaveformZoomLevel(snapshot.config.ui.waveformZoomLevel);
     setExportFilenameEditorMode(snapshot.config.ui.exportFilenameEditorMode);
+    setExportOutputPath(readExportPreferences(snapshot.config).outputPath);
     setSubtitlePanelCompactMode(snapshot.config.ui.subtitlePanelCompactMode);
     setPresets(snapshot.config.ui.presets);
     setAnnotationPresets(snapshot.config.ui.annotationPresets);
@@ -4197,13 +4200,13 @@ const [previewScale, setPreviewScale] = useState(1);
     }
 
     setQuickSavePath(paths.quickSavePath);
-    setExportOutputPath((prev) => prev || paths.suggestedPath || paths.quickSavePath);
+    // Without a remembered location the export goes to the quick save directory.
+    setExportOutputPath((prev) => prev || paths.quickSavePath || paths.suggestedPath);
     return paths;
   }, [getHistory, getProjectFileStem, isProjectLifecycleCurrent, projectPathRef]);
 
   useEffect(() => {
     exportRangeTouchedRef.current = false;
-    setExportOutputPath('');
     setExportStatusMessage(null);
     setLastExportSucceeded(false);
   }, [projectPath, config.projectId]);
@@ -4222,36 +4225,20 @@ const [previewScale, setPreviewScale] = useState(1);
   }, [projectPath, config.projectId, config.exportRange?.start, config.exportRange?.end, config.exportRangeCustomized]);
 
   useEffect(() => {
-    const nextQuality = config.exportQuality === 'fast' || config.exportQuality === 'balance' || config.exportQuality === 'high'
-      ? config.exportQuality
-      : 'balance';
-    setExportQuality((prev) => (prev === nextQuality ? prev : nextQuality));
-
-    const nextTemplate = config.filenameTemplate === 'default' || config.filenameTemplate === 'timestamp' || config.filenameTemplate === 'unix' || config.filenameTemplate === 'custom'
-      ? config.filenameTemplate
-      : 'default';
-    setFilenameTemplate((prev) => (prev === nextTemplate ? prev : nextTemplate));
-
-    const nextCustomFilename = typeof config.customFilename === 'string' ? config.customFilename : '';
-    const nextEditorMode = config.ui?.exportFilenameEditorMode === 'advanced'
-      ? 'advanced'
-      : (nextTemplate === 'custom' && /\{\$[A-Za-z0-9-]+\}/.test(nextCustomFilename) ? 'advanced' : 'simple');
-    if (nextTemplate === 'custom') {
-      if (nextEditorMode === 'advanced') {
-        advancedModeCustomFilenameRef.current = nextCustomFilename;
-      } else {
-        simpleModeCustomFilenameRef.current = nextCustomFilename;
-      }
-    }
-    setCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
-    setPersistedCustomFilename((prev) => (prev === nextCustomFilename ? prev : nextCustomFilename));
-    const nextHardware = config.exportHardware === 'gpu' || config.exportHardware === 'cpu' ? config.exportHardware : 'auto';
-    setExportHardware((prev) => (prev === nextHardware ? prev : nextHardware));
-    setExportParallelSegments((prev) => (prev === Boolean(config.exportParallelSegments) ? prev : Boolean(config.exportParallelSegments)));
-    const nextFormat = config.exportFormat === 'mov-alpha' || config.exportFormat === 'webm-alpha' ? config.exportFormat : 'mp4';
-    setExportFormat((prev) => (prev === nextFormat ? prev : nextFormat));
-    setExportLogEnabled((prev) => (prev === Boolean(config.exportLogEnabled) ? prev : Boolean(config.exportLogEnabled)));
-  }, [config.exportQuality, config.filenameTemplate, config.customFilename, config.exportHardware, config.exportParallelSegments, config.exportFormat, config.exportLogEnabled]);
+    const preferences = readExportPreferences(config);
+    setExportOutputPath(preferences.outputPath);
+    setExportQuality(preferences.exportQuality);
+    setExportHardware(preferences.exportHardware);
+    setExportParallelSegments(preferences.exportParallelSegments);
+    setExportFormat(preferences.exportFormat);
+    setExportLogEnabled(preferences.exportLogEnabled);
+    setFilenameTemplate(preferences.filenameTemplate);
+    setExportFilenameEditorMode(preferences.filenameEditorMode);
+    setCustomFilename(preferences.customFilename);
+    setPersistedCustomFilename(preferences.customFilename);
+    simpleModeCustomFilenameRef.current = preferences.simpleCustomFilename;
+    advancedModeCustomFilenameRef.current = preferences.advancedCustomFilename;
+  }, [config.ui?.exportPreferences]);
 
   useEffect(() => {
     if (renderTransactionRevision !== transactionRevisionRef.current) return;
@@ -4270,6 +4257,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const currentExportLogEnabled = exportLogEnabledRef.current;
     const currentFilenameTemplate = filenameTemplateRef.current;
     const currentPersistedCustomFilename = persistedCustomFilenameRef.current;
+    const currentPreferences = getExportPreferencesSnapshot();
 
     if (isApplyingConfigExportRangeRef.current) {
       const sourceRange = config.exportRange;
@@ -4284,7 +4272,6 @@ const [previewScale, setPreviewScale] = useState(1);
         : false;
       if (sameAsConfig) {
         isApplyingConfigExportRangeRef.current = false;
-        return;
       }
     }
 
@@ -4300,8 +4287,9 @@ const [previewScale, setPreviewScale] = useState(1);
       const sameLogEnabled = Boolean(prev.exportLogEnabled) === currentExportLogEnabled;
       const sameTemplate = prev.filenameTemplate === currentFilenameTemplate;
       const sameCustomFilename = prev.customFilename === currentPersistedCustomFilename;
+      const samePreferences = JSON.stringify(prev.ui?.exportPreferences) === JSON.stringify(currentPreferences);
 
-      if (sameExportRange && sameExportRangeCustomized && sameQuality && sameHardware && sameParallelSegments && sameFormat && sameLogEnabled && sameTemplate && sameCustomFilename) {
+      if (sameExportRange && sameExportRangeCustomized && sameQuality && sameHardware && sameParallelSegments && sameFormat && sameLogEnabled && sameTemplate && sameCustomFilename && samePreferences) {
         return prev;
       }
 
@@ -4315,10 +4303,15 @@ const [previewScale, setPreviewScale] = useState(1);
         exportFormat: currentExportFormat,
         exportLogEnabled: currentExportLogEnabled,
         filenameTemplate: currentFilenameTemplate,
-        customFilename: currentPersistedCustomFilename
+        customFilename: currentPersistedCustomFilename,
+        ui: {
+          ...prev.ui,
+          exportFilenameEditorMode: currentPreferences.filenameEditorMode,
+          exportPreferences: currentPreferences,
+        },
       };
     });
-  }, [exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename]);
+  }, [exportRange, exportQuality, exportHardware, exportParallelSegments, exportFormat, exportLogEnabled, filenameTemplate, persistedCustomFilename, exportFilenameEditorMode, exportOutputPath]);
 
   useEffect(() => {
     if (!window.electron) return;
@@ -4379,8 +4372,9 @@ const [previewScale, setPreviewScale] = useState(1);
     if (!exportRangeTouchedRef.current) {
       setExportRange((prev) => (isSameRange(prev, defaults) ? prev : defaults));
     }
-    if (paths?.suggestedPath && !exportOutputPathRef.current) {
-      setExportOutputPath(paths.suggestedPath);
+    if (!exportOutputPathRef.current) {
+      const fallbackPath = paths?.quickSavePath || paths?.suggestedPath;
+      if (fallbackPath) setExportOutputPath(fallbackPath);
     }
     if (window.electron) {
       const cacheRequestId = ++renderCacheInfoRequestRef.current;
@@ -6401,7 +6395,7 @@ const [previewScale, setPreviewScale] = useState(1);
     const targetSpeakerNames = savedSpeakerNamesRef.current;
 
     if (!window.electron || !targetProjectPath || targetProjectPath === 'web-demo') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalConfig));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...createHistorySnapshot().config, ...finalConfig }));
       rememberRecentProject(finalConfig.projectTitle || 'web-demo');
       if (getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath) clearProjectDirty();
       if (options?.source === 'autosave' && targetProjectPath && getHistory().isSaveCurrent(saveToken) && projectPathRef.current === targetProjectPath) {
@@ -7548,15 +7542,37 @@ const [previewScale, setPreviewScale] = useState(1);
     pendingElectronAppCloseRef.current = true;
 
     await runWithUnsavedProjectGuard(async () => {
-      pendingElectronAppCloseRef.current = false;
-      await window.electron.confirmAppClose();
+      try {
+        // Closing can beat the 500 ms debounce. Save live preferences before the
+        // main process is allowed to destroy the renderer, including "Discard".
+        await biliup.flushPreferences();
+        const latestConfig = {
+          ...createHistorySnapshot().config,
+          content: [...subtitlesRef.current]
+            .sort((a, b) => a.start - b.start || a.end - b.end)
+            .map((subtitle) => ({
+              start: subtitle.start, end: subtitle.end, speaker: subtitle.speakerId,
+              type: 'text', text: subtitle.text, visible: subtitle.visible !== false,
+              clearBubblesBefore: subtitle.clearBubblesBefore === true,
+            })),
+        };
+        const saved = await enqueueConfigFileOperation(() => window.electron.saveConfig(latestConfig));
+        if (!saved) throw new Error('The app preferences could not be written');
+        pendingElectronAppCloseRef.current = false;
+        await window.electron.confirmAppClose();
+      } catch (error) {
+        pendingElectronAppCloseRef.current = false;
+        await window.electron.cancelAppClose();
+        showToast(t('dialog.errorSaveFailed'), 'error');
+        console.error('Failed to save preferences before closing:', error);
+      }
     });
 
     if (pendingElectronAppCloseRef.current && !pendingUnsavedProjectActionRef.current) {
       pendingElectronAppCloseRef.current = false;
       await window.electron.cancelAppClose();
     }
-  }, [runWithUnsavedProjectGuard, biliup.getState, t]);
+  }, [runWithUnsavedProjectGuard, biliup.getState, biliup.flushPreferences, createHistorySnapshot, enqueueConfigFileOperation, showToast, t]);
 
   useEffect(() => {
     if (!window.electron) {

@@ -5,6 +5,7 @@ import {
   type BiliupPreferences, type BiliupState, type BiliupUploadPlan,
 } from '../biliup';
 import { translate } from '../i18n';
+import { useLiveState } from '../hooks/useLiveState';
 import { BiliupActionsContext, BiliupContext, BiliupFlowStateContext, BiliupProgressContext, type BiliupActionsContextValue, type BiliupAppearance, type BiliupContextValue, type BiliupFlowState, type BiliupProgressState, unwrapBiliup } from './BiliupContext';
 import { BiliupModal } from './BiliupModal';
 
@@ -14,7 +15,8 @@ export { unwrapBiliup, useBiliup } from './BiliupContext';
 type Appearance = BiliupAppearance;
 
 export function BiliupProvider({ children }: { children: ReactNode }) {
-  const [preferences, setPreferences] = useState(emptyBiliupPreferences);
+  const [preferences, setPreferences, preferencesRef] = useLiveState(emptyBiliupPreferences);
+  const preferencesSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [state, setState] = useState(idleBiliupState);
   const [loaded, setLoaded] = useState(false);
   const [autoUpload, setAutoUploadState] = useState(false);
@@ -42,25 +44,37 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     void api.state().then(unwrapBiliup).then((next) => { if (alive && !receivedState) updateState(next); })
       .catch(() => { if (alive) setError('input'); });
     return () => { alive = false; unsubscribe(); };
-  }, [updateState]);
+  }, [setPreferences, updateState]);
 
-  const save = useCallback(async (next: BiliupPreferences) => {
-    if (!window.electron || !loaded) throw new Error('settings');
-    const normalized = unwrapBiliup(await window.electron.biliup.save(next));
-    setPreferences(normalized);
-    setAutoUploadState(normalized.autoUpload);
-    setError('');
-  }, [loaded]);
+  const save = useCallback((patch: Partial<BiliupPreferences>): Promise<void> => {
+    if (!window.electron || !loaded) return Promise.reject(new Error('settings'));
+    // Merge at execution time: rapid template and toggle changes must not write
+    // stale copies over each other, or overlap the main process's atomic write.
+    const queued = preferencesSaveQueue.current.catch(() => {}).then(async () => {
+      const normalized = unwrapBiliup(await window.electron.biliup.save({ ...preferencesRef.current, ...patch }));
+      setPreferences(normalized);
+      setAutoUploadState(normalized.autoUpload);
+      setError('');
+    });
+    preferencesSaveQueue.current = queued;
+    return queued;
+  }, [loaded, preferencesRef, setPreferences]);
+  const flushPreferences = useCallback(async () => {
+    for (;;) {
+      const pending = preferencesSaveQueue.current;
+      await pending;
+      if (pending === preferencesSaveQueue.current) return;
+    }
+  }, []);
   const setAutoUpload = useCallback((enabled: boolean) => {
     const nextEnabled = enabled && canAutoUpload;
-    const previousEnabled = preferences.autoUpload;
     setAutoUploadState(nextEnabled);
     if (!window.electron || !loaded) return;
-    void save({ ...preferences, autoUpload: nextEnabled }).catch((failure) => {
-      setAutoUploadState(previousEnabled);
+    void save({ autoUpload: nextEnabled }).catch((failure) => {
+      setAutoUploadState(preferencesRef.current.autoUpload);
       setError(failure instanceof Error ? failure.message : 'settings');
     });
-  }, [canAutoUpload, loaded, preferences, save]);
+  }, [canAutoUpload, loaded, preferencesRef, save]);
 
   useEffect(() => {
     if (state.kind !== 'upload') return;
@@ -80,18 +94,23 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     setIsOpen(true);
   }, []);
   const prepare = useCallback(async (format: string, projectName = ''): Promise<BiliupUploadPlan | null> => {
-    if (!autoUpload) return null;
-    if (!canAutoUpload || !selected) throw new Error(validateBiliupSchedule(selected?.dtime || '') || 'template');
+    await flushPreferences();
+    const current = preferencesRef.current;
+    if (!current.autoUpload) return null;
+    const template = current.templates.find((item) => item.id === current.selectedTemplateId);
+    if (!window.electron || !loaded || !current.directory.trim() || !template) throw new Error('template');
+    const templateError = validateBiliupTemplate(template) || validateBiliupSchedule(template.dtime);
+    if (templateError) throw new Error(templateError);
     if (format !== 'mp4') throw new Error('file');
-    const check = unwrapBiliup(await window.electron.biliup.check(preferences.directory));
+    const check = unwrapBiliup(await window.electron.biliup.check(current.directory));
     if (!check.cookieOk) throw new Error(check.error || 'cookie');
     // Snapshot the settings now: edits during a long render must not change its destination.
     return {
-      directory: preferences.directory,
-      template: { ...selected },
-      postUpload: getBiliupPostUploadOptions(preferences, projectName, appearance.language),
+      directory: current.directory,
+      template: { ...template },
+      postUpload: getBiliupPostUploadOptions(current, projectName, appearance.language),
     };
-  }, [appearance.language, autoUpload, canAutoUpload, preferences, selected]);
+  }, [appearance.language, flushPreferences, loaded, preferencesRef]);
   const upload = useCallback(async (plan: BiliupUploadPlan, filePath: string) => {
     setFocusUpload(true);
     setIsOpen(true);
@@ -107,8 +126,8 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     }
   }, [appearance.language, preferences]);
   const actionsValue = useMemo<BiliupActionsContextValue>(() => ({
-    preferences, loaded, autoUpload, error, canAutoUpload, open, setAutoUpload, setError, setAppearance, save, prepare, upload, getState,
-  }), [preferences, loaded, autoUpload, error, canAutoUpload, open, setAutoUpload, save, prepare, upload, getState]);
+    preferences, loaded, autoUpload, error, canAutoUpload, open, setAutoUpload, setError, setAppearance, save, flushPreferences, prepare, upload, getState,
+  }), [preferences, loaded, autoUpload, error, canAutoUpload, open, setAutoUpload, save, flushPreferences, prepare, upload, getState]);
   const flowState = useMemo<BiliupFlowState>(() => ({
     busy: state.busy,
     kind: state.kind,

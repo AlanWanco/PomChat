@@ -25,7 +25,8 @@ export interface BiliupContextValue {
   setAutoUpload: (enabled: boolean) => void;
   setError: (error: string) => void;
   setAppearance: (appearance: BiliupAppearance) => void;
-  save: (preferences: BiliupPreferences) => Promise<void>;
+  save: (preferences: Partial<BiliupPreferences>) => Promise<void>;
+  flushPreferences: () => Promise<void>;
   prepare: (format: string, projectName?: string) => Promise<BiliupUploadPlan | null>;
   upload: (plan: BiliupUploadPlan, filePath: string) => Promise<void>;
 }

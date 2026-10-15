@@ -238,7 +238,7 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
   const [saving, setSaving] = useState(false);
   const accounts = biliup.preferences.accounts;
   const selectedAccount = accounts.find((account) => account.id === biliup.preferences.selectedAccountId) || accounts[0];
-  const savePreferences = (next: typeof biliup.preferences) => {
+  const savePreferences = (next: Partial<typeof biliup.preferences>) => {
     setSaving(true);
     void biliup.save(next).catch((error: Error) => biliup.setError(error.message)).finally(() => setSaving(false));
   };
@@ -246,25 +246,25 @@ export function BiliupDirectorySettings({ language, isDarkMode, themeColor, seco
     const account = accounts.find((item) => item.id === id);
     if (!account) return;
     setDirectoryDraft(null);
-    savePreferences({ ...biliup.preferences, selectedAccountId: account.id, directory: account.directory });
+    savePreferences({ selectedAccountId: account.id, directory: account.directory });
   };
   const addAccount = () => {
     const id = crypto.randomUUID();
     const account = { id, name: `${t('biliup.account.defaultName')} ${accounts.length + 1}`, directory: '' };
-    savePreferences({ ...biliup.preferences, accounts: [...accounts, account], selectedAccountId: id, directory: '' });
+    savePreferences({ accounts: [...accounts, account], selectedAccountId: id, directory: '' });
   };
   const removeAccount = () => {
     if (!selectedAccount || accounts.length <= 1 || !window.confirm(t('biliup.account.deleteConfirm'))) return;
     const remaining = accounts.filter((account) => account.id !== selectedAccount.id);
     const next = remaining[0];
-    savePreferences({ ...biliup.preferences, accounts: remaining, selectedAccountId: next.id, directory: next.directory });
+    savePreferences({ accounts: remaining, selectedAccountId: next.id, directory: next.directory });
   };
   const saveDirectoryValue = (value: string) => {
     if (value === biliup.preferences.directory) return;
     const nextAccounts = selectedAccount
       ? accounts.map((account) => account.id === selectedAccount.id ? { ...account, directory: value } : account)
       : value ? [{ id: 'default', name: t('biliup.account.defaultName'), directory: value }] : [];
-    savePreferences({ ...biliup.preferences, accounts: nextAccounts, selectedAccountId: selectedAccount?.id || (nextAccounts[0]?.id || ''), directory: value });
+    savePreferences({ accounts: nextAccounts, selectedAccountId: selectedAccount?.id || (nextAccounts[0]?.id || ''), directory: value });
   };
   const saveDirectory = () => saveDirectoryValue(directory);
   const chooseDirectory = () => void (async () => {
@@ -318,7 +318,6 @@ export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, sec
   const savePreferences = (patch: Partial<typeof biliup.preferences>) => {
     setSaving(true);
     void biliup.save({
-      ...biliup.preferences,
       projectFolderDirectory,
       projectFolderTemplate,
       ...patch,
@@ -382,7 +381,7 @@ export const BiliupExportControls = memo(function BiliupExportControls({ languag
   const templateSelectionDisabled = !window.electron || !biliup.loaded || isExporting || flowState.busy;
   const autoUploadDisabled = !biliup.canAutoUpload || isExporting || flowState.busy || exportFormat !== 'mp4';
   const selectTemplate = (id: string) => {
-    void biliup.save({ ...biliup.preferences, selectedTemplateId: id }).catch((error: Error) => biliup.setError(error.message));
+    void biliup.save({ selectedTemplateId: id }).catch((error: Error) => biliup.setError(error.message));
   };
   return <div className="space-y-3 rounded-2xl border p-3 text-sm" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}`, color: theme.text }}>
     <div className="flex min-w-0 gap-2">
@@ -545,7 +544,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
       : [{ id: accountId, name: username, directory: preferences.directory }];
     const account = accounts.find((item) => item.id === accountId);
     if (!account) return;
-    await biliup.save({ ...preferences, accounts, selectedAccountId: accountId, directory: account.directory });
+    await biliup.save({ accounts, selectedAccountId: accountId, directory: account.directory });
   };
   const chooseCover = () => void perform(async () => {
     if (!window.electron) return;
@@ -591,7 +590,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
     const error = validateBiliupTemplate(next) || validateBiliupSchedule(next.dtime);
     if (error) throw new Error(error);
     const tagHistory = mergeBiliupTags(splitBiliupTags(next.tag), preferences.tagHistory).slice(0, BILIUP_MAX_TAG_HISTORY);
-    await biliup.save({ ...preferences, selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
+    await biliup.save({ selectedTemplateId: next.id, templates: [...preferences.templates.filter((item) => item.id !== next.id), next], tagHistory });
     replaceDraft(next); setSaved(true);
   };
   const set = <K extends keyof BiliupTemplate>(key: K, value: BiliupTemplate[K]) => { setSaved(false); setDraft((previous) => ({ ...previous, [key]: value })); };
@@ -750,7 +749,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
         <Tooltip content={t('biliup.delete')} placement="top" width={96} backgroundColor={isDarkMode ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.96)'} borderColor={`${secondaryThemeColor}55`} textColor={theme.text} className="inline-flex shrink-0">
           <button type="button" aria-label={t('biliup.delete')} title={t('biliup.delete')} className="my-[3px] inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: `${secondaryThemeColor}12`, borderColor: `${secondaryThemeColor}44`, color: secondaryThemeColor }} disabled={templateBusy || !draft.id} onClick={() => void perform(async () => {
             if (!window.confirm(t('biliup.deleteConfirm'))) return;
-            await biliup.save({ ...preferences, templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
+            await biliup.save({ templates: preferences.templates.filter((item) => item.id !== draft.id), selectedTemplateId: preferences.selectedTemplateId === draft.id ? '' : preferences.selectedTemplateId });
             replaceDraft(newBiliupTemplate());
           })}><Trash2 size={16} /></button>
         </Tooltip>

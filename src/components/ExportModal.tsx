@@ -580,6 +580,7 @@ export const ExportModal = memo(function ExportModal({
                    <button
                      key={quality}
                      type="button"
+                     aria-pressed={exportQuality === quality}
                      onClick={() => onQualityChange?.(quality)}
                      disabled={isExporting}
                      className="flex-1 rounded-xl px-3 py-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -601,6 +602,7 @@ export const ExportModal = memo(function ExportModal({
                        <button
                          key={mode}
                          type="button"
+                         aria-pressed={exportHardware === mode}
                          onClick={() => onHardwareChange?.(mode)}
                          disabled={isExporting}
                          className="rounded-xl px-2.5 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -656,6 +658,7 @@ export const ExportModal = memo(function ExportModal({
                           >
                             <button
                               type="button"
+                              aria-pressed={exportFormat === format}
                               onClick={() => onExportFormatChange?.(format)}
                               disabled={isExporting}
                               className="w-full rounded-xl px-2.5 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -785,6 +788,7 @@ export const ExportModal = memo(function ExportModal({
                         const templateButton = (
                           <button
                             type="button"
+                            aria-pressed={filenameTemplate === template}
                             onClick={() => onFilenameTemplateChange?.(template)}
                             disabled={isExporting}
                             className="relative w-full rounded-xl px-3 py-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
