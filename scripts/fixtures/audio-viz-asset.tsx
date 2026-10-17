@@ -460,7 +460,7 @@ export async function finishAudioVizEditorTest() {
   await waitFor(() => storedSlide(activeId)?.rotation === 90 && storedSlide(activeId)?.animationDuration === 0.5, 'The rotation and animation sliders must update the asset');
 
   // The image-only sliders appear for image assets.
-  click(button(t('project.addImageAsset')));
+  click(document.querySelector<HTMLButtonElement>('[data-testid="add-image-asset"]')!);
   await settle();
   for (const [id, min, max] of [['asset-image-border-width', '0', '40'], ['asset-image-shadow-size', '0', '80']]) {
     const range = readRange(id);
@@ -590,10 +590,19 @@ export async function runAudioVizInsertionResponsivenessTest() {
   click(button(t('tab.assets')));
   await settle();
 
+  // The waveform player also decodes through Web Audio, so count only the 16 kHz
+  // analysis contexts the visualization creates.
   const nativeDecode = AudioContext.prototype.decodeAudioData;
+  const NativeAudioContext = window.AudioContext;
   let decodeCalls = 0;
+  window.AudioContext = class extends NativeAudioContext {
+    constructor(options?: AudioContextOptions) {
+      super(options);
+      this.__audioVizAnalysis = options?.sampleRate === 16000;
+    }
+  } as typeof AudioContext;
   AudioContext.prototype.decodeAudioData = function (...args) {
-    decodeCalls += 1;
+    if ((this as unknown as { __audioVizAnalysis?: boolean }).__audioVizAnalysis) decodeCalls += 1;
     return nativeDecode.apply(this, args);
   };
   const analyzing = () => document.body.textContent?.includes(t('project.audioVizAnalyzing')) ?? false;
@@ -644,7 +653,7 @@ export async function runAudioVizInsertionResponsivenessTest() {
     importAudio(audio.buffer.slice(0), 'synthetic-episode-again.wav');
     const activeTab = document.querySelector<HTMLElement>('[data-slide-tab-id]');
     if (activeTab) click(activeTab);
-    await waitFor(() => analyzing() && decodeCalls > beforeSwitchDecodes, () => `A new source must start a fresh analysis: decodes=${decodeCalls}/${beforeSwitchDecodes}, panel=${JSON.stringify(readPanel())}, tabs=${[...document.querySelectorAll('[data-slide-tab-id]')].map((tab) => tab.textContent?.slice(0, 45)).join('|')}, cold=${coldMs.toFixed(0)}ms, ${diagnostics()}`);
+    await waitFor(() => decodeCalls > beforeSwitchDecodes, () => `A new source must start a fresh analysis: decodes=${decodeCalls}/${beforeSwitchDecodes}, analyzing=${analyzing()}, ${diagnostics()}`);
     importAudio(createBurstWav(1.6, true).buffer, 'synthetic-silence.wav');
     await waitFor(() => (document.querySelector('audio')?.duration ?? 300) < 2 && !analyzing(), 'The replacement source must complete analysis');
     seek(0.75);
@@ -655,6 +664,7 @@ export async function runAudioVizInsertionResponsivenessTest() {
   } finally {
     cancelAnimationFrame(frameId);
     AudioContext.prototype.decodeAudioData = nativeDecode;
+    window.AudioContext = NativeAudioContext;
     closeAudioVizEditorTest();
   }
 }

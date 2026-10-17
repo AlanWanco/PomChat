@@ -85,6 +85,24 @@ try {
     }
     await page.evaluate(() => window.SettingsRegression.closeBiliupFeedbackPreview());
     results.push('biliup：关闭保存提示与失败信息，390px / 1280px、明暗主题');
+
+    for (const dark of [false, true]) for (const language of ['en', 'zh-CN']) for (const panelWidth of [400, 320]) {
+      await page.setViewport({ width: 900, height: 800, deviceScaleFactor: 1 });
+      const probe = await page.evaluate((language, dark, panelWidth) => window.SettingsRegression.renderAssetInsertRowPreview(language, dark, panelWidth), language, dark, panelWidth);
+      assert(probe.sameWidth, `Insert buttons must share one width at ${probe.panelWidth}px: ${probe.widths.join(' / ')}`);
+      assert(probe.fits, `Insert buttons must not overflow at ${probe.panelWidth}px: ${probe.rowWidth}`);
+      assert(probe.widths[0] * 3 <= probe.rowWidth, 'Three buttons plus the two gaps must fill the row');
+      for (const label of probe.labels) {
+        assert(!label.clipped, `No insert label may be truncated (${label.text} at ${probe.panelWidth}px)`);
+        assert(probe.panelWidth < 400 || label.lines === 1, `Labels stay on one line at the default width (${label.text}: ${label.lines})`);
+      }
+      if (!dark) {
+        const { value } = await page._client().send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+        writeFileSync(path.join(screenshots, `asset-insert-row-${language}-${panelWidth}.png`), Buffer.from(value.data, 'base64'));
+      }
+    }
+    await page.evaluate(() => window.SettingsRegression.closeAssetInsertRowPreview());
+    results.push('素材：插入图片/文字/音频可视化三等分宽度，中英文及明暗主题');
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime or React errors');
   results.forEach((result) => console.log(`PASS ${result}`));

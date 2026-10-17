@@ -3,6 +3,7 @@ export { runUiInteractionTests } from './ui-interactions';
 export { runAppInteractionTests } from './app-interactions';
 export { renderWelcomePreview } from './welcome-preview';
 export { renderBiliupFeedbackPreview, closeBiliupFeedbackPreview } from './biliup-feedback-preview';
+export { renderAssetInsertRowPreview, closeAssetInsertRowPreview } from './asset-insert-row';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { SettingsPanel } from '../../src/components/SettingsPanel';
@@ -201,7 +202,7 @@ export async function runSettingsPanelTests() {
     results.push('素材排序：默认层、同层拖放、跨层拒绝、拖动中增删和外部恢复');
 
     scrolls.length = 0;
-    click(button(t('project.addTextAsset')));
+    click(document.querySelector<HTMLButtonElement>('[data-testid="add-text-asset"]')!);
     await settle();
     assert(slides().length === 4 && selectedName() === slides()[3].name, 'Adding selects newly created asset');
     assert(scrolls.some((item) => item.left !== undefined), 'Adding scrolls to new tab');
@@ -215,7 +216,7 @@ export async function runSettingsPanelTests() {
     replaceSlides(beforeDrag);
     await settle();
     scrolls.length = 0;
-    click(button(t('project.addTextAsset')));
+    click(document.querySelector<HTMLButtonElement>('[data-testid="add-text-asset"]')!);
     patch({ activeTab: 'global' });
     await settle();
     assert(!scrolls.some((item) => item.left !== undefined), 'Hiding before the queued frame defers local tab scroll');
@@ -225,7 +226,7 @@ export async function runSettingsPanelTests() {
     replaceSlides(beforeDrag);
     await settle();
     scrolls.length = 0;
-    click(button(t('project.addTextAsset')));
+    click(document.querySelector<HTMLButtonElement>('[data-testid="add-text-asset"]')!);
     patch({ panelCollapsed: true });
     await settle();
     assert(!scrolls.some((item) => item.left !== undefined), 'Collapsing before the frame defers local tab scroll');
@@ -312,7 +313,7 @@ export async function runSettingsPanelTests() {
         }
         const contentKey = {
           project: 'project.layout', speakers: 'speakers.name', annotation: 'annotation.position',
-          assets: 'project.addTextAsset', global: 'global.language',
+          assets: 'project.insertImages', global: 'global.language',
         }[selected];
         assert(document.body.textContent?.includes(translate(language, contentKey)), `${selected} content appears`);
         assert(!!document.querySelector(`input[value="Alice"]`) === (selected === 'speakers'), 'Speaker editor only appears on its tab');
