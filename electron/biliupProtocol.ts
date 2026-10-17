@@ -34,6 +34,16 @@ export function parseBiliupProgress(text: string): number | null {
   return percent ? Math.min(100, Math.max(0, Number(percent[1]))) : null;
 }
 
+/** Pick the last useful error from already-redacted logs, including a final partial line. */
+export function extractBiliupFailureDetail(logs: readonly string[]): string {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const line = plainTerminalLine(logs[index]).trim();
+    if (line === '[credential output hidden]') continue;
+    if (/\b(?:error|failed|failure|panic(?:ked)?|ApiError|StatusCode)\b|上传失败|投稿失败|错误|异常/i.test(line)) return line.slice(0, 2000);
+  }
+  return '';
+}
+
 export function buildBiliupUploadArgs(template: BiliupTemplate, filename: string, cookieFile: string, help: string): string[] {
   const error = validateBiliupTemplate(template);
   if (error) throw new Error(error);

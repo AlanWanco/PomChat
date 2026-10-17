@@ -8,6 +8,7 @@ import { translate } from '../i18n';
 import { useLiveState } from '../hooks/useLiveState';
 import { BiliupActionsContext, BiliupContext, BiliupFlowStateContext, BiliupProgressContext, type BiliupActionsContextValue, type BiliupAppearance, type BiliupContextValue, type BiliupFlowState, type BiliupProgressState, unwrapBiliup } from './BiliupContext';
 import { BiliupModal } from './BiliupModal';
+import { Toast } from './ui/Toast';
 
 // Keep the old import path available during Vite HMR and for existing consumers.
 export { unwrapBiliup, useBiliup } from './BiliupContext';
@@ -23,7 +24,8 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [focusUpload, setFocusUpload] = useState(false);
   const [error, setError] = useState('');
-  const notifiedUploadBvid = useRef('');
+  const notifiedUploadResult = useRef('');
+  const [uploadFailureNotice, setUploadFailureNotice] = useState<{ message: string } | null>(null);
   const [appearance, setAppearance] = useState<Appearance>({ language: 'zh-CN', isDarkMode: false, themeColor: '#9ca4b8', secondaryThemeColor: '#ed7e96' });
   const stateRef = useRef(state);
   const updateState = useCallback((next: BiliupState) => {
@@ -78,19 +80,31 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (state.kind !== 'upload') return;
-    if (state.phase === 'uploading') {
-      notifiedUploadBvid.current = '';
+    if (state.busy) {
+      notifiedUploadResult.current = '';
+      setUploadFailureNotice(null);
       return;
     }
-    if (state.phase !== 'success' || !state.bvid || notifiedUploadBvid.current === state.bvid || !window.electron) return;
-    notifiedUploadBvid.current = state.bvid;
-    void window.electron.showNotification({ title: 'PomChat', body: translate(appearance.language, 'biliup.uploadSuccess') }).catch(() => {});
-  }, [appearance.language, state.bvid, state.kind, state.phase]);
+    const failed = state.phase === 'failed';
+    if (!failed && (state.phase !== 'success' || !state.bvid)) return;
+    const result = failed ? `failed:${state.error || 'upload'}:${state.errorDetail || ''}` : `success:${state.bvid}`;
+    if (notifiedUploadResult.current === result) return;
+    notifiedUploadResult.current = result;
+    const body = translate(appearance.language, failed ? 'biliup.uploadFailed' : 'biliup.uploadSuccess');
+    if (failed) setUploadFailureNotice({ message: `${body} · ${translate(appearance.language, `biliup.error.${state.error || 'upload'}`)}` });
+    void window.electron?.showNotification?.({ title: 'PomChat', body }).catch(() => {});
+  }, [appearance.language, state.busy, state.bvid, state.error, state.errorDetail, state.kind, state.phase]);
+
+  useEffect(() => {
+    if (!uploadFailureNotice) return;
+    const timer = window.setTimeout(() => setUploadFailureNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [uploadFailureNotice]);
 
   const getState = useCallback(() => stateRef.current, []);
   const open = useCallback(() => {
     const current = stateRef.current;
-    setFocusUpload(current.kind === 'upload' && current.busy);
+    setFocusUpload(current.kind === 'upload' && (current.busy || current.phase === 'failed'));
     setIsOpen(true);
   }, []);
   const prepare = useCallback(async (format: string, projectName = ''): Promise<BiliupUploadPlan | null> => {
@@ -136,8 +150,9 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     captchaUrl: state.captchaUrl,
     captchaStatus: state.captchaStatus,
     error: state.error,
+    errorDetail: state.errorDetail,
     bvid: state.bvid,
-  }), [state.busy, state.kind, state.phase, state.qrImage, state.captchaUrl, state.captchaStatus, state.error, state.bvid]);
+  }), [state.busy, state.kind, state.phase, state.qrImage, state.captchaUrl, state.captchaStatus, state.error, state.errorDetail, state.bvid]);
   const progressState = useMemo<BiliupProgressState>(() => ({
     logs: state.logs,
     progress: state.progress,
@@ -157,6 +172,7 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
         <BiliupContext.Provider value={value}>
           {children}
           {isOpen && <BiliupModal {...appearance} focusUpload={focusUpload} onClose={closeModal} />}
+          {uploadFailureNotice && !isOpen && <Toast message={uploadFailureNotice.message} type="error" isDarkMode={appearance.isDarkMode} />}
         </BiliupContext.Provider>
       </BiliupProgressContext.Provider>
     </BiliupFlowStateContext.Provider>

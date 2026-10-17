@@ -131,6 +131,8 @@ export interface BiliupState {
   captchaUrl: string | null;
   captchaStatus: string;
   error?: string;
+  /** Sanitized terminal output explaining a failed task, when available. */
+  errorDetail?: string;
   bvid?: string;
 }
 export interface BiliupUploadRequest {

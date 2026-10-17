@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildSync } from 'esbuild';
+import './test-biliup-runtime.mjs';
 
 const temporary = mkdtempSync(path.join(tmpdir(), 'pomchat-biliup-test-'));
 try {
@@ -13,7 +14,7 @@ try {
     buildSync({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm' });
     return import(pathToFileURL(outfile).href);
   };
-  const { extractBiliupBvid, extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
+  const { extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
   const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate, getBiliupUploadTitle } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
@@ -28,6 +29,18 @@ try {
   assert.equal(plainTerminalLine('\x1b[2Khello\x00\r'), 'hello\r');
   assert(!redactBiliupLine('token=privatevalue', ['privatevalue']).includes('privatevalue'));
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));
+  const failureDetail = extractBiliupFailureDetail([
+    'biliup upload synthetic.mp4',
+    '\x1b[31mERROR upload failed: connection reset\x1b[0m',
+    '100 MiB/100 MiB (1 MiB/s)',
+  ]);
+  assert.equal(failureDetail, 'ERROR upload failed: connection reset', 'The failure summary must retain the useful terminal error');
+  assert.equal(extractBiliupFailureDetail(['100 MiB/100 MiB', 'finished']), '');
+  assert.equal(extractBiliupFailureDetail(['投稿失败：分区无效']), '投稿失败：分区无效');
+  assert.equal(extractBiliupFailureDetail(['ERROR first', 'Error: last partial line']), 'Error: last partial line');
+  assert.equal(extractBiliupFailureDetail([redactBiliupLine('ERROR network privatevalue', ['privatevalue'])]), 'ERROR network [redacted]');
+  assert.equal(extractBiliupFailureDetail([redactBiliupLine('ERROR access_token: xyz', [])]), '', 'Hidden credentials must not become the failure summary');
+  assert.equal(extractBiliupFailureDetail(['ERROR ' + 'x'.repeat(3000)]).length, 2000);
 
   assert(isBiliupVideoPath('C:\\Videos\\clip.mp4'));
   assert(isBiliupVideoPath('/tmp/clip.mkv'));

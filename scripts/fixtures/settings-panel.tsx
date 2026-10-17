@@ -2,6 +2,7 @@ import { StrictMode, type ComponentProps } from 'react';
 export { runUiInteractionTests } from './ui-interactions';
 export { runAppInteractionTests } from './app-interactions';
 export { renderWelcomePreview } from './welcome-preview';
+export { renderBiliupFeedbackPreview, closeBiliupFeedbackPreview } from './biliup-feedback-preview';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { SettingsPanel } from '../../src/components/SettingsPanel';

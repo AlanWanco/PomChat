@@ -34,7 +34,7 @@ export interface BiliupContextValue {
 export type BiliupActionsContextValue = Omit<BiliupContextValue, 'state'> & {
   getState: () => BiliupState;
 };
-export type BiliupFlowState = Pick<BiliupState, 'busy' | 'kind' | 'phase' | 'qrImage' | 'captchaUrl' | 'captchaStatus' | 'error' | 'bvid'>;
+export type BiliupFlowState = Pick<BiliupState, 'busy' | 'kind' | 'phase' | 'qrImage' | 'captchaUrl' | 'captchaStatus' | 'error' | 'errorDetail' | 'bvid'>;
 export type BiliupProgressState = Pick<BiliupState, 'logs' | 'progress' | 'progressText'>;
 
 type BiliupContextStore = typeof globalThis & {

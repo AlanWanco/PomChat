@@ -26,7 +26,7 @@ import {
 import { translate, type Language } from '../i18n';
 import { createThemeTokens } from '../theme';
 import { Tooltip } from './ui/Tooltip';
-import { unwrapBiliup, useBiliupActions, useBiliupFlowState, useBiliupProgress } from './BiliupContext';
+import { unwrapBiliup, useBiliupActions, useBiliupFlowState, useBiliupProgress, type BiliupFlowState } from './BiliupContext';
 import { captureTextInsertion, insertTextUndoably } from '../utils/undoableTextInput';
 
 interface Appearance { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string }
@@ -372,6 +372,27 @@ export function BiliupPostUploadSettings({ language, isDarkMode, themeColor, sec
   </section>;
 }
 
+function BiliupErrorNotice({ language, isDarkMode, error, state, onViewError }: {
+  language: Language;
+  isDarkMode: boolean;
+  error: string;
+  state?: BiliupFlowState;
+  onViewError?: () => void;
+}) {
+  const t = (key: string) => translate(language, key);
+  const code = error || state?.error || (state?.phase === 'failed' ? state.kind === 'login' ? 'login' : 'upload' : '');
+  if (!code) return null;
+  const key = `biliup.error.${code}`;
+  const translated = t(key);
+  const message = translated === key ? t(state?.kind === 'upload' ? 'biliup.error.upload' : 'biliup.error.input') : translated;
+  return <div role="alert" data-testid="biliup-error" className="space-y-1.5 rounded-xl border p-3 text-sm" style={{ borderColor: '#ef444455', backgroundColor: '#ef44440c', color: isDarkMode ? '#fca5a5' : '#b91c1c' }}>
+    <p className="font-semibold">{t(state?.kind === 'upload' && state.phase === 'failed' ? 'biliup.uploadFailed' : 'biliup.phase.failed')}</p>
+    <p>{message}</p>
+    {state?.phase === 'failed' && state.errorDetail && <p className="max-h-28 select-text overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{state.errorDetail}</p>}
+    {onViewError && <button type="button" className="rounded border border-current px-2.5 py-1.5 text-xs transition-opacity hover:opacity-80" onClick={onViewError}>{t('biliup.viewUploadError')}</button>}
+  </div>;
+}
+
 export const BiliupExportControls = memo(function BiliupExportControls({ language, isDarkMode, themeColor, secondaryThemeColor, isExporting, exportFormat }: { language: Language; isDarkMode: boolean; themeColor: string; secondaryThemeColor: string; isExporting: boolean; exportFormat: string }) {
   const biliup = useBiliupActions();
   const flowState = useBiliupFlowState();
@@ -410,7 +431,7 @@ export const BiliupExportControls = memo(function BiliupExportControls({ languag
         </p>
       </>;
     })()}
-    {biliup.error && <p role="alert" className="text-xs text-red-500">{t(`biliup.error.${biliup.error}`)}</p>}
+    <BiliupErrorNotice language={language} isDarkMode={isDarkMode} error={biliup.error} state={flowState.kind === 'upload' ? flowState : undefined} onViewError={biliup.open} />
   </div>;
 });
 
@@ -459,6 +480,8 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
   const [activeUploadTitle, setActiveUploadTitle] = useState('');
   const [saved, setSaved] = useState(false);
   const uploadSectionRef = useRef<HTMLDivElement>(null);
+  const errorNoticeRef = useRef<HTMLDivElement>(null);
+  const hasError = Boolean(biliup.error || state.error || state.phase === 'failed');
   const captchaViewRef = useRef<HTMLWebViewElement>(null);
   const busy = working || state.busy;
   const templateBusy = working || (state.busy && state.kind === 'login');
@@ -470,10 +493,13 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
   const primaryButtonStyle = { backgroundColor: secondaryThemeColor, borderColor: secondaryThemeColor, color: '#ffffff' };
 
   useEffect(() => {
-    if (!focusUpload) return;
-    const frame = window.requestAnimationFrame(() => uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    if (!focusUpload && !hasError) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = hasError ? errorNoticeRef.current : uploadSectionRef.current;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     return () => window.cancelAnimationFrame(frame);
-  }, [focusUpload]);
+  }, [focusUpload, hasError, biliup.error, state.error, state.errorDetail]);
   useEffect(() => {
     if (import.meta.env.DEV && state.captchaStatus) console.debug('[biliup captcha]', state.captchaStatus);
   }, [state.captchaStatus]);
@@ -701,6 +727,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
       <header className="flex flex-none items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: theme.border, backgroundColor: isDarkMode ? `${themeColor}10` : `${themeColor}06` }}><div><div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: `${secondaryThemeColor}14`, color: secondaryThemeColor, border: `1px solid ${secondaryThemeColor}24` }}>biliup</div><h2 className="text-xl font-semibold" style={{ color: theme.text }}>{t('biliup.settings')}</h2><button type="button" className="mt-1 block max-w-full truncate text-left text-xs underline decoration-current/40 underline-offset-2 transition-opacity hover:opacity-80" style={{ color: secondaryThemeColor }} onClick={() => { if (window.electron) void window.electron.openExternal(BILIUP_PROJECT_URL); }}>{BILIUP_PROJECT_URL}</button></div><button type="button" className="rounded-full p-2 transition-colors" style={{ backgroundColor: isDarkMode ? `${themeColor}16` : `${themeColor}08`, color: theme.textMuted }} aria-label={t('settings.close')} onClick={requestClose}><X size={16} /></button></header>
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto" style={{ '--podchat-scrollbar-thumb': `${secondaryThemeColor}66`, '--podchat-scrollbar-thumb-hover': `${secondaryThemeColor}99` } as React.CSSProperties}>
         <div className="space-y-5 p-6 sm:p-8">
+        {hasError && <div ref={errorNoticeRef}><BiliupErrorNotice language={language} isDarkMode={isDarkMode} error={biliup.error} state={state} /></div>}
         <BiliupDirectorySettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
       <div className="flex flex-wrap gap-2">
         <button type="button" className={buttonClass} style={buttonStyle} disabled={busy || !preferences.directory || !biliup.loaded} onClick={() => void perform(async () => { await applyDetectedUsername(unwrapBiliup(await window.electron.biliup.check(preferences.directory))); })}>{t('biliup.check')}</button>
@@ -864,14 +891,13 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
         <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
         <BiliupUploadProgress language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} kind={state.kind} />
         <BiliupPostUploadSettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />
-        {state.error && <p role="alert" className="text-sm text-red-500">{t(`biliup.error.${state.error}`)}</p>}
         {state.bvid && <p className="text-sm select-text">{[state.bvid, activeUploadTitle || savedTemplate?.title].filter(Boolean).join(' · ')}</p>}
         <button className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={!state.busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>
         </div>
         </div>
       </div>
     </section>
-    {pendingDraftAction && <DraftGuard isDarkMode={isDarkMode} language={language} busy={working} error={biliup.error ? t(`biliup.error.${biliup.error}`) : ''}
+    {pendingDraftAction && <DraftGuard isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} language={language} busy={working} error={biliup.error ? t(`biliup.error.${biliup.error}`) : ''}
       onCancel={() => setPendingDraftAction(null)}
       onDiscard={() => { const action = pendingDraftAction; setPendingDraftAction(null); action(); }}
       onSave={() => void perform(async () => { await saveDraft(); const action = pendingDraftAction; setPendingDraftAction(null); action(); })} />}

@@ -69,6 +69,22 @@ try {
       writeFileSync(path.join(screenshots, `welcome-${width}-${language}-${dark ? 'dark' : 'light'}.png`), Buffer.from(value.data, 'base64'));
     }
     results.push('欢迎页：390px / 800px，中英文和明暗主题');
+    await page.goto({ url: `http://127.0.0.1:${server.address().port}`, timeout: 30_000 });
+    await page.evaluate(async () => {
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/test.css';
+      await new Promise(resolve => { link.onload = resolve; document.head.append(link); });
+    });
+    for (const width of [390, 1280]) for (const dark of [false, true]) for (const mode of ['draft', 'failure']) {
+      await page.setViewport({ width, height: width === 390 ? 844 : 900, deviceScaleFactor: 1 });
+      const layout = await page.evaluate((mode, dark) => window.SettingsRegression.renderBiliupFeedbackPreview(mode, 'zh-CN', dark), mode, dark);
+      assert(!layout.overflow && layout.left >= 0 && layout.right <= width, 'Biliup feedback must fit the viewport');
+      assert(layout.top >= 0 && layout.bottom <= (width === 390 ? 844 : 900), 'Biliup feedback must remain reachable');
+      assert(layout.errorVisible, 'A failure must be visible without searching the console');
+      const { value } = await page._client().send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      writeFileSync(path.join(screenshots, `biliup-${mode}-${width}-${dark ? 'dark' : 'light'}.png`), Buffer.from(value.data, 'base64'));
+    }
+    await page.evaluate(() => window.SettingsRegression.closeBiliupFeedbackPreview());
+    results.push('biliup：关闭保存提示与失败信息，390px / 1280px、明暗主题');
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime or React errors');
   results.forEach((result) => console.log(`PASS ${result}`));

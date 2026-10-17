@@ -10,7 +10,8 @@ import {
   BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
   type BiliupPostUploadOptions, type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
-import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
+import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
+import { translate } from '../src/i18n';
 
 const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
@@ -439,6 +440,11 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : uploadMissingBvid ? 'upload' : undefined);
     const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload' && Boolean(state.bvid);
     const bvid = state.bvid;
+    if (error && state.kind === 'upload' && !extractBiliupFailureDetail(state.logs)) {
+      const language = job.postUpload?.language === 'en' ? 'en' : 'zh-CN';
+      const message = translate(language, uploadMissingBvid ? 'biliup.uploadMissingBvid' : 'biliup.uploadExitError', { code: exitCode });
+      state = { ...state, logs: [...state.logs, `ERROR: ${message}`].slice(-300) };
+    }
     if (uploadSucceeded && bvid && job.postUpload?.createProjectFolder) {
       try {
         const folderPath = await createProjectFolder(job.postUpload, bvid, job.originalFile || '', job.templateTitle || '');
@@ -452,6 +458,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     if (active !== job) return;
     active = null;
     update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
+      errorDetail: error ? extractBiliupFailureDetail(state.logs) || undefined : undefined,
       qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: '' });
     if (uploadSucceeded && bvid && job.postUpload?.checkSubmission) void monitorSubmission(bvid, job.postUpload).catch((monitorError) => {
       debugBiliup('submission status monitor stopped unexpectedly', monitorError instanceof Error ? monitorError.message : 'unknown');
@@ -708,13 +715,24 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
   async function upload(request: BiliupUploadRequest) {
     if (!request || typeof request !== 'object' || typeof request.filePath !== 'string') fail('input');
     const job = begin('upload');
+    const language = request.postUpload?.language === 'en' ? 'en' : 'zh-CN';
+    job.postUpload = normalizePostUploadOptions(request.postUpload, '');
+    let stage = 'template';
+    const prepare = (nextStage: string) => {
+      stage = nextStage;
+      update({ logs: [...state.logs, translate(language, 'biliup.uploadPreparing', { stage: translate(language, `biliup.stage.${stage}`) })].slice(-300) });
+    };
     try {
+      prepare('template');
       const error = validateBiliupTemplate(request.template);
       if (error) fail(error);
+      prepare('runtime');
       const info = await runtime(request.directory);
       checkJob(job);
+      prepare('cookie');
       const auth = await verifyCookieWithRenew(info);
       checkJob(job);
+      prepare('video');
       if (!path.isAbsolute(request.filePath) || !isBiliupVideoPath(request.filePath)) fail('file');
       const original = await fs.realpath(request.filePath);
       if (!(await fs.stat(original)).isFile() || (await fs.stat(original)).size === 0) fail('file');
@@ -724,6 +742,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       job.postUpload = normalizePostUploadOptions(request.postUpload, fallbackProjectName);
       let file = original;
       if (Array.from(path.basename(original)).length > 80 || path.basename(original).length > 80) {
+        prepare('staging');
         job.temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'pomchat-biliup-'));
         file = path.join(job.temporary, `pomchat-video${path.extname(original).toLowerCase()}`);
         try { await fs.link(original, file); }
@@ -732,12 +751,15 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       checkJob(job);
       const template = { ...request.template };
       if (template.cover && !/^https?:\/\//i.test(template.cover)) {
+        prepare('cover');
         template.cover = path.resolve(info.directory, template.cover);
         if (!(await fs.stat(template.cover)).isFile()) fail('file');
       }
+      prepare('arguments');
       const args = buildBiliupUploadArgs(template, file, info.cookie, info.help);
+      prepare('spawn');
       const child = spawnPty(job, info, args);
-      update({ phase: 'uploading', logs: [`biliup upload ${JSON.stringify(path.basename(original))}`] });
+      update({ phase: 'uploading', logs: [...state.logs, `biliup upload ${JSON.stringify(path.basename(original))}`] });
       let partial = '';
       child.onData((chunk) => {
         if (active !== job) return;
@@ -749,7 +771,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
           const line = redactBiliupLine(raw, auth.secrets).trim();
           if (!line) continue;
           const bvid = extractBiliupBvid(line);
-          const progress = parseBiliupProgress(line);
+          const progress = extractBiliupFailureDetail([line]) ? null : parseBiliupProgress(line);
           if (progress !== null) {
             state = { ...state, bvid: bvid || state.bvid, progress, progressText: extractBiliupProgressDetails(line) };
           } else {
@@ -762,12 +784,19 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
         if (partial.trim()) {
           const line = redactBiliupLine(partial, auth.secrets);
           const bvid = extractBiliupBvid(line);
-          if (parseBiliupProgress(line) === null) state = { ...state, bvid: bvid || state.bvid, logs: [...state.logs, line].slice(-300) };
+          if (extractBiliupFailureDetail([line]) || parseBiliupProgress(line) === null) state = { ...state, bvid: bvid || state.bvid, logs: [...state.logs, line].slice(-300) };
           else if (bvid) state = { ...state, bvid };
         }
       });
     } catch (error) {
-      job.forcedError = safeError(error, 'upload');
+      const fallback = ['video', 'cover', 'staging'].includes(stage) ? 'file' : 'upload';
+      job.forcedError = safeError(error, fallback);
+      const systemCode = (error as NodeJS.ErrnoException | null)?.code;
+      const reason = typeof systemCode === 'string' && /^[A-Z][A-Z0-9_]{1,39}$/.test(systemCode)
+        ? systemCode
+        : translate(language, `biliup.error.${job.forcedError}`);
+      const detail = translate(language, 'biliup.uploadPreparationFailed', { stage: translate(language, `biliup.stage.${stage}`), reason });
+      if (active === job) update({ logs: [...state.logs, `ERROR: ${detail}`].slice(-300) });
       await finish(job, 1);
       throw new Error(job.forcedError);
     }

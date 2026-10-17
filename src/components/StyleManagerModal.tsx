@@ -1578,7 +1578,7 @@ export const StyleManagerModal = memo(function StyleManagerModal({ isOpen, langu
       </div>
       {saveError && <p role="alert" className="fixed bottom-4 text-red-500">{saveError}</p>}
       {nameDirty && <p role="status" className="fixed bottom-4">{t('input.namePending')}</p>}
-      {closePrompt && <DraftGuard isDarkMode={isDarkMode} language={language} busy={saving} error={saveError} onSave={() => void saveAll(true)} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
+      {closePrompt && <DraftGuard isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} language={language} busy={saving} error={saveError} onSave={() => void saveAll(true)} onDiscard={onClose} onCancel={() => setClosePrompt(false)} />}
       {deletePrompt && <Dialog aria-label={t('speakers.reassign')} onClose={() => setDeletePrompt(null)} className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 p-4">
         <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: uiTheme.panelBg, color: uiTheme.text }}>
           <p>{t('speakers.reassign')}</p>

@@ -13,7 +13,9 @@ import { BiliupProvider } from '../../src/components/BiliupProvider';
 import { parseTimeInput, correctTimeEndpoint } from '../../src/utils/timeInput';
 import { AVATAR_PLACEHOLDER, handleAvatarError } from '../../src/utils/avatarFallback';
 import { translate } from '../../src/i18n';
-import { emptyBiliupPreferences, idleBiliupState, newBiliupTemplate } from '../../src/biliup';
+import { emptyBiliupPreferences, idleBiliupState, newBiliupTemplate, type BiliupState } from '../../src/biliup';
+import { useBiliupActions } from '../../src/components/BiliupContext';
+import { createThemeTokens } from '../../src/theme';
 
 // Uses only synthetic props. No file writes, network upload, or real account access.
 export async function runUiInteractionTests() {
@@ -179,7 +181,15 @@ export async function runUiInteractionTests() {
     const globalWindow = window as unknown as { electron?: unknown };
     const previousElectron = globalWindow.electron;
     const ok = (value: unknown) => Promise.resolve({ ok: true, value });
-    const installBiliupMock = (title: string) => {
+    const biliupStateListeners = new Set<(state: BiliupState) => void>();
+    let currentBiliupState = idleBiliupState;
+    const notifications: { title: string; body: string }[] = [];
+    const emitBiliupState = async (state: BiliupState) => {
+      currentBiliupState = state;
+      flushSync(() => { for (const listener of biliupStateListeners) listener(state); });
+      await settle();
+    };
+    const installBiliupMock = (title: string, uploadError = '') => {
       const preferences = {
         ...emptyBiliupPreferences,
         directory: '/tmp/synthetic-biliup',
@@ -189,12 +199,15 @@ export async function runUiInteractionTests() {
         accounts: [{ id: 'acc-1', name: 'Synthetic account', directory: '' }],
         templates: [{ ...newBiliupTemplate(), id: 'tpl-1', name: 'Synthetic template', title, tag: 'synthetic' }],
       };
+      currentBiliupState = idleBiliupState;
       globalWindow.electron = {
+        showNotification: (payload: { title: string; body: string }) => { notifications.push(payload); return Promise.resolve(true); },
         biliup: {
           load: () => ok(preferences),
-          state: () => ok(idleBiliupState),
-          onState: () => () => {},
+          state: () => ok(currentBiliupState),
+          onState: (callback: (state: BiliupState) => void) => { biliupStateListeners.add(callback); return () => { biliupStateListeners.delete(callback); }; },
           save: (next: unknown) => ok(next),
+          upload: () => Promise.resolve(uploadError ? { ok: false, error: uploadError } : { ok: true }),
           open: () => {},
         },
       };
@@ -220,6 +233,44 @@ export async function runUiInteractionTests() {
       assert(missingLine?.getAttribute('data-title-state') === 'missing', 'A template without a title must be flagged');
       assert(missingLine?.textContent?.includes(t('biliup.uploadTitleMissing')), 'The missing title must be explained');
       results.push('导出面板：显示本次上传标题及缺失提示');
+
+      installBiliupMock('Synthetic upload');
+      await render(<BiliupProvider key="biliup-upload-failure">{exportModal}</BiliupProvider>);
+      await emitBiliupState({ ...idleBiliupState, kind: 'upload', busy: true, phase: 'uploading' });
+      const failed: BiliupState = { ...idleBiliupState, kind: 'upload', phase: 'failed', error: 'upload', errorDetail: 'ERROR: Synthetic connection reset', logs: ['ERROR: Synthetic connection reset'] };
+      await emitBiliupState(failed);
+      assert(document.querySelector('[data-testid="biliup-error"]')?.textContent?.includes(failed.errorDetail!), 'A failure after upload starts must appear in the export panel');
+      assert(notifications.length === 1 && notifications[0].body === translate('zh-CN', 'biliup.uploadFailed'), 'A background failure must emit one system notification');
+      assert([...document.querySelectorAll('[role="alert"]')].some((node) => node.textContent?.includes(translate('zh-CN', 'biliup.uploadFailed'))), 'A background failure must also show an in-app alert');
+      await emitBiliupState({ ...failed, logs: [...failed.logs, 'trailing output'] });
+      assert(notifications.length === 1, 'Repeated log updates must not repeat the failure notification');
+      click(button(t('biliup.viewUploadError'))); await settle();
+      const uploadDialog = document.querySelector('[aria-label="'+translate('zh-CN', 'biliup.settings')+'"]')!;
+      assert(uploadDialog?.querySelector('[data-testid="biliup-error"]')?.textContent?.includes(failed.errorDetail!), 'Opening a failed upload must show its error inside the dialog');
+      click(uploadDialog.querySelector<HTMLButtonElement>('button[aria-label="'+translate('zh-CN', 'settings.close')+'"]')!);
+      await settle();
+      assert(!document.querySelector('[aria-label="'+translate('zh-CN', 'biliup.settings')+'"]'), 'The failed upload dialog can close');
+      assert(document.querySelector('[data-testid="biliup-error"]')?.textContent?.includes(failed.errorDetail!), 'Closing the upload dialog must retain the error in the export panel');
+      await emitBiliupState({ ...idleBiliupState, kind: 'upload', busy: true, phase: 'starting' });
+      assert(!document.querySelector('[data-testid="biliup-error"]'), 'A new upload must clear the previous task error');
+      await emitBiliupState({ ...idleBiliupState, kind: 'upload', phase: 'cancelled' });
+      assert(notifications.length === 1, 'Cancelling must not be reported as an upload failure');
+      await emitBiliupState({ ...idleBiliupState, kind: 'upload', busy: true, phase: 'starting' });
+      await emitBiliupState({ ...idleBiliupState, kind: 'upload', phase: 'failed' });
+      assert(document.querySelector('[data-testid="biliup-error"]')?.textContent?.includes(t('biliup.error.upload')), 'A failed phase must show a useful message even if no error code arrived');
+      assert(notifications.length === 2, 'A later failed upload must notify again');
+      results.push('biliup：异步失败在导出面板、设置窗口和通知中可见，取消不报失败');
+
+      installBiliupMock('Synthetic upload', 'binary');
+      function UploadStartFailure() {
+        const actions = useBiliupActions();
+        return <button type="button" onClick={() => void actions.upload({ directory: '/synthetic', template: { ...newBiliupTemplate(), name: 'Synthetic', title: 'Synthetic', tag: 'synthetic' } }, '/synthetic.mp4').catch(noop)}>Synthetic upload start</button>;
+      }
+      await render(<BiliupProvider key="biliup-start-failure">{exportModal}<UploadStartFailure /></BiliupProvider>);
+      click(button('Synthetic upload start')); await settle();
+      const startDialog = document.querySelector('[aria-label="'+translate('zh-CN', 'biliup.settings')+'"]')!;
+      assert(startDialog?.querySelector('[data-testid="biliup-error"]')?.textContent?.includes(translate('zh-CN', 'biliup.error.binary')), 'Immediate IPC errors must also appear at the top of the upload dialog');
+      results.push('biliup：上传启动失败显示具体错误');
     } finally {
       if (previousElectron === undefined) delete globalWindow.electron;
       else globalWindow.electron = previousElectron;
@@ -232,6 +283,15 @@ export async function runUiInteractionTests() {
     const closeButton = document.querySelector<HTMLButtonElement>(`button[aria-label="${t('common.close')}"]`) || [...document.querySelectorAll('button')].find(el => el.querySelector('.lucide-x'))!;
     click(closeButton); await settle();
     assert(!uploadClosed && document.body.textContent?.includes(t('draft.title')), 'Upload drafts get three-way protection');
+    const uploadGuard = document.querySelector<HTMLElement>('[aria-label="'+t('draft.title')+'"]')!;
+    const saveDraftButton = [...uploadGuard.querySelectorAll<HTMLButtonElement>('button')].find((node) => node.textContent === t('action.save'))!;
+    const theme = createThemeTokens(appearance.themeColor, false);
+    const expectedSurface = document.createElement('div');
+    expectedSurface.style.color = theme.text;
+    assert((uploadGuard.firstElementChild as HTMLElement).style.color === expectedSurface.style.color, 'The draft guard must use the application text colour');
+    expectedSurface.style.backgroundColor = appearance.secondaryThemeColor;
+    assert(saveDraftButton.style.backgroundColor === expectedSurface.style.backgroundColor && (uploadGuard.firstElementChild as HTMLElement).style.background.includes('linear-gradient'), 'The draft guard must use the secondary theme button and the shared save-dialog surface');
+    assert([...uploadGuard.querySelectorAll('button')].map((node) => node.textContent).join('|') === [t('common.cancel'), t('draft.discard'), t('action.save')].join('|'), 'Draft buttons must match the project save prompt order');
     click(button(t('common.cancel'))); assert(!uploadClosed, 'Cancel retains upload editor');
     results.push('投稿模板：关闭草稿保护和取消');
 
