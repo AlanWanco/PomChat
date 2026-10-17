@@ -95,7 +95,7 @@ try {
       loader: 'ts',
       contents: `
         export * from './src/remotion/audioVizGrid';
-        export { buildAudioVizGridFromAudio, encodeAudioVizGridForIpc } from './electron/audioViz';
+        export { buildAudioVizGridFromAudio, encodeAudioVizGridForIpc, getAudioVizGrid } from './electron/audioViz';
       `,
     },
     outfile: modulePath,
@@ -105,7 +105,7 @@ try {
     external: ['electron'],
   });
   const {
-    buildAudioVizGrid, buildAudioVizGridFromAudio, encodeAudioVizGridForIpc,
+    buildAudioVizGrid, buildAudioVizGridFromAudio, encodeAudioVizGridForIpc, getAudioVizGrid,
     getAudioVizLevels, decodeAudioVizGrid,
   } = createRequire(import.meta.url)(modulePath);
   const compositorDir = path.join(root, 'node_modules', `@remotion/compositor-${process.platform === 'darwin' ? `darwin-${process.arch === 'arm64' ? 'arm64' : 'x64'}` : `${process.platform}-${process.arch}`}`);
@@ -144,6 +144,50 @@ try {
   assert(Math.max(...toneLevels) > 0.4, 'The tone must produce visible levels');
   assert.equal(Math.max(...silentLevels), 0, 'Silence must stay at the baseline');
   console.log(`PASS analysis: FFmpeg streaming grid matches the shared module (worst step ${Math.max(bandDelta, energyDelta)})`);
+
+  const cachedGrid = await getAudioVizGrid(ffmpeg, audioPath);
+  assert.strictEqual(await getAudioVizGrid(ffmpeg, audioPath), cachedGrid, 'The desktop must reuse completed analysis');
+  await assert.rejects(buildAudioVizGridFromAudio(ffmpeg, path.join(temporary, 'missing.wav')));
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(buildAudioVizGridFromAudio(ffmpeg, audioPath, cancelled.signal));
+
+  // A five-minute PCM source exercises multiple FFmpeg chunks and catches main-process stalls.
+  const episode = Buffer.alloc(44 + SAMPLE_RATE * 300 * 2);
+  wav.copy(episode, 0, 0, 44);
+  episode.writeUInt32LE(episode.length - 8, 4);
+  episode.writeUInt32LE(episode.length - 44, 40);
+  for (let offset = 44; offset < episode.length; offset += 320) episode.writeInt16LE(12000, offset);
+  const episodePath = path.join(temporary, 'episode.wav');
+  writeFileSync(episodePath, episode);
+  let heartbeatTicks = 0;
+  let lastTick = performance.now();
+  let maxTickGapMs = 0;
+  const heartbeat = setInterval(() => {
+    const now = performance.now();
+    maxTickGapMs = Math.max(maxTickGapMs, now - lastTick);
+    lastTick = now;
+    heartbeatTicks += 1;
+  }, 16);
+  const analysisStarted = performance.now();
+  let episodeGrid;
+  try {
+    episodeGrid = await buildAudioVizGridFromAudio(ffmpeg, episodePath);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    clearInterval(heartbeat);
+  }
+  assert.equal(episodeGrid.frames, 300 * 60);
+  assert(heartbeatTicks > 5, 'Desktop analysis must keep the main event loop responsive');
+  assert(maxTickGapMs < 120, `Desktop analysis stalled the main event loop for ${maxTickGapMs.toFixed(0)}ms`);
+  const aborting = new AbortController();
+  const abortTimer = setTimeout(() => aborting.abort(), 20);
+  try {
+    await assert.rejects(buildAudioVizGridFromAudio(ffmpeg, episodePath, aborting.signal), /cancelled|aborted/i);
+  } finally {
+    clearTimeout(abortTimer);
+  }
+  console.log(`PASS desktop responsiveness: 5-minute analysis ${(performance.now() - analysisStarted).toFixed(0)}ms, longest heartbeat gap ${maxTickGapMs.toFixed(0)}ms; cache, failure and cancellation`);
 
   const gridPath = path.join(temporary, 'grid.bin');
   writeFileSync(gridPath, Buffer.from(encodeAudioVizGridForIpc(expectedGrid)));
@@ -321,7 +365,9 @@ try {
   assert.deepEqual(errors, [], 'The editor must not report browser errors');
   editorChecks.forEach((check) => console.log(`PASS editor: ${check}`));
 
-
+  const responsive = await page.evaluate(() => window.AudioVizTests.runAudioVizInsertionResponsivenessTest());
+  console.log(`PASS editor responsiveness: cold insert ${responsive.coldMs}ms, longest paint gap ${responsive.maxFrameGapMs}ms; controls, reinsertion cache and source replacement`);
+  assert.deepEqual(errors, [], 'The responsiveness check must not report browser errors');
 
   // Real Remotion render of the same asset, with the audio path blanked the way the
   // export worker does it, so the bars can only come from the analysis file.

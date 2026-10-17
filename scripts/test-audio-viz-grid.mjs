@@ -127,6 +127,29 @@ try {
   assert.throws(() => shortBuilder.push(new Float32Array(4)));
   assert.throws(() => shortBuilder.finish());
   console.log(`PASS audio viz grid: band order, stereo phase, silence, gain, grouping, bounds, scrolling history, round trip and reference match (max delta ${worst.toFixed(3)})`);
+
+  const asyncOutput = path.join(temporary, 'analysis.cjs');
+  await build({ entryPoints: ['src/remotion/audioVizAnalysis.ts'], outfile: asyncOutput, bundle: true, platform: 'node', format: 'cjs' });
+  const { buildAudioVizGridAsync } = createRequire(import.meta.url)(asyncOutput);
+  for (const channels of [[mixed], [mixed, mixed.map((sample) => -sample / 2)]]) {
+    const actual = await buildAudioVizGridAsync(channels, AUDIO_VIZ_SAMPLE_RATE);
+    const expected = buildAudioVizGrid(channels, AUDIO_VIZ_SAMPLE_RATE);
+    assert.deepEqual(actual, expected, 'Yielding and chunked downmixing must preserve every grid byte');
+  }
+  const analysisController = new AbortController();
+  let yields = 0;
+  await assert.rejects(buildAudioVizGridAsync([mixed], AUDIO_VIZ_SAMPLE_RATE, {
+    signal: analysisController.signal,
+    yieldToMain: async () => {
+      yields += 1;
+      analysisController.abort();
+    },
+  }), { name: 'AbortError' });
+  assert.equal(yields, 1, 'A source change must stop analysis at the next yield');
+  await assert.rejects(buildAudioVizGridAsync([], AUDIO_VIZ_SAMPLE_RATE));
+  await assert.rejects(buildAudioVizGridAsync([mixed, new Float32Array(1)], AUDIO_VIZ_SAMPLE_RATE));
+  await assert.rejects(buildAudioVizGridAsync([mixed], AUDIO_VIZ_SAMPLE_RATE, { signal: analysisController.signal }), { name: 'AbortError' });
+  console.log('PASS async analysis: exact grid parity, incremental stereo downmix and cancellation');
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

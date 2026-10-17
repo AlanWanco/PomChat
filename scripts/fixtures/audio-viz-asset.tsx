@@ -6,6 +6,7 @@ import { AVATAR_PLACEHOLDER } from '../../src/utils/avatarFallback';
 import { translate } from '../../src/i18n';
 import { AudioVizAsset } from '../../src/remotion/AudioVizAsset';
 import { AUDIO_VIZ_SAMPLE_RATE, buildAudioVizGrid, decodeAudioVizGrid, getAudioVizLevels, type AudioVizGrid } from '../../src/remotion/audioVizGrid';
+import { buildAudioVizGridAsync } from '../../src/remotion/audioVizAnalysis';
 import type { BackgroundSlideItem } from '../../src/remotion/types';
 
 const SAMPLE_RATE = 16000;
@@ -13,12 +14,11 @@ const TONE_FROM = 0.5;
 const TONE_TO = 1.0;
 
 /** Synthetic audio: silence, a loud tone, then silence again. */
-const createBurstWav = () => {
-  const duration = 1.6;
+const createBurstWav = (duration = 1.6, silent = false) => {
   const samples = new Float32Array(Math.round(SAMPLE_RATE * duration));
   for (let index = 0; index < samples.length; index += 1) {
     const time = index / SAMPLE_RATE;
-    if (time < TONE_FROM || time >= TONE_TO) continue;
+    if (silent || time < TONE_FROM || time >= TONE_TO) continue;
     samples[index] = 0.6 * Math.sin(2 * Math.PI * 440 * time);
   }
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -555,6 +555,110 @@ export function closeAudioVizEditorTest() {
   editorRoot = null;
 }
 
+/** A cold insert must keep painting/responding while it analyzes an episode. */
+export async function runAudioVizInsertionResponsivenessTest() {
+  const audio = createBurstWav(300);
+  localStorage.clear();
+  localStorage.setItem('pomchat_config', JSON.stringify({
+    language: 'en', projectId: 'viz-responsive', projectTitle: 'Responsive insertion',
+    fps: 30, dimensions: { width: 1280, height: 720 }, audioPath: '', assPath: '', subtitleFormat: 'srt',
+    background: { type: 'color', color: '#101828', image: AVATAR_PLACEHOLDER, slides: [] },
+    speakers: { A: { name: 'Alice', type: 'speaker', avatar: AVATAR_PLACEHOLDER, side: 'left' } },
+    content: [{ type: 'text', start: 0, end: 300, text: 'Synthetic episode', speaker: 'A' }],
+    ui: { recentProject: 'Responsive insertion', autoSaveProject: false, presets: {}, annotationPresets: {}, fontPresets: {} },
+  }));
+  localStorage.setItem('pomchat_config_recent_project', 'Responsive insertion');
+  editorRoot = createRoot(document.getElementById('root')!);
+  flushSync(() => editorRoot!.render(<BiliupProvider><App /></BiliupProvider>));
+  await settle();
+  click([...document.querySelectorAll<HTMLElement>('[role="button"]')].find((el) => el.textContent?.includes('Responsive insertion')) ?? null);
+  await settle();
+
+  const importAudio = (buffer: ArrayBuffer, filename: string) => {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"][accept^="audio"]');
+    if (!input) throw new Error('The audio picker must exist');
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([buffer], filename, { type: 'audio/wav' }));
+    input.files = transfer.files;
+    flushSync(() => input.dispatchEvent(new Event('change', { bubbles: true })));
+  };
+  importAudio(audio.buffer, 'synthetic-episode.wav');
+  await waitFor(() => (document.querySelector('audio')?.duration ?? 0) > 290, 'The synthetic episode must load');
+  await settle(24);
+  click(document.querySelector<HTMLButtonElement>(`button[title="${t('menu.settings')}"]`));
+  await settle();
+  click(button(t('tab.assets')));
+  await settle();
+
+  const nativeDecode = AudioContext.prototype.decodeAudioData;
+  let decodeCalls = 0;
+  AudioContext.prototype.decodeAudioData = function (...args) {
+    decodeCalls += 1;
+    return nativeDecode.apply(this, args);
+  };
+  const analyzing = () => document.body.textContent?.includes(t('project.audioVizAnalyzing')) ?? false;
+  const removeLayers = () => {
+    for (const tab of document.querySelectorAll('[data-slide-tab-id]')) click(tab.querySelector<HTMLButtonElement>('button:last-child'));
+  };
+  let frameId = 0;
+  let frames = 0;
+  let lastFrame = performance.now();
+  let maxFrameGapMs = 0;
+  const frame = (time: number) => {
+    if (frames > 0) maxFrameGapMs = Math.max(maxFrameGapMs, time - lastFrame);
+    lastFrame = time;
+    frames += 1;
+    frameId = requestAnimationFrame(frame);
+  };
+  try {
+    frameId = requestAnimationFrame(frame);
+    const started = performance.now();
+    click(document.querySelector<HTMLButtonElement>('[data-testid="add-audio-viz"]'));
+    await waitFor(analyzing, 'A cold insert must show its analysis status');
+    const framesAtAnalysisStart = frames;
+    const mode = document.querySelector<HTMLSelectElement>('[data-testid="audio-viz-mode"]');
+    if (!mode) throw new Error('The inserted layer must expose its controls while analysis runs');
+    setSelect(mode, 'energy');
+    await waitFor(() => !analyzing(), 'The cold analysis must finish');
+    const coldMs = performance.now() - started;
+    const coldPaintedFrames = frames - framesAtAnalysisStart;
+    const coldMaxFrameGapMs = maxFrameGapMs;
+    cancelAnimationFrame(frameId);
+    if (coldPaintedFrames < 3) throw new Error('Analysis must let the editor paint repeatedly');
+    if (coldMaxFrameGapMs > 200) throw new Error(`Analysis stalled painting for ${coldMaxFrameGapMs.toFixed(0)}ms`);
+    if (readPanel().mode !== 'energy') throw new Error('The mode change made during analysis must be retained');
+    const analysisDecodes = decodeCalls;
+    if (analysisDecodes < 1) throw new Error('The first insert must analyze the audio');
+
+    removeLayers();
+    await settle();
+    click(document.querySelector<HTMLButtonElement>('[data-testid="add-audio-viz"]'));
+    await settle();
+    if (analyzing() || decodeCalls !== analysisDecodes) throw new Error('Reinserting the same audio must reuse its completed analysis');
+    seek(0.75);
+    await waitFor(() => Math.max(...readHeights('svg[role="img"]')) > 20, 'A reused grid must still render the tone');
+
+    // Switching audio while a previous analysis is active must cancel its work,
+    // so a late result can never overwrite the new silent source.
+    const beforeSwitchDecodes = decodeCalls;
+    importAudio(audio.buffer.slice(0), 'synthetic-episode-again.wav');
+    const activeTab = document.querySelector<HTMLElement>('[data-slide-tab-id]');
+    if (activeTab) click(activeTab);
+    await waitFor(() => analyzing() && decodeCalls > beforeSwitchDecodes, () => `A new source must start a fresh analysis: decodes=${decodeCalls}/${beforeSwitchDecodes}, panel=${JSON.stringify(readPanel())}, tabs=${[...document.querySelectorAll('[data-slide-tab-id]')].map((tab) => tab.textContent?.slice(0, 45)).join('|')}, cold=${coldMs.toFixed(0)}ms, ${diagnostics()}`);
+    importAudio(createBurstWav(1.6, true).buffer, 'synthetic-silence.wav');
+    await waitFor(() => (document.querySelector('audio')?.duration ?? 300) < 2 && !analyzing(), 'The replacement source must complete analysis');
+    seek(0.75);
+    await settle(24);
+    const heights = readHeights('svg[role="img"]');
+    if (!heights.length || heights.some((height) => height > 3.01)) throw new Error('An outdated source must not replace the new silent grid');
+    return { coldMs: Math.round(coldMs), paintedFrames: coldPaintedFrames, maxFrameGapMs: Math.round(coldMaxFrameGapMs), analysisDecodes };
+  } finally {
+    cancelAnimationFrame(frameId);
+    AudioContext.prototype.decodeAudioData = nativeDecode;
+    closeAudioVizEditorTest();
+  }
+}
+
 /** Helpers for comparing the browser's own analysis with the Node side. */
 let sampledAudio: { grids: number; levels: number; levelCount: number } = { grids: 0, levels: 0, levelCount: 0 };
 export function buildGridFromChannels(channels: Float32Array[], sampleRate: number) {
@@ -593,7 +697,7 @@ export async function buildGridInBrowser(audioUrl: string) {
   const context = new AudioContext({ sampleRate: AUDIO_VIZ_SAMPLE_RATE });
   try {
     const decoded = await context.decodeAudioData(encoded);
-    const grid = buildAudioVizGrid(
+    const grid = await buildAudioVizGridAsync(
       Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index)),
       decoded.sampleRate,
     );
@@ -650,7 +754,7 @@ export async function mountCanvasPreviewFromAudio(audioUrl: string, currentTime:
   let grid: AudioVizGrid;
   try {
     const decoded = await context.decodeAudioData(encoded);
-    grid = buildAudioVizGrid(
+    grid = await buildAudioVizGridAsync(
       Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index)),
       decoded.sampleRate,
     );

@@ -1,12 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AUDIO_VIZ_SAMPLE_RATE, createAudioVizGridBuilder, encodeAudioVizGrid, type AudioVizGrid } from '../src/remotion/audioVizGrid';
+import { AUDIO_VIZ_MAX_DURATION, AUDIO_VIZ_SAMPLE_RATE, encodeAudioVizGrid, type AudioVizGrid } from '../src/remotion/audioVizGrid';
+import { createAsyncAudioVizGridBuilder } from '../src/remotion/audioVizAnalysis';
 
 /** Audio decoding is bounded so a stalled or huge input cannot run away. */
 const FFMPEG_TIMEOUT_MS = 10 * 60_000;
-/** Longest input the analysis reads; beyond this the grid simply stops. */
-const ANALYSIS_LIMIT_HOURS = 2;
 
 const createTimeout = (ffmpeg: ReturnType<typeof spawn>, reject: (error: Error) => void) => setTimeout(() => {
   ffmpeg.kill('SIGKILL');
@@ -36,7 +35,7 @@ const findWavDataOffset = (buffer: Buffer): number => {
  * Convert a streamed 16-bit mono WAV into float samples. The bundled FFmpeg build
  * only offers container output, so the header is parsed instead of skipped blindly.
  */
-const createWavSampleReader = (onSamples: (samples: Float32Array) => void) => {
+const createWavSampleReader = () => {
   let headerBuffer = Buffer.alloc(0);
   let headerDone = false;
   let tail: Uint8Array = new Uint8Array(0);
@@ -49,7 +48,7 @@ const createWavSampleReader = (onSamples: (samples: Float32Array) => void) => {
       const dataOffset = findWavDataOffset(headerBuffer);
       if (dataOffset < 0) {
         if (headerBuffer.length > 256 * 1024) throw new Error('FFmpeg returned an unreadable WAV header.');
-        return;
+        return null;
       }
       headerDone = true;
       payload = headerBuffer.subarray(dataOffset);
@@ -60,12 +59,12 @@ const createWavSampleReader = (onSamples: (samples: Float32Array) => void) => {
     const usable = data.length - (data.length % 2);
     tail = usable === data.length ? new Uint8Array(0) : new Uint8Array(data.subarray(usable));
     const sampleCount = usable / 2;
-    if (!sampleCount) return;
+    if (!sampleCount) return null;
     const samples = new Float32Array(sampleCount);
     for (let index = 0; index < sampleCount; index += 1) {
       samples[index] = data.readInt16LE(index * 2) / 32768;
     }
-    onSamples(samples);
+    return samples;
   };
 };
 
@@ -80,13 +79,22 @@ export function buildAudioVizGridFromAudio(ffmpegPath: string, inputPath: string
       return;
     }
 
-    const builder = createAudioVizGridBuilder(AUDIO_VIZ_SAMPLE_RATE);
+    if (signal?.aborted) {
+      reject(new Error('Audio analysis was cancelled.'));
+      return;
+    }
+
+    const builder = createAsyncAudioVizGridBuilder(AUDIO_VIZ_SAMPLE_RATE, {
+      signal,
+      yieldToMain: () => new Promise<void>((resume) => setImmediate(resume)),
+    });
     const ffmpeg = spawn(ffmpegPath, [
       '-hide_banner',
       '-loglevel', 'error',
       '-nostdin',
       '-i', inputPath,
       '-map', '0:a:0',
+      '-t', String(AUDIO_VIZ_MAX_DURATION),
       '-vn',
       '-ac', '1',
       '-ar', String(AUDIO_VIZ_SAMPLE_RATE),
@@ -117,41 +125,35 @@ export function buildAudioVizGridFromAudio(ffmpegPath: string, inputPath: string
 
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    ffmpeg.once('error', () => {
-      finish(() => reject(new Error('Unable to start FFmpeg for audio analysis.')));
-    });
-
-    const readSamples = createWavSampleReader((samples) => {
-      try {
-        builder.push(samples);
-      } catch (error) {
-        ffmpeg.kill('SIGKILL');
-        finish(() => reject(error instanceof Error ? error : new Error('Audio analysis failed.')));
-      }
-    });
-
-    ffmpeg.stdout?.on('data', (chunk: Buffer) => {
-      try {
-        readSamples(chunk);
-      } catch (error) {
-        ffmpeg.kill('SIGKILL');
-        finish(() => reject(error instanceof Error ? error : new Error('Audio analysis failed.')));
-      }
-    });
-
-    ffmpeg.once('close', (code) => {
-      finish(() => {
-        if (code !== 0) {
-          reject(new Error('FFmpeg could not decode this audio for analysis.'));
-          return;
-        }
-        try {
-          resolve(builder.finish());
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error('Audio analysis failed.'));
-        }
+    const readSamples = createWavSampleReader();
+    const decoded = new Promise<void>((decodedResolve, decodedReject) => {
+      ffmpeg.once('error', () => decodedReject(new Error('Unable to start FFmpeg for audio analysis.')));
+      ffmpeg.once('close', (code) => {
+        if (code === 0) decodedResolve();
+        else decodedReject(new Error('FFmpeg could not decode this audio for analysis.'));
       });
     });
+    // Stream errors can arrive while analysis is yielding, before the promise is awaited.
+    void decoded.catch(() => {});
+
+    void (async () => {
+      try {
+        // Async iteration applies backpressure: FFmpeg cannot queue an entire episode
+        // while the main process yields to window events and IPC.
+        for await (const chunk of ffmpeg.stdout!) {
+          if (settled) return;
+          const samples = readSamples(chunk as Buffer);
+          if (samples) await builder.push(samples);
+        }
+        await decoded;
+        if (settled) return;
+        const grid = builder.finish();
+        finish(() => resolve(grid));
+      } catch (error) {
+        ffmpeg.kill('SIGKILL');
+        finish(() => reject(error instanceof Error ? error : new Error('Audio analysis failed.')));
+      }
+    })();
   });
 }
 
@@ -209,4 +211,4 @@ export async function writeAudioVizGridFile(ffmpegPath: string, source: string, 
   return filePath;
 }
 
-export const AUDIO_VIZ_ANALYSIS_LIMIT_SECONDS = ANALYSIS_LIMIT_HOURS * 60 * 60;
+export const AUDIO_VIZ_ANALYSIS_LIMIT_SECONDS = AUDIO_VIZ_MAX_DURATION;

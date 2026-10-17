@@ -43,10 +43,10 @@ import {
   AUDIO_VIZ_GAIN_LIMITS,
   AUDIO_VIZ_SAMPLE_RATE,
   AUDIO_VIZ_SMOOTHING_LIMITS,
-  buildAudioVizGrid,
   decodeAudioVizGrid,
   type AudioVizGrid,
 } from './remotion/audioVizGrid';
+import { buildAudioVizGridAsync } from './remotion/audioVizAnalysis';
 import { getTextAssetLayout, getTextAssetSvgMetrics } from './remotion/textAssetLayout';
 import { buildAssContent } from './assExport';
 import './App.css';
@@ -5733,8 +5733,9 @@ const [previewScale, setPreviewScale] = useState(1);
   const audioVizSlideCount = backgroundSlides.filter((slide: BackgroundSlideItem) => slide.type === 'audio-viz').length;
   const [audioVizGrid, setAudioVizGrid] = useState<AudioVizGrid | null>(null);
   const [audioVizStatus, setAudioVizStatus] = useState<'idle' | 'analyzing' | 'ready' | 'unavailable'>('idle');
+  const audioVizCacheRef = useRef<{ source: string; grid: AudioVizGrid } | null>(null);
   const audioVizSourceKey = audioVizSlideCount > 0
-    ? (desktopLocalAudioSource ? `desktop:${projectPath || ''}:${config.audioPath}` : `browser:${resolvedAudioPath}`)
+    ? (desktopLocalAudioSource ? `desktop:${projectPath || ''}:${config.audioPath}` : resolvedAudioPath ? `browser:${resolvedAudioPath}` : '')
     : '';
 
   // Analyze once per audio source. The editor and the export read the same grid,
@@ -5746,9 +5747,25 @@ const [previewScale, setPreviewScale] = useState(1);
       return;
     }
 
+    // Desktop cache checks file mtime/size in the main process; browser object URLs
+    // are immutable, so their grid can be reused here after removing/readding a layer.
+    const cached = desktopLocalAudioSource ? null : audioVizCacheRef.current;
+    if (cached?.source === audioVizSourceKey) {
+      setAudioVizGrid(cached.grid);
+      setAudioVizStatus('ready');
+      return;
+    }
+
     let cancelled = false;
     const controller = new AbortController();
+    setAudioVizGrid(null);
     setAudioVizStatus('analyzing');
+    const acceptGrid = (grid: AudioVizGrid) => {
+      if (cancelled) return;
+      if (!desktopLocalAudioSource) audioVizCacheRef.current = { source: audioVizSourceKey, grid };
+      setAudioVizGrid(grid);
+      setAudioVizStatus('ready');
+    };
 
     const analyze = async () => {
       try {
@@ -5758,8 +5775,7 @@ const [previewScale, setPreviewScale] = useState(1);
           if (cancelled) return;
           const grid = buffer ? decodeAudioVizGrid(buffer) : null;
           if (!grid) throw new Error('Audio analysis returned no usable data.');
-          setAudioVizGrid(grid);
-          setAudioVizStatus('ready');
+          acceptGrid(grid);
           return;
         }
 
@@ -5770,13 +5786,13 @@ const [previewScale, setPreviewScale] = useState(1);
         const context = new AudioContext({ sampleRate: AUDIO_VIZ_SAMPLE_RATE });
         try {
           const decoded = await context.decodeAudioData(encoded);
-          const grid = buildAudioVizGrid(
+          if (cancelled) return;
+          const grid = await buildAudioVizGridAsync(
             Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index)),
             decoded.sampleRate,
+            { signal: controller.signal },
           );
-          if (cancelled) return;
-          setAudioVizGrid(grid);
-          setAudioVizStatus('ready');
+          acceptGrid(grid);
         } finally {
           void context.close().catch(() => {});
         }
