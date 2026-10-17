@@ -7,7 +7,7 @@ import type { Language } from '../../src/i18n';
 const noop = () => {};
 let root: Root | undefined;
 
-/** The asset tab header must give the three insert buttons the same width. */
+/** The asset tab header must give the three insert buttons the same width; long labels truncate. */
 export async function renderAssetInsertRowPreview(language: Language, isDarkMode: boolean, panelWidth = 400) {
   root ??= createRoot(document.getElementById('root')!);
   const panel = (width: number) => (

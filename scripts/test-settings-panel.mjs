@@ -93,8 +93,8 @@ try {
       assert(probe.fits, `Insert buttons must not overflow at ${probe.panelWidth}px: ${probe.rowWidth}`);
       assert(probe.widths[0] * 3 <= probe.rowWidth, 'Three buttons plus the two gaps must fill the row');
       for (const label of probe.labels) {
-        assert(!label.clipped, `No insert label may be truncated (${label.text} at ${probe.panelWidth}px)`);
-        assert(probe.panelWidth < 400 || label.lines === 1, `Labels stay on one line at the default width (${label.text}: ${label.lines})`);
+        assert(label.lines === 1, `Insert labels must stay on one line and truncate instead (${label.text} at ${probe.panelWidth}px)`);
+        assert(probe.panelWidth >= 400 || label.clipped, `A narrow panel must truncate the label (${label.text})`);
       }
       if (!dark) {
         const { value } = await page._client().send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
