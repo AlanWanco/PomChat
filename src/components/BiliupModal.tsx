@@ -461,7 +461,7 @@ function BiliupUploadProgress({ language, isDarkMode, themeColor, secondaryTheme
 export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, themeColor, secondaryThemeColor, focusUpload = false, onClose }: Appearance & { focusUpload?: boolean; onClose: () => void }) {
   const biliup = useBiliupActions();
   const state = useBiliupFlowState();
-  const { preferences } = biliup;
+  const { preferences, save: saveBiliupPreferences, setError: setBiliupError } = biliup;
   const t = useCallback((key: string, vars?: Record<string, string | number>) => translate(language, key, vars), [language]);
   const theme = createThemeTokens(themeColor, isDarkMode);
   const [draft, setDraft] = useState<BiliupTemplate>(() => ({ ...(preferences.templates.find((item) => item.id === preferences.selectedTemplateId) || newBiliupTemplate()) }));
@@ -481,19 +481,25 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
   const [uploadFilePath, setUploadFilePath] = useState('');
   const [uploadFilePaths, setUploadFilePaths] = useState<string[]>([]);
   const [uploadFileError, setUploadFileError] = useState('');
-  const [uploadConfirmation, setUploadConfirmation] = useState<{ template: BiliupTemplate; filePaths: string[]; seasonSectionId: string; mode: 'new' | 'append'; targetVideoId: string } | null>(null);
+  const [uploadConfirmation, setUploadConfirmation] = useState<{ template: BiliupTemplate; filePaths: string[]; seasonSectionId: string; seasonSectionLabel: string; mode: 'new' | 'append'; targetVideoId: string } | null>(null);
   const [uploadMode, setUploadMode] = useState<'new' | 'append'>('new');
   const [appendTargetVideoId, setAppendTargetVideoId] = useState('');
   const [appendTargetLookupState, setAppendTargetLookupState] = useState<'empty' | 'loading' | 'valid' | 'invalid'>('empty');
   const [activeUploadTitle, setActiveUploadTitle] = useState('');
+  const [selectedSectionLabel, setSelectedSectionLabel] = useState('');
   const selectedAccount = preferences.accounts.find((account) => account.id === preferences.selectedAccountId) || preferences.accounts[0];
   const accountPreferencesRef = useRef(preferences.accounts);
   useEffect(() => { accountPreferencesRef.current = preferences.accounts; }, [preferences.accounts]);
-  const setAccountSeasonSection = (sectionId: string) => {
-    const nextAccounts = accountPreferencesRef.current.map((account) => account.id === selectedAccount?.id ? { ...account, seasonSectionId: sectionId } : account);
+  const setAccountSeasonSection = useCallback((sectionId: string) => {
+    const previousAccounts = accountPreferencesRef.current;
+    const nextAccounts = previousAccounts.map((account) => account.id === selectedAccount?.id ? { ...account, seasonSectionId: sectionId } : account);
     accountPreferencesRef.current = nextAccounts;
-    void biliup.save({ accounts: nextAccounts }).catch((error: Error) => { accountPreferencesRef.current = preferences.accounts; biliup.setError(error.message); });
-  };
+    void saveBiliupPreferences({ accounts: nextAccounts }).catch((error: Error) => { accountPreferencesRef.current = previousAccounts; setBiliupError(error.message); });
+  }, [saveBiliupPreferences, setBiliupError, selectedAccount?.id]);
+  const handleSeasonSectionIdChange = useCallback((sectionId: string) => {
+    if (!sectionId) setSelectedSectionLabel('');
+    setAccountSeasonSection(sectionId);
+  }, [setAccountSeasonSection]);
   const [saved, setSaved] = useState(false);
   const uploadSectionRef = useRef<HTMLDivElement>(null);
   const errorNoticeRef = useRef<HTMLDivElement>(null);
@@ -723,7 +729,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
   const uploadSelectedFile = () => {
     const filePaths = uploadFilePaths.length ? uploadFilePaths : [uploadFilePath];
     if (!canUploadDraft || filePaths.some((path) => !isVideoPath(path)) || uploadFileError) return;
-    setUploadConfirmation({ template: { ...draft }, filePaths, seasonSectionId: uploadMode === 'new' ? selectedAccount?.seasonSectionId || '' : '', mode: uploadMode, targetVideoId: appendTargetVideoId });
+    setUploadConfirmation({ template: { ...draft }, filePaths, seasonSectionId: uploadMode === 'new' ? selectedAccount?.seasonSectionId || '' : '', seasonSectionLabel: selectedSectionLabel, mode: uploadMode, targetVideoId: appendTargetVideoId });
   };
   const confirmUpload = () => {
     if (!uploadConfirmation) return;
@@ -753,7 +759,9 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
     { label: t('biliup.field.limit'), value: String(uploadConfirmation.template.limit) },
     { label: t('biliup.field.interactive'), value: uploadConfirmation.template.interactive === 1 ? t('biliup.yes') : t('biliup.no') },
     { label: t('biliup.field.isOnlySelf'), value: uploadConfirmation.template.isOnlySelf === '1' ? t('biliup.onlySelf') : t('biliup.public') },
-    { label: t('biliup.library.uploadDestination'), value: uploadConfirmation.seasonSectionId || t('biliup.library.noDestination'), wide: true },
+    { label: t('biliup.library.confirmAction'), value: uploadConfirmation.seasonSectionId
+      ? t('biliup.library.confirmAdd').replace('{destination}', uploadConfirmation.seasonSectionLabel || uploadConfirmation.seasonSectionId)
+      : t('biliup.library.confirmNoDestination'), wide: true },
     { label: t('biliup.library.uploadFiles'), value: uploadConfirmation.filePaths.map((path) => path.split(/[\\/]/).pop()).join('、'), wide: true },
   ] : [
     { label: t('biliup.library.appendTarget'), value: uploadConfirmation.targetVideoId, wide: true },
@@ -763,7 +771,7 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
     { label: t('biliup.library.uploadFiles'), value: uploadConfirmation.filePaths.map((path) => path.split(/[\\/]/).pop()).join('、'), wide: true },
   ] : [];
   const libraryBrowser = window.electron && typeof window.electron.biliup.videoParts === 'function' && typeof window.electron.biliup.inspect === 'function'
-    ? <BiliupLibraryBrowser api={window.electron.biliup} directory={preferences.directory} accountId={selectedAccount?.id || ''} capabilities={currentCapabilities} mode={uploadMode} onTargetVideoChange={(value, status) => { setAppendTargetVideoId(value); setAppendTargetLookupState(status); }} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} t={t} selectedSectionId={selectedAccount?.seasonSectionId || ''} onSelectedSectionIdChange={setAccountSeasonSection} />
+    ? <BiliupLibraryBrowser api={window.electron.biliup} directory={preferences.directory} accountId={selectedAccount?.id || ''} capabilities={currentCapabilities} mode={uploadMode} onTargetVideoChange={(value, status) => { setAppendTargetVideoId(value); setAppendTargetLookupState(status); }} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} t={t} selectedSectionId={selectedAccount?.seasonSectionId || ''} onSelectedSectionIdChange={handleSeasonSectionIdChange} onSelectedSectionLabelChange={setSelectedSectionLabel} />
     : null;
 
   return createPortal(<Dialog aria-label={t('biliup.settings')} onClose={requestClose} onSave={() => { if (!working) void perform(saveDraft); }} className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 px-4 py-6" onMouseDown={(event) => event.stopPropagation()}>
@@ -930,8 +938,8 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
         </div>
       </div>
       </div>}
-      <hr className="my-3" style={{ borderColor: theme.border }} />
-        <div className="flex min-w-0 flex-col gap-2">
+        <div data-testid="biliup-upload-task-panel" className="space-y-4 rounded-2xl border p-4" style={{ borderColor: `${secondaryThemeColor}33`, backgroundColor: `${secondaryThemeColor}${isDarkMode ? '0c' : '06'}` }}>
+        <div className="space-y-2">
           <div className="text-sm font-medium">{t(uploadMode === 'new' ? 'biliup.uploadVideo' : 'biliup.appendFiles')}</div>
           <div className="flex min-w-0 gap-2">
             <input value={uploadFilePath} placeholder={t('biliup.videoPlaceholder')} title={uploadFilePath} onChange={(event) => { setUploadFilePath(event.target.value); setUploadFilePaths([]); setUploadFileError(''); }} onPaste={handleUploadPathPaste} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={handleUploadPathDrop} className={`${singleLineInputClass} min-w-0 flex-1`} style={surface} />
@@ -943,16 +951,20 @@ export const BiliupModal = memo(function BiliupModal({ language, isDarkMode, the
         </div>
         {uploadFileError && <p className="text-xs text-red-500">{uploadFileError}</p>}
         <p className="text-xs opacity-70">{t('biliup.uploadHint')}</p>
-      </div>
-      {uploadMode === 'new' && <p className="text-xs opacity-70">{t('biliup.activeTemplate')}: {draft.name || '—'}</p>}
-      {uploadMode === 'append' && appendTargetVideoId && <p className="text-sm select-text">{t('biliup.library.appendTarget')}: {appendTargetVideoId}</p>}
-      <div ref={uploadSectionRef} className="space-y-2">
-        <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
-        <BiliupUploadProgress language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} kind={state.kind} />
-        {uploadMode === 'new' && <BiliupPostUploadSettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />}
-        {state.bvid && <p className="text-sm select-text">{[state.bvid, uploadMode === 'new' ? activeUploadTitle || savedTemplate?.title : ''].filter(Boolean).join(' · ')}</p>}
-        <button className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={!state.busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>
+        {uploadMode === 'new' && <p className="text-xs opacity-70" data-testid="biliup-active-template">{t('biliup.activeTemplate')}: {draft.name || '—'}</p>}
+        {uploadMode === 'new' && <p className="text-xs font-medium" data-testid="biliup-confirm-destination" role="status">{selectedAccount?.seasonSectionId
+          ? `${t('biliup.library.selectedDestination')}: ${selectedSectionLabel || selectedAccount.seasonSectionId}`
+          : t('biliup.library.noDestination')}</p>}
+        {uploadMode === 'append' && appendTargetVideoId && <p className="text-sm select-text">{t('biliup.library.appendTarget')}: {appendTargetVideoId}</p>}
+        <div ref={uploadSectionRef} className="space-y-3 rounded-xl border p-3" style={{ borderColor: theme.border, backgroundColor: theme.panelBg }}>
+          <div className="flex justify-between text-sm"><span>{t('biliup.console')}</span><span>{state.kind === 'upload' && state.phase === 'success' ? t('biliup.uploadSuccess') : t(`biliup.phase.${state.phase}`)}</span></div>
+          <BiliupUploadProgress language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} kind={state.kind} />
+          {uploadMode === 'new' && <BiliupPostUploadSettings language={language} isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} />}
+          {state.bvid && <p className="text-sm select-text">{[state.bvid, uploadMode === 'new' ? activeUploadTitle || savedTemplate?.title : ''].filter(Boolean).join(' · ')}</p>}
+          <button type="button" className={`${buttonClass} w-full !rounded-full py-2.5`} style={buttonStyle} disabled={!state.busy || busy} onClick={() => void perform(async () => { unwrapBiliup(await window.electron.biliup.cancel()); })}>{t('biliup.cancel')}</button>
         </div>
+        </div>
+      </div>
       </div>
     </section>
     {pendingDraftAction && <DraftGuard isDarkMode={isDarkMode} themeColor={themeColor} secondaryThemeColor={secondaryThemeColor} language={language} busy={working} error={biliup.error ? t(`biliup.error.${biliup.error}`) : ''}

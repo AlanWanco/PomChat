@@ -12,8 +12,13 @@ import { openBrowser } from '@remotion/renderer';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appSource = readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const biliupModalSource = readFileSync(path.join(root, 'src/components/BiliupModal.tsx'), 'utf8');
 assert.ok(appSource.includes('onClose={cancelProjectResourceCheck}'), 'Resource-check Escape must use the revision-invalidating cancel path');
 assert.match(appSource, /const cancelProjectResourceCheck = useCallback\(\(\) => \{\s*projectResourceCheckRevisionRef\.current \+= 1;\s*setProjectResourceCheckDialog\(null\);\s*\}, \[\]\);/, 'Resource-check cancel must invalidate pending operations');
+assert.match(biliupModalSource, /label: t\('biliup\.library\.confirmAction'\), value: uploadConfirmation\.seasonSectionId/, 'New-submission confirmation must state whether its upload joins a collection');
+assert.ok(biliupModalSource.includes('uploadConfirmation.seasonSectionLabel'), 'Submission confirmation shows the resolved collection and section name');
+assert.ok(biliupModalSource.includes('data-testid="biliup-upload-task-panel" className="space-y-4 rounded-2xl border p-4"'), 'Upload controls retain their grouped outer card');
+assert.ok(biliupModalSource.includes('<BiliupPostUploadSettings') && biliupModalSource.includes('disabled={!state.busy || busy}'), 'Post-upload settings and the active-task cancellation control stay inside the upload card');
 const temporary = mkdtempSync(path.join(tmpdir(), 'pomchat-settings-test-'));
 const screenshots = process.argv[2];
 let browser;

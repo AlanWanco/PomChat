@@ -14,7 +14,7 @@ export function renderBiliupLibraryFixture(supported: boolean, mode: 'new' | 'ap
     load: async () => successful({} as never), save: async () => successful({} as never), check: async () => successful({} as never),
     inspect: async () => successful({ version: supported ? '1.2.9' : '1.2.8', seasonsSupported: supported }),
     seasons: async () => { calls.push('seasons'); return successful(hasSeasons ? [{ id: 10, title: 'Synthetic collection', sections: hasSections ? [{ id: 20, title: 'Main' }] : [] }] : []); },
-    seasonContents: async (_directory, seasonId) => { calls.push(`contents:${seasonId}`); return successful({ id: 10, title: 'Synthetic collection', sections: [{ id: 20, title: 'Main', episodes: [{ id: 30, aid: 40, cid: 50, title: 'Synthetic episode' }] }] }); },
+    seasonContents: async (_directory, seasonId) => { calls.push(`contents:${seasonId}`); return successful({ id: seasonId, title: 'Synthetic collection', sections: [{ id: 20, title: 'Main', episodes: [{ id: 30, aid: 40, cid: 50, title: 'Synthetic episode' }] }] }); },
     videoParts: async (videoId) => { calls.push(`parts:${videoId}`); return successful({ aid: 40, bvid: 'BV1abC2deF34', title: 'Synthetic video', pages: [{ cid: 50, page: 1, part: 'Part one', duration: 90 }, { cid: 51, page: 2, part: 'Part two', duration: 30 }] }); },
     testLines: async () => successful([]), login: async () => successful(undefined), attachCaptchaView: async () => successful(undefined),
     dismissCaptchaView: async () => successful(undefined), input: async () => successful(undefined), upload: async () => successful(undefined),
@@ -22,7 +22,7 @@ export function renderBiliupLibraryFixture(supported: boolean, mode: 'new' | 'ap
   } as BiliupApi;
   root ??= createRoot(document.getElementById('root')!);
   let selectedSectionId = '';
-  const render = () => <BiliupLibraryBrowser api={api} directory="/synthetic/biliup" capabilities={{ version: supported ? '1.2.9' : '1.2.8', seasonsSupported: supported }} mode={mode} onTargetVideoChange={noop} isDarkMode={false} themeColor="#9ca4b8" secondaryThemeColor="#ed7e96" t={(key) => key} selectedSectionId={selectedSectionId} onSelectedSectionIdChange={(value) => { selectedSectionId = value; flushSync(render); }} />;
+  const render = () => <BiliupLibraryBrowser api={api} directory="/synthetic/biliup" capabilities={{ version: supported ? '1.2.9' : '1.2.8', seasonsSupported: supported }} mode={mode} onTargetVideoChange={noop} isDarkMode={false} themeColor="#9ca4b8" secondaryThemeColor="#ed7e96" t={(key) => key} selectedSectionId={selectedSectionId} onSelectedSectionIdChange={(value) => { selectedSectionId = value; flushSync(render); }} onSelectedSectionLabelChange={(value) => { calls.push(`section-label:${value}`); }} />;
   flushSync(() => root!.render(render()));
   return calls;
 }
@@ -58,7 +58,19 @@ export async function runBiliupLibraryTests() {
   clickButton('biliup.library.loadSeasons'); await settle();
   clickButton('biliup.library.viewContents'); await settle();
   assert(document.body.textContent?.includes('Synthetic episode'), 'The collection viewer must list section episodes');
+  const contentsNode = document.querySelector<HTMLElement>('[data-testid="biliup-season-contents"]')!;
+  assert(contentsNode?.classList.contains('max-h-80') && contentsNode.classList.contains('overflow-y-auto'), 'Collection contents are contained within a bounded scroll area');
+  const collapseButton = [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.includes('biliup.library.collapseContents'));
+  assert(collapseButton?.getAttribute('aria-expanded') === 'true', 'Expanded contents expose their state and a collapse action');
+  const collapseSelect = document.querySelector<HTMLSelectElement>('select[aria-label="biliup.library.seasons"]')!;
+  assert(collapseSelect.classList.contains('h-9') && collapseButton!.classList.contains('h-9') && collapseSelect.parentElement?.classList.contains('items-center'), 'Season selector and view/collapse button share a fixed height and aligned row');
+  clickButton('biliup.library.collapseContents');
+  assert(!document.querySelector('[data-testid="biliup-season-contents"]'), 'Clicking collapse hides the collection contents');
   assert(supportedCalls.includes('seasons') && supportedCalls.includes('contents:10'), 'Collection browsing loads the owner seasons and selected season contents');
+  const destinationSelect = document.querySelector<HTMLSelectElement>('select[aria-label="biliup.library.uploadDestination"]')!;
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(destinationSelect, '20');
+  flushSync(() => destinationSelect.dispatchEvent(new Event('change', { bubbles: true })));
+  assert(supportedCalls.includes('section-label:Synthetic collection / Main'), 'Selecting a section exposes the collection and section name for upload confirmation');
   closeBiliupLibraryFixture();
 
   const noSeasonCalls = renderBiliupLibraryFixture(true, 'new', false);
