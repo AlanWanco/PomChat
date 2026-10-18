@@ -10,6 +10,36 @@ export function plainTerminalLine(text: string): string {
   }).join('');
 }
 
+/** Parse JSON emitted after biliup's informational stdout lines (for example, its login username). */
+export function parseBiliupJsonOutput(text: string): unknown {
+  const output = plainTerminalLine(text).replace(/^\uFEFF/, '');
+  for (let start = 0; start < output.length; start += 1) {
+    if (output[start] !== '{' && output[start] !== '[') continue;
+    const stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < output.length; index += 1) {
+      const character = output[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === '{' || character === '[') stack.push(character === '{' ? '}' : ']');
+      else if (character === '}' || character === ']') {
+        if (stack.pop() !== character) break;
+        if (stack.length === 0) {
+          try { return JSON.parse(output.slice(start, index + 1)) as unknown; }
+          catch { break; }
+        }
+      }
+    }
+  }
+  throw new Error('invalid-json');
+}
+
 export function extractBiliupProgressDetails(text: string): string {
   const line = plainTerminalLine(text).replace(/[\r\n]+/g, ' ').trim();
   const match = line.match(/([\d.]+\s*(?:B|[KMGT]i?B)\s*\/\s*[\d.]+\s*(?:B|[KMGT]i?B))(?:\s*\(([^)]*)\))?/i);

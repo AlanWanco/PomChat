@@ -14,7 +14,7 @@ try {
     buildSync({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm' });
     return import(pathToFileURL(outfile).href);
   };
-  const { extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
+  const { extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupJsonOutput, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
   const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate, getBiliupUploadTitle, supportsBiliupSeasons } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
@@ -27,6 +27,10 @@ try {
   assert.equal(extractBiliupBvid('投稿成功：BV1abC2deF34'), 'BV1abC2deF34');
   assert.equal(extractBiliupBvid('upload finished'), null);
   assert.equal(plainTerminalLine('\x1b[2Khello\x00\r'), 'hello\r');
+  const seasonJson = `[\n  {"season":{"id":123,"title":"synthetic"},"sections":{"sections":[]}}\n]`;
+  assert.deepEqual(parseBiliupJsonOutput(`\x1b[2m2026-10-18 INFO biliup_cli::uploader: user: Synthetic account\x1b[0m\n${seasonJson}`), [{ season: { id: 123, title: 'synthetic' }, sections: { sections: [] } }], 'Season JSON parsing skips biliup informational output before the document');
+  assert.deepEqual(parseBiliupJsonOutput('\x1b[32m{"ok":true}\x1b[0m\n'), { ok: true }, 'ANSI-wrapped JSON is parsed');
+  assert.throws(() => parseBiliupJsonOutput('informational output without JSON'), /invalid-json/);
   assert(!redactBiliupLine('token=privatevalue', ['privatevalue']).includes('privatevalue'));
   assert(!redactBiliupLine('access_token: xyz', []).includes('xyz'));
   const failureDetail = extractBiliupFailureDetail([

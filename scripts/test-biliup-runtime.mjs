@@ -83,9 +83,10 @@ try {
                 if (args.includes('season')) {
                   if (globalThis.__biliupRuntimeTest.shouldFailSeasonAdd() && args.includes('add')) throw new Error('Synthetic season-add failure');
                   const action = args[args.indexOf('season') + 1];
-                  return { stdout: action === 'list'
+                  const json = action === 'list'
                     ? JSON.stringify([{ season: { id: 10, title: 'Synthetic collection' }, sections: { sections: [{ id: 20, title: 'Main' }] } }])
-                    : JSON.stringify({ season: { id: 10, title: 'Synthetic collection' }, sections: [{ section: { id: 20, title: 'Main' }, episodes: [{ id: 30, aid: 40, cid: 50, title: 'Episode' }] }] }), stderr: '' };
+                    : JSON.stringify({ season: { id: 10, title: 'Synthetic collection' }, sections: [{ section: { id: 20, title: 'Main' }, episodes: [{ id: 30, aid: 40, cid: 50, title: 'Episode' }] }] });
+                  return { stdout: String.fromCharCode(27) + '[2m2026-10-18 INFO biliup_cli::uploader: user: Synthetic account' + String.fromCharCode(27) + '[0m' + String.fromCharCode(10) + json, stderr: '' };
                 }
                 return { stdout: globalThis.__biliupRuntimeTest.help(), stderr: '' };
               }

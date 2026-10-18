@@ -10,7 +10,7 @@ import {
   BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, supportsBiliupSeasons, validateBiliupTemplate,
   type BiliupPostUploadOptions, type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
-import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
+import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupJsonOutput, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
 import { translate } from '../src/i18n';
 
 const require = createRequire(import.meta.url);
@@ -417,9 +417,13 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       const result = await exec(info.binary, ['--user-cookie', info.cookie, 'season', ...action, '--json'], {
         cwd: info.directory, timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
       });
-      return JSON.parse(result.stdout) as unknown;
+      try { return parseBiliupJsonOutput(result.stdout); }
+      catch (error) {
+        debugBiliup('season command returned invalid JSON', { action: action[0], reason: error instanceof Error ? error.message : 'unknown' });
+        return fail('season');
+      }
     } catch (error) {
-      debugBiliup('season command failed', { reason: safeError(error, 'season') });
+      debugBiliup('season command failed', { action: action[0], reason: safeError(error, 'season') });
       return fail('season');
     }
   }
