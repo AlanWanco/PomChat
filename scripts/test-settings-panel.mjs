@@ -53,6 +53,9 @@ try {
   assert.equal(results.length, 8);
   results.push(...await page.evaluate(async () => window.SettingsRegression.runUiInteractionTests()));
   results.push(...await page.evaluate(async () => window.SettingsRegression.runAppInteractionTests()));
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  results.push(...await page.evaluate(async () => window.SettingsRegression.runBiliupLibraryTests()));
+  await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   if (screenshots) {
     mkdirSync(screenshots, { recursive: true });
     await page.evaluate(async () => {

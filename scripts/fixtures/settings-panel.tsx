@@ -334,3 +334,5 @@ export async function runSettingsPanelTests() {
     HTMLElement.prototype.scrollTo = originalScrollTo;
   }
 }
+
+export { runBiliupLibraryTests, closeBiliupLibraryFixture } from './biliup-library';

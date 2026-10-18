@@ -15,7 +15,7 @@ try {
     return import(pathToFileURL(outfile).href);
   };
   const { extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, buildBiliupUploadArgs, redactBiliupLine, plainTerminalLine } = await compile('electron/biliupProtocol.ts', 'protocol');
-  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate, getBiliupUploadTitle } = await compile('src/biliup.ts', 'model');
+  const { BILIUP_MAX_TAGS, BILIUP_SCHEDULE_MAX_AHEAD_SECONDS, BILIUP_SCHEDULE_MIN_LEAD_SECONDS, isBiliupVideoPath, newBiliupTemplate, normalizeBiliupPreferences, validateBiliupSchedule, validateBiliupTemplate, getBiliupUploadTitle, supportsBiliupSeasons } = await compile('src/biliup.ts', 'model');
   assert.equal(parseBiliupProgress('\x1b[32m[00:12] 512 KiB/1 MiB (32 KiB/s, 12s)\x1b[0m'), 50);
   assert.equal(parseBiliupProgress('500 MB/1 GB (1 MB/s)'), 50);
   assert.equal(parseBiliupProgress(' 12.5% '), 12.5);
@@ -49,6 +49,12 @@ try {
   assert(!isBiliupVideoPath('/tmp/clip.txt'));
   assert.equal(newBiliupTemplate().tid, 5);
   assert.equal(newBiliupTemplate().submit, 'app');
+  assert.equal(supportsBiliupSeasons('biliup 1.2.8'), false);
+  assert.equal(supportsBiliupSeasons('biliup 1.2.9'), true);
+  assert.equal(supportsBiliupSeasons('biliup 1.2.10'), true);
+  assert.equal(supportsBiliupSeasons('1.3.0'), true);
+  assert.equal(supportsBiliupSeasons('1.2.9-rc.1'), false);
+  assert.equal(supportsBiliupSeasons('unknown'), false);
   const template = { ...newBiliupTemplate(), id: 'one', name: 'Test', title: '固定标题', tag: 'one,two' };
   const help = '--title --tid --tag --copyright --limit --desc --source --line --submit --no-reprint --cover';
   assert.equal(validateBiliupTemplate(template), null);
@@ -60,6 +66,9 @@ try {
   const file = path.resolve('video with spaces.mp4');
   const args = buildBiliupUploadArgs({ ...template, desc: '$(touch unsafe); & echo test' }, file, path.resolve('cookies.json'), help);
   assert.deepEqual(args.slice(-2), ['--', file]);
+  const multiFiles = [file, path.resolve('second video.mp4')];
+  const multiArgs = buildBiliupUploadArgs(template, multiFiles, 'cookies.json', help);
+  assert.deepEqual(multiArgs.slice(-3), ['--', ...multiFiles], 'Each ordered file is a positional P input');
   assert(args.includes('$(touch unsafe); & echo test'));
   assert.equal(args[args.indexOf('--title') + 1], '固定标题');
   const originalWithSource = buildBiliupUploadArgs({ ...template, source: 'should-not-be-submitted' }, file, 'cookies.json', help);
@@ -70,6 +79,12 @@ try {
   assert(!repostNoReprint.includes('--no-reprint'));
   const multiline = buildBiliupUploadArgs({ ...template, desc: '第一行\r\n第二行' }, file, 'cookies.json', help);
   assert.equal(multiline[multiline.indexOf('--desc') + 1], '第一行\n第二行');
+  const appendFiles = [file, path.resolve('part two.mp4')];
+  const appendArgs = buildBiliupUploadArgs(newBiliupTemplate(), appendFiles, 'cookies.json', '--vid --line --limit --submit', { mode: 'append', targetVideoId: 'BV1abC2deF34' });
+  assert(appendArgs.includes('append') && appendArgs.includes('--vid') && appendArgs[appendArgs.indexOf('--vid') + 1] === 'BV1abC2deF34');
+  assert.deepEqual(appendArgs.slice(-3), ['--', ...appendFiles], 'Append mode preserves each selected file as a P');
+  assert.throws(() => buildBiliupUploadArgs(newBiliupTemplate(), file, 'cookies.json', '--vid', { mode: 'append', targetVideoId: '' }), /input/);
+  assert.throws(() => buildBiliupUploadArgs(newBiliupTemplate(), file, 'cookies.json', '--line --limit --submit', { mode: 'append', targetVideoId: 'BV1abC2deF34' }), /unsupported/, 'Append mode must check flags against append --help');
   const extended = buildBiliupUploadArgs({ ...template, interactive: 1, missionId: '123', isOnlySelf: '1', chargingPay: true, upSelectionReply: true }, file, 'cookies.json', `${help} --interactive --mission-id --is-only-self --charging-pay --up-selection-reply`);
   assert(extended.includes('--interactive') && extended.includes('--mission-id'));
   const long = buildBiliupUploadArgs({ ...template, title: '中'.repeat(120) }, file, 'cookies.json', help);
@@ -88,8 +103,12 @@ try {
   assert.equal(normalized.autoUpload, true);
   assert.equal(normalized.templates.length, 1);
   assert(!('secret' in normalized.templates[0]));
-  assert.deepEqual(normalized.accounts, [{ id: 'default', name: 'Default account', directory: '/app' }]);
+  assert.deepEqual(normalized.accounts, [{ id: 'default', name: 'Default account', directory: '/app', seasonSectionId: '' }]);
   assert.equal(normalized.selectedAccountId, 'default');
+  const accountSeason = normalizeBiliupPreferences({ accounts: [{ id: 'season-user', name: 'Season user', directory: '/biliup', seasonSectionId: '8081933' }] });
+  assert.equal(accountSeason.accounts[0].seasonSectionId, '8081933', 'Collection destination belongs to its login account');
+  const invalidAccountSeason = normalizeBiliupPreferences({ accounts: [{ id: 'season-user', name: 'Season user', directory: '/biliup', seasonSectionId: '../20' }] });
+  assert.equal(invalidAccountSeason.accounts[0].seasonSectionId, '', 'Invalid section IDs cannot be persisted');
   assert.deepEqual(normalized.tagHistory, ['one', 'two']);
   assert.equal(normalized.projectFolderTemplate, '{$yyyyMMdd}_{$BVID}_{$ProjectName}');
   assert.equal(normalized.checkSubmission, false);
@@ -101,7 +120,7 @@ try {
   assert.equal(Array.from(capsTitle.effective).length, 80, 'The panel must cap the title exactly like the upload');
   assert(capsTitle.shortened, 'A capped title must be flagged as shortened');
 
-  console.log('biliup tests passed: byte progress, ANSI, redaction, args, title limits, tags, validation, preferences, accounts');
+  console.log('biliup tests passed: byte progress, ANSI, redaction, new/append CLI modes and P ordering, season version gate, title limits, tags, validation, preferences, accounts');
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }

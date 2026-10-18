@@ -278,6 +278,22 @@ export async function runUiInteractionTests() {
 
     let uploadClosed = false;
     await render(<BiliupProvider><BiliupModal {...appearance} onClose={() => { uploadClosed = true; }} /></BiliupProvider>);
+    const modeGroup = document.querySelector<HTMLElement>(`[data-testid="biliup-mode-selector"][role=group][aria-label="${t('biliup.uploadMode')}"]`)!;
+    const accentProbe = document.createElement('div');
+    accentProbe.style.backgroundColor = `${appearance.secondaryThemeColor}10`;
+    const accentSlider = document.createElement('div');
+    accentSlider.style.backgroundColor = appearance.secondaryThemeColor;
+    assert(modeGroup.style.backgroundColor === accentProbe.style.backgroundColor, 'Mode switch uses the existing secondary-accent color treatment');
+    assert(modeGroup.querySelector<HTMLElement>('[data-testid="biliup-mode-slider"]')?.style.backgroundColor === accentSlider.style.backgroundColor, 'Selected mode slider uses the established secondary theme color');
+    const newMode = modeGroup.querySelector<HTMLButtonElement>('[aria-pressed="true"]')!;
+    assert(newMode.textContent === t('biliup.uploadMode.new'), 'New submission is the initial mode');
+    click(modeGroup.querySelector<HTMLButtonElement>(`button:not([aria-pressed="true"])`)!); await settle();
+    assert(document.body.textContent?.includes(t('biliup.appendTargetRequired')), 'Append mode requires a verified target video');
+    assert(![...document.querySelectorAll('label')].some(el => el.textContent?.includes(t('biliup.field.title'))), 'Append mode hides new-submission metadata');
+    assert(!document.querySelector('[data-testid="biliup-new-submission-options"]'), 'Append mode hides new-submission template and collection controls');
+    click(modeGroup.querySelector<HTMLButtonElement>(`button:not([aria-pressed="true"])`)!); await settle();
+    assert([...document.querySelectorAll('label')].some(el => el.textContent?.includes(t('biliup.field.title'))), 'New mode restores its template fields');
+    assert(document.querySelector('[data-testid="biliup-new-submission-options"]'), 'New mode groups its template and collection controls together');
     const titleLabel = [...document.querySelectorAll('label')].find(el => el.textContent?.includes(t('biliup.field.title')))!;
     const titleInput = titleLabel.querySelector('input')!; focus(titleInput); change(titleInput, 'Unsaved synthetic title');
     const closeButton = document.querySelector<HTMLButtonElement>(`button[aria-label="${t('common.close')}"]`) || [...document.querySelectorAll('button')].find(el => el.querySelector('.lucide-x'))!;

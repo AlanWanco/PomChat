@@ -113,25 +113,33 @@ export function BiliupProvider({ children }: { children: ReactNode }) {
     if (!current.autoUpload) return null;
     const template = current.templates.find((item) => item.id === current.selectedTemplateId);
     if (!window.electron || !loaded || !current.directory.trim() || !template) throw new Error('template');
-    const templateError = validateBiliupTemplate(template) || validateBiliupSchedule(template.dtime);
-    if (templateError) throw new Error(templateError);
     if (format !== 'mp4') throw new Error('file');
     const check = unwrapBiliup(await window.electron.biliup.check(current.directory));
     if (!check.cookieOk) throw new Error(check.error || 'cookie');
+    const account = current.accounts.find((item) => item.id === current.selectedAccountId);
+    const seasonSectionId = account?.seasonSectionId || '';
+    const templateError = validateBiliupTemplate(template) || validateBiliupSchedule(template.dtime);
+    if (templateError) throw new Error(templateError);
+    if (seasonSectionId) {
+      const capabilities = unwrapBiliup(await window.electron.biliup.inspect(current.directory));
+      if (!capabilities.seasonsSupported) throw new Error('unsupported');
+    }
     // Snapshot the settings now: edits during a long render must not change its destination.
     return {
       directory: current.directory,
       template: { ...template },
+      seasonSectionId,
       postUpload: getBiliupPostUploadOptions(current, projectName, appearance.language),
     };
   }, [appearance.language, flushPreferences, loaded, preferencesRef]);
-  const upload = useCallback(async (plan: BiliupUploadPlan, filePath: string) => {
+  const upload = useCallback(async (plan: BiliupUploadPlan, filePath: string, filePaths?: string[]) => {
     setFocusUpload(true);
     setIsOpen(true);
     setError('');
     try {
       const postUpload = plan.postUpload || getBiliupPostUploadOptions(preferences, '', appearance.language);
-      unwrapBiliup(await window.electron.biliup.upload({ ...plan, filePath, postUpload }));
+      const account = preferences.accounts.find((item) => item.id === preferences.selectedAccountId);
+      unwrapBiliup(await window.electron.biliup.upload({ ...plan, seasonSectionId: 'seasonSectionId' in plan ? plan.seasonSectionId || '' : account?.seasonSectionId || '', filePath, filePaths, postUpload }));
     }
     catch (failure) {
       const code = failure instanceof Error ? failure.message : 'upload';

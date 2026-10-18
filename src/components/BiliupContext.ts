@@ -28,7 +28,7 @@ export interface BiliupContextValue {
   save: (preferences: Partial<BiliupPreferences>) => Promise<void>;
   flushPreferences: () => Promise<void>;
   prepare: (format: string, projectName?: string) => Promise<BiliupUploadPlan | null>;
-  upload: (plan: BiliupUploadPlan, filePath: string) => Promise<void>;
+  upload: (plan: BiliupUploadPlan, filePath: string, filePaths?: string[]) => Promise<void>;
 }
 
 export type BiliupActionsContextValue = Omit<BiliupContextValue, 'state'> & {

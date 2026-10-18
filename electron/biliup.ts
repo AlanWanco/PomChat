@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { IPty } from 'node-pty';
 import {
-  BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, validateBiliupTemplate,
+  BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE, idleBiliupState, isBiliupVideoPath, normalizeBiliupPreferences, supportsBiliupSeasons, validateBiliupTemplate,
   type BiliupPostUploadOptions, type BiliupState, type BiliupCheck, type BiliupLineTestResult, type BiliupPreferences, type BiliupUploadRequest,
 } from '../src/biliup';
 import { buildBiliupUploadArgs, extractBiliupBvid, extractBiliupFailureDetail, extractBiliupProgressDetails, parseBiliupProgress, plainTerminalLine, redactBiliupLine } from './biliupProtocol';
@@ -16,7 +16,7 @@ import { translate } from '../src/i18n';
 const require = createRequire(import.meta.url);
 const exec = promisify(execFile);
 const settingsPath = path.join(os.homedir(), '.config', 'pomchat', 'biliup.json');
-const allowedErrors = new Set(['directory', 'binary', 'cookie', 'network', 'busy', 'template', 'schedule', 'unsupported', 'native', 'login', 'captcha', 'upload', 'cancelled', 'timeout', 'file', 'input', 'settings']);
+const allowedErrors = new Set(['directory', 'binary', 'cookie', 'network', 'busy', 'template', 'schedule', 'unsupported', 'native', 'login', 'captcha', 'upload', 'cancelled', 'timeout', 'file', 'input', 'settings', 'season']);
 const BILIUP_SUBMISSION_CHECK_INTERVAL_MS = 30_000;
 const BILIUP_SUBMISSION_CHECK_TIMEOUT_MS = 4 * 60 * 60_000;
 const safeError = (error: unknown, fallback: string) => error instanceof Error && allowedErrors.has(error.message) ? error.message : fallback;
@@ -104,12 +104,16 @@ function extractCaptchaFields(payload: string): { challenge?: string; validate?:
   return fields;
 }
 
-interface Runtime { directory: string; binary: string; cookie: string; version: string; help: string }
+interface Runtime { directory: string; binary: string; cookie: string; version: string; help: string; appendHelp: string }
 interface Job {
   cancelled: boolean;
   postUpload?: BiliupPostUploadOptions;
   originalFile?: string;
   templateTitle?: string;
+  seasonSectionId?: string;
+  mode?: 'new' | 'append';
+  targetVideoId?: string;
+  directory?: string;
   pty?: IPty;
   temporary?: string;
   cookiePath?: string;
@@ -275,6 +279,7 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     if (!binary) fail('binary');
     let version = '';
     let help = '';
+    let appendHelp = '';
     try {
       const options = { cwd: resolved, timeout: 15000, maxBuffer: 512 * 1024, windowsHide: true };
       const versionResult = await exec(binary, ['--version'], options);
@@ -284,9 +289,13 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       if (!globalHelp.includes('--user-cookie')) fail('unsupported');
       const uploadHelpResult = await exec(binary, ['upload', '--help'], options);
       help = `${uploadHelpResult.stdout}\n${uploadHelpResult.stderr}`;
+      try {
+        const appendHelpResult = await exec(binary, ['append', '--help'], options);
+        appendHelp = `${appendHelpResult.stdout}\n${appendHelpResult.stderr}`;
+      } catch { appendHelp = ''; }
     } catch (error) { return fail(safeError(error, 'binary')); }
     const cookie = path.join(resolved, 'cookies.json');
-    return { directory: resolved, binary, cookie, version, help };
+    return { directory: resolved, binary, cookie, version, help, appendHelp };
   }
 
   async function credentials(file: string): Promise<{ header: string; secrets: string[] }> {
@@ -397,6 +406,100 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     } finally { checking = false; }
   }
 
+  function requireSeasonVersion(version: string) {
+    if (!supportsBiliupSeasons(version)) fail('unsupported');
+  }
+
+  async function runSeasonCommand(directory: string, action: string[]): Promise<unknown> {
+    const info = await runtime(directory);
+    requireSeasonVersion(info.version);
+    try {
+      const result = await exec(info.binary, ['--user-cookie', info.cookie, 'season', ...action, '--json'], {
+        cwd: info.directory, timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
+      });
+      return JSON.parse(result.stdout) as unknown;
+    } catch (error) {
+      debugBiliup('season command failed', { reason: safeError(error, 'season') });
+      return fail('season');
+    }
+  }
+
+  async function inspect(directory: string) {
+    const info = await runtime(directory);
+    return { version: info.version, seasonsSupported: supportsBiliupSeasons(info.version) };
+  }
+
+  async function listSeasons(directory: string) {
+    const result = await runSeasonCommand(directory, ['list']);
+    if (!Array.isArray(result)) return fail('input');
+    return result.slice(0, 300).flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const item = entry as { season?: { id?: unknown; title?: unknown }; sections?: { sections?: unknown } };
+      const id = Number(item.season?.id);
+      if (!Number.isSafeInteger(id) || id <= 0) return [];
+      const sections = Array.isArray(item.sections?.sections) ? item.sections.sections : [];
+      return [{ id, title: typeof item.season?.title === 'string' ? item.season.title.slice(0, 500) : '', sections: sections.flatMap((value) => {
+        if (!value || typeof value !== 'object') return [];
+        const section = value as { id?: unknown; title?: unknown };
+        const sectionId = Number(section.id);
+        return Number.isSafeInteger(sectionId) && sectionId > 0 ? [{ id: sectionId, title: typeof section.title === 'string' ? section.title.slice(0, 200) : '' }] : [];
+      }) }];
+    });
+  }
+
+  async function getSeasonContents(directory: string, seasonId: number) {
+    if (!Number.isSafeInteger(seasonId) || seasonId <= 0) return fail('input');
+    const result = await runSeasonCommand(directory, ['sections', String(seasonId)]);
+    if (!result || typeof result !== 'object') return fail('input');
+    const data = result as { season?: { id?: unknown; title?: unknown }; sections?: unknown };
+    const id = Number(data.season?.id);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(data.sections)) return fail('input');
+    return {
+      id,
+      title: typeof data.season?.title === 'string' ? data.season.title.slice(0, 500) : '',
+      sections: data.sections.slice(0, 100).flatMap((value) => {
+        if (!value || typeof value !== 'object') return [];
+        const row = value as { section?: { id?: unknown; title?: unknown }; episodes?: unknown };
+        const sectionId = Number(row.section?.id);
+        if (!Number.isSafeInteger(sectionId) || sectionId <= 0) return [];
+        const episodes = Array.isArray(row.episodes) ? row.episodes : [];
+        return [{ id: sectionId, title: typeof row.section?.title === 'string' ? row.section.title.slice(0, 200) : '', episodes: episodes.slice(0, 500).flatMap((episodeValue) => {
+          if (!episodeValue || typeof episodeValue !== 'object') return [];
+          const episode = episodeValue as { id?: unknown; aid?: unknown; cid?: unknown; title?: unknown };
+          const episodeId = Number(episode.id), aid = Number(episode.aid), cid = Number(episode.cid);
+          return Number.isSafeInteger(episodeId) && Number.isSafeInteger(aid) && Number.isSafeInteger(cid)
+            ? [{ id: episodeId, aid, cid, title: typeof episode.title === 'string' ? episode.title.slice(0, 500) : '' }] : [];
+        }) }];
+      }),
+    };
+  }
+
+  async function getVideoParts(videoId: string) {
+    if (typeof videoId !== 'string' || !/^(?:BV[0-9A-Za-z]{10}|(?:av)?[0-9]{1,15})$/i.test(videoId.trim())) return fail('input');
+    const id = videoId.trim();
+    const parameter = /^bv/i.test(id) ? ['bvid', `${id.slice(0, 2).toUpperCase()}${id.slice(2)}`] as const : ['aid', id.replace(/^av/i, '')] as const;
+    const url = new URL('https://api.bilibili.com/x/web-interface/view');
+    url.searchParams.set(parameter[0], parameter[1]);
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (PomChat)' }, redirect: 'error', signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return fail('network');
+    const payload = await response.json() as { code?: number; data?: { aid?: unknown; bvid?: unknown; title?: unknown; pages?: unknown } };
+    const data = payload.data;
+    if (payload.code !== 0 || !data || !Number.isSafeInteger(Number(data.aid))) return fail('input');
+    const pages = Array.isArray(data.pages) ? data.pages : [];
+    if (pages.length === 0) return fail('input');
+    return {
+      aid: Number(data.aid), bvid: typeof data.bvid === 'string' ? data.bvid.slice(0, 32) : '', title: typeof data.title === 'string' ? data.title.slice(0, 500) : '',
+      pages: pages.slice(0, 1000).flatMap((value, index) => {
+        if (!value || typeof value !== 'object') return [];
+        const page = value as { cid?: unknown; page?: unknown; part?: unknown; duration?: unknown };
+        const cid = Number(page.cid), pageNumber = Number(page.page);
+        return Number.isSafeInteger(cid) && cid > 0 ? [{ cid, page: Number.isSafeInteger(pageNumber) && pageNumber > 0 ? pageNumber : index + 1, part: typeof page.part === 'string' ? page.part.slice(0, 500) : '', duration: Number.isFinite(Number(page.duration)) ? Number(page.duration) : 0 }] : [];
+      }),
+    };
+  }
+
   async function check(directory: string): Promise<BiliupCheck> {
     if (active || checking) fail('busy');
     checking = true;
@@ -436,16 +539,20 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     // Do not remove a staging file until the child has exited.
     if (job.temporary) await fs.rm(job.temporary, { recursive: true, force: true }).catch(() => {});
     if (active !== job) return;
-    const uploadMissingBvid = state.kind === 'upload' && !job.cancelled && !job.forcedError && exitCode === 0 && !state.bvid;
+    const appendSucceeded = job.mode === 'append' && !job.cancelled && !job.forcedError && exitCode === 0;
+    const uploadMissingBvid = state.kind === 'upload' && job.mode !== 'append' && !job.cancelled && !job.forcedError && exitCode === 0 && !state.bvid;
     const error = job.forcedError || (!job.cancelled && exitCode !== 0 ? state.kind === 'login' ? 'login' : 'upload' : uploadMissingBvid ? 'upload' : undefined);
-    const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload' && Boolean(state.bvid);
-    const bvid = state.bvid;
+    const uploadSucceeded = !error && !job.cancelled && state.kind === 'upload' && (Boolean(state.bvid) || appendSucceeded);
+    const bvid = state.bvid || (appendSucceeded ? job.targetVideoId : undefined);
     if (error && state.kind === 'upload' && !extractBiliupFailureDetail(state.logs)) {
       const language = job.postUpload?.language === 'en' ? 'en' : 'zh-CN';
       const message = translate(language, uploadMissingBvid ? 'biliup.uploadMissingBvid' : 'biliup.uploadExitError', { code: exitCode });
       state = { ...state, logs: [...state.logs, `ERROR: ${message}`].slice(-300) };
     }
-    if (uploadSucceeded && bvid && job.postUpload?.createProjectFolder) {
+    if (appendSucceeded && bvid) {
+      state = { ...state, logs: [...state.logs, translate(job.postUpload?.language === 'en' ? 'en' : 'zh-CN', 'biliup.append.succeeded', { bvid })].slice(-300) };
+    }
+    if (uploadSucceeded && bvid && job.mode !== 'append' && job.postUpload?.createProjectFolder) {
       try {
         const folderPath = await createProjectFolder(job.postUpload, bvid, job.originalFile || '', job.templateTitle || '');
         appendUploadLog(bvid, localizedPostUploadMessage(job.postUpload, `已创建项目文件夹：${folderPath}`, `Project folder created: ${folderPath}`), false);
@@ -456,11 +563,21 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       }
     }
     if (active !== job) return;
+    if (uploadSucceeded && bvid && job.mode !== 'append' && job.seasonSectionId && job.directory) {
+      try {
+        update({ logs: [...state.logs, translate(job.postUpload?.language === 'en' ? 'en' : 'zh-CN', 'biliup.season.adding')].slice(-300) });
+        await runSeasonCommand(job.directory, ['add', job.seasonSectionId, '--vid', bvid]);
+        state = { ...state, logs: [...state.logs, translate(job.postUpload?.language === 'en' ? 'en' : 'zh-CN', 'biliup.season.added')].slice(-300) };
+      } catch {
+        state = { ...state, logs: [...state.logs, translate(job.postUpload?.language === 'en' ? 'en' : 'zh-CN', 'biliup.season.addFailed')].slice(-300) };
+      }
+    }
+    if (active !== job) return;
     active = null;
-    update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error,
+    update({ busy: false, phase: error ? 'failed' : job.cancelled ? 'cancelled' : 'success', error, bvid: bvid || state.bvid,
       errorDetail: error ? extractBiliupFailureDetail(state.logs) || undefined : undefined,
       qrImage: null, captchaUrl: null, captchaStatus: '', progress: uploadSucceeded ? 100 : state.progress, progressText: '' });
-    if (uploadSucceeded && bvid && job.postUpload?.checkSubmission) void monitorSubmission(bvid, job.postUpload).catch((monitorError) => {
+    if (uploadSucceeded && bvid && job.mode !== 'append' && job.postUpload?.checkSubmission) void monitorSubmission(bvid, job.postUpload).catch((monitorError) => {
       debugBiliup('submission status monitor stopped unexpectedly', monitorError instanceof Error ? monitorError.message : 'unknown');
     });
   }
@@ -724,8 +841,13 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     };
     try {
       prepare('template');
-      const error = validateBiliupTemplate(request.template);
-      if (error) fail(error);
+      const mode = request.mode === 'append' ? 'append' : 'new';
+      if (mode === 'append') {
+        if (typeof request.targetVideoId !== 'string' || !/^(?:BV[0-9A-Za-z]{10}|(?:av)?[0-9]{1,15})$/i.test(request.targetVideoId.trim())) fail('input');
+      } else {
+        const error = validateBiliupTemplate(request.template);
+        if (error) fail(error);
+      }
       prepare('runtime');
       const info = await runtime(request.directory);
       checkJob(job);
@@ -733,33 +855,58 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
       const auth = await verifyCookieWithRenew(info);
       checkJob(job);
       prepare('video');
-      if (!path.isAbsolute(request.filePath) || !isBiliupVideoPath(request.filePath)) fail('file');
-      const original = await fs.realpath(request.filePath);
-      if (!(await fs.stat(original)).isFile() || (await fs.stat(original)).size === 0) fail('file');
+      const requestedFiles = Array.isArray(request.filePaths) ? request.filePaths : [request.filePath];
+      if (requestedFiles.length < 1 || requestedFiles.length > 100 || requestedFiles.some((item) => typeof item !== 'string' || !path.isAbsolute(item) || !isBiliupVideoPath(item))) fail('file');
+      const originals: string[] = [];
+      for (const item of requestedFiles) {
+        const resolved = await fs.realpath(item);
+        const stat = await fs.stat(resolved);
+        if (!stat.isFile() || stat.size === 0) fail('file');
+        originals.push(resolved);
+      }
+      const original = originals[0];
       const fallbackProjectName = path.basename(original).replace(/\.[^.]*$/, '') || path.basename(original);
       job.originalFile = original;
       job.templateTitle = request.template.title;
+      job.directory = request.directory;
+      job.mode = mode;
+      job.targetVideoId = typeof request.targetVideoId === 'string' ? request.targetVideoId.trim() : undefined;
+      job.seasonSectionId = mode === 'new' && typeof request.seasonSectionId === 'string' && /^\d{1,16}$/.test(request.seasonSectionId) ? request.seasonSectionId : '';
+      if (mode === 'new' && request.seasonSectionId && !job.seasonSectionId) fail('input');
+      if (job.seasonSectionId) requireSeasonVersion(info.version);
       job.postUpload = normalizePostUploadOptions(request.postUpload, fallbackProjectName);
-      let file = original;
-      if (Array.from(path.basename(original)).length > 80 || path.basename(original).length > 80) {
+      let files = originals;
+      if (originals.some((item) => Array.from(path.basename(item)).length > 80 || path.basename(item).length > 80)) {
         prepare('staging');
         job.temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'pomchat-biliup-'));
-        file = path.join(job.temporary, `pomchat-video${path.extname(original).toLowerCase()}`);
-        try { await fs.link(original, file); }
-        catch { await fs.copyFile(original, file); }
+        files = [];
+        for (let index = 0; index < originals.length; index += 1) {
+          const item = originals[index];
+          if (Array.from(path.basename(item)).length <= 80 && path.basename(item).length <= 80) { files.push(item); continue; }
+          const extension = path.extname(item).toLowerCase();
+          const suffix = `-${index + 1}${extension}`;
+          const basename = path.basename(item, path.extname(item));
+          const safeStem = Array.from(basename).slice(0, Math.max(1, 80 - Array.from(suffix).length)).join('');
+          const staged = path.join(job.temporary, `${safeStem}${suffix}`);
+          try { await fs.link(item, staged); }
+          catch { await fs.copyFile(item, staged); }
+          files.push(staged);
+        }
       }
       checkJob(job);
       const template = { ...request.template };
-      if (template.cover && !/^https?:\/\//i.test(template.cover)) {
+      if (mode === 'new' && template.cover && !/^https?:\/\//i.test(template.cover)) {
         prepare('cover');
         template.cover = path.resolve(info.directory, template.cover);
         if (!(await fs.stat(template.cover)).isFile()) fail('file');
       }
       prepare('arguments');
-      const args = buildBiliupUploadArgs(template, file, info.cookie, info.help);
+      const args = buildBiliupUploadArgs(template, files, info.cookie, mode === 'append' ? info.appendHelp : info.help, {
+        mode, targetVideoId: job.targetVideoId,
+      });
       prepare('spawn');
       const child = spawnPty(job, info, args);
-      update({ phase: 'uploading', logs: [...state.logs, `biliup upload ${JSON.stringify(path.basename(original))}`] });
+      update({ phase: 'uploading', logs: [...state.logs, `biliup ${mode === 'append' ? `append ${job.targetVideoId}` : 'upload'} ${originals.map((item) => JSON.stringify(path.basename(item))).join(', ')}`] });
       let partial = '';
       child.onData((chunk) => {
         if (active !== job) return;
@@ -829,6 +976,10 @@ export function registerBiliup(getContents: () => WebContents | undefined) {
     } finally { saving = false; }
   }, 'settings');
   handle('check', check, 'binary');
+  handle('inspect', inspect, 'binary');
+  handle('seasons', listSeasons, 'input');
+  handle('season-contents', getSeasonContents, 'input');
+  handle('video-parts', getVideoParts, 'input');
   handle('test-lines', testLines, 'network');
   handle('login', login, 'login');
   handle('upload', upload, 'upload');

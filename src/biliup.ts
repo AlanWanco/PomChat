@@ -26,6 +26,29 @@ export interface BiliupTemplate {
 }
 
 export const BILIUP_MAX_TITLE_LENGTH = 80;
+export const BILIUP_MIN_SEASON_VERSION = '1.2.9';
+
+export function supportsBiliupSeasons(version: string): boolean {
+  const match = version.match(/(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?/);
+  if (!match) return false;
+  const actual = match.slice(1, 4).map(Number);
+  const minimum = BILIUP_MIN_SEASON_VERSION.split('.').map(Number);
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (actual[index] !== minimum[index]) return actual[index] > minimum[index];
+  }
+  return !match[4];
+}
+
+export interface BiliupCapabilities { version: string; seasonsSupported: boolean }
+export interface BiliupSeason { id: number; title: string; sections: Array<{ id: number; title: string }> }
+export interface BiliupSeasonContents {
+  id: number; title: string;
+  sections: Array<{ id: number; title: string; episodes: Array<{ id: number; aid: number; cid: number; title: string }> }>;
+}
+export interface BiliupVideoParts {
+  aid: number; bvid: string; title: string;
+  pages: Array<{ cid: number; page: number; part: string; duration: number }>;
+}
 
 export const BILIUP_MAX_TAGS = 10;
 export const BILIUP_MAX_TAG_HISTORY = 100;
@@ -78,6 +101,7 @@ export interface BiliupAccount {
   id: string;
   name: string;
   directory: string;
+  seasonSectionId?: string;
 }
 export const BILIUP_DEFAULT_PROJECT_FOLDER_TEMPLATE = '{$yyyyMMdd}_{$BVID}_{$ProjectName}';
 
@@ -138,12 +162,19 @@ export interface BiliupState {
 export interface BiliupUploadRequest {
   directory: string;
   template: BiliupTemplate;
+  mode?: 'new' | 'append';
+  targetVideoId?: string;
+  seasonSectionId?: string;
   filePath: string;
+  filePaths?: string[];
   postUpload?: BiliupPostUploadOptions;
 }
 export interface BiliupUploadPlan {
   directory: string;
   template: BiliupTemplate;
+  mode?: 'new' | 'append';
+  targetVideoId?: string;
+  seasonSectionId?: string;
   postUpload?: BiliupPostUploadOptions;
 }
 export interface BiliupResult<T> {
@@ -155,6 +186,10 @@ export interface BiliupApi {
   load: () => Promise<BiliupResult<BiliupPreferences>>;
   save: (preferences: BiliupPreferences) => Promise<BiliupResult<BiliupPreferences>>;
   check: (directory: string) => Promise<BiliupResult<BiliupCheck>>;
+  inspect: (directory: string) => Promise<BiliupResult<BiliupCapabilities>>;
+  seasons: (directory: string) => Promise<BiliupResult<BiliupSeason[]>>;
+  seasonContents: (directory: string, seasonId: number) => Promise<BiliupResult<BiliupSeasonContents>>;
+  videoParts: (videoId: string) => Promise<BiliupResult<BiliupVideoParts>>;
   testLines: () => Promise<BiliupResult<BiliupLineTestResult[]>>;
   login: (directory: string, method: 'qr' | 'sms') => Promise<BiliupResult<void>>;
   attachCaptchaView: (webContentsId: number) => Promise<BiliupResult<void>>;
@@ -222,10 +257,11 @@ export function normalizeBiliupPreferences(value: unknown): BiliupPreferences {
       id: typeof item.id === 'string' && item.id.trim() ? item.id.slice(0, 120) : `account-${index + 1}`,
       name: typeof item.name === 'string' && item.name.trim() ? item.name.slice(0, 120) : `Account ${index + 1}`,
       directory: typeof item.directory === 'string' ? item.directory.slice(0, 4096) : '',
+      seasonSectionId: typeof item.seasonSectionId === 'string' && /^\d{1,16}$/.test(item.seasonSectionId) && Number(item.seasonSectionId) > 0 ? item.seasonSectionId : '',
     };
   });
   if (accounts.length === 0 && legacyDirectory) {
-    accounts.push({ id: 'default', name: 'Default account', directory: legacyDirectory });
+    accounts.push({ id: 'default', name: 'Default account', directory: legacyDirectory, seasonSectionId: '' });
   }
   const selectedAccount = accounts.find((account) => account.id === data.selectedAccountId) || accounts[0];
   const templates = Array.isArray(data.templates) ? data.templates.slice(0, 100)

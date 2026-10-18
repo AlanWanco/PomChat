@@ -44,19 +44,31 @@ export function extractBiliupFailureDetail(logs: readonly string[]): string {
   return '';
 }
 
-export function buildBiliupUploadArgs(template: BiliupTemplate, filename: string, cookieFile: string, help: string): string[] {
+export function buildBiliupUploadArgs(template: BiliupTemplate, filenames: string | string[], cookieFile: string, help: string, options: { mode?: 'new' | 'append'; targetVideoId?: string } = {}): string[] {
+  const mode = options.mode === 'append' ? 'append' : 'new';
+  const args = ['--user-cookie', cookieFile, mode === 'append' ? 'append' : 'upload'];
+  const add = (flag: string, value?: string | number) => {
+    if (!new RegExp(`${flag}(?:[\\s=,]|$)`).test(help)) throw new Error('unsupported');
+    args.push(flag);
+    if (value !== undefined) args.push(String(value));
+  };
+  if (mode === 'append') {
+    const target = options.targetVideoId?.trim() || '';
+    if (!/^(?:BV[0-9A-Za-z]{10}|(?:av)?[0-9]{1,15})$/i.test(target)) throw new Error('input');
+    if (!Number.isInteger(template.limit) || template.limit < 1 || template.limit > 32) throw new Error('template');
+    if (template.line) add('--line', template.line);
+    add('--limit', template.limit);
+    add('--vid', target);
+    if (template.submit) add('--submit', template.submit);
+    args.push('--', ...(Array.isArray(filenames) ? filenames : [filenames]));
+    return args;
+  }
   const error = validateBiliupTemplate(template);
   if (error) throw new Error(error);
   const scheduleError = validateBiliupSchedule(template.dtime);
   if (scheduleError) throw new Error(scheduleError);
   const title = Array.from(template.title.trim()).slice(0, BILIUP_MAX_TITLE_LENGTH).join('');
   if (!title) throw new Error('template');
-  const args = ['--user-cookie', cookieFile, 'upload'];
-  const add = (flag: string, value?: string | number) => {
-    if (!new RegExp(`${flag}(?:[\\s=,]|$)`).test(help)) throw new Error('unsupported');
-    args.push(flag);
-    if (value !== undefined) args.push(String(value));
-  };
   add('--title', title);
   add('--tid', template.tid);
   add('--tag', template.tag.replaceAll('，', ','));
@@ -75,7 +87,7 @@ export function buildBiliupUploadArgs(template: BiliupTemplate, filename: string
   if (template.isOnlySelf) add('--is-only-self', template.isOnlySelf);
   if (template.closeReply) add('--up-close-reply');
   if (template.closeDanmu) add('--up-close-danmu');
-  args.push('--', filename);
+  args.push('--', ...(Array.isArray(filenames) ? filenames : [filenames]));
   return args;
 }
 
