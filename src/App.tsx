@@ -8747,7 +8747,7 @@ const [previewScale, setPreviewScale] = useState(1);
                 <div
                   key={slide.id}
                   className="absolute inset-0"
-                  style={{ zIndex: 12 + (slide.backgroundOrder ?? 0), overflow: activeInsertImageId === slide.id && isInsertImageEditMode ? 'visible' : 'hidden', pointerEvents: 'none' }}
+                  style={{ zIndex: 12, overflow: activeInsertImageId === slide.id && isInsertImageEditMode ? 'visible' : 'hidden', pointerEvents: 'none' }}
                 >
                   {slide.type === 'text' ? (
                     <PreviewTextAsset
